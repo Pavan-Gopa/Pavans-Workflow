@@ -399,7 +399,7 @@ const waitingState = {
 	modelFailureRole: "coder",
 	modelFailureInstruction: "Choose Coder backup or change the model",
 };
-const waiting = deriveDashboardViewModel({ ...data, state: waitingState }, { ...runtime, worker: undefined });
+const waiting = deriveDashboardViewModel({ ...data, state: waitingState }, { ...runtime, worker: undefined, mainActivity: "Waiting for Human direction" });
 const waitingText = renderDashboard(waiting, 80, 28).lines.map(line => line.text).join("\n");
 assert.equal(waiting.status, "Waiting for Human");
 assert.match(waitingText, /NEXT ACTION · Choose Coder backup/);
