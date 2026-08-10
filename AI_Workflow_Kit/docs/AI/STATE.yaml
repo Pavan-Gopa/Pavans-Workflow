@@ -25,6 +25,16 @@ omp:
   active_agent: null
   active_role: null
   last_result_artifact: null
+  model_failure:
+    # none | awaiting_human | backup_authorized
+    status: none
+    role: null
+    primary_agent: null
+    failed_model: null
+    evidence: null
+    backup_agent: null
+    human_instruction: null
+    authorized_at: null
 review:
   status: pending
   last_feedback_file: AI_Workflow_Kit/docs/AI/FEEDBACK.md
@@ -32,6 +42,7 @@ review:
   note: null
   # default on unless Human explicitly skips
   enabled: true
+  # use status: skipped only after an explicit Human opt-out; record why in note
 qa:
   status: pending
   last_report: AI_Workflow_Kit/docs/AI/REPORT.md
@@ -40,6 +51,7 @@ qa:
   note: null
   # recommended on; Human may opt out
   enabled: true
+  # use status: skipped only after an explicit Human opt-out; record why in note
 security:
   next_run: none
   note: >-

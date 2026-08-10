@@ -16,8 +16,8 @@ modelRoles:
 
 retry:
   enabled: true
-  modelFallback: true
-  fallbackRevertPolicy: never
+  # Persistent model/provider failure pauses the workflow. Human authorizes backup.
+  modelFallback: false
 
 async:
   enabled: true

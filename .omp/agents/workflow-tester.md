@@ -1,7 +1,7 @@
 ---
 name: workflow-tester
 description: Use this agent when Main asks for QA after a Reviewer approves a step, or when test coverage needs to be gap-hunted against the step Done checklist. Typical triggers include running the full feature gate from PROJECT_CONTEXT after an approval, gap-hunting the Done items to find missing tests and adding them, and returning a structured QA result with new-test inventory or bug reports to Main. See "When to invoke" in the agent body for worked scenarios.
-model: ["@workflow_tester", "@workflow_tester_backup"]
+model: "@workflow_tester"
 color: yellow
 tools: ["read", "grep", "glob", "bash", "edit", "write", "lsp"]
 output:

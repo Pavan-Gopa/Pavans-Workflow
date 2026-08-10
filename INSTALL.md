@@ -122,8 +122,11 @@ assignments in the target project's `.omp/config.yml`.
 
 Return to Main and run `/workflow ready`. Main validates every primary and
 backup before dispatching work. Worker changes apply on their next spawn.
-Relaunch after changing either Orchestrator entry so its runtime fallback chain
-is rebuilt.
+Automatic cross-model fallback is disabled: after a persistent worker
+model/provider failure, Main records a blocker and waits for an explicit
+instruction such as `continue Tester with backup`. A running Main must be
+switched live to `@workflow_orchestrator_backup` or relaunched if its own model
+is unavailable.
 
 Terminal inspection remains available:
 
@@ -152,6 +155,7 @@ Useful controls:
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
 - `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, and provider-quota panel.
 - `/pause` — pause Main and subagents at safe boundaries.
+- `continue <role> with backup` — authorize one fresh backup worker after a recorded model/provider failure.
 
 ## Update
 

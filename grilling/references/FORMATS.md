@@ -24,9 +24,11 @@ Search directions:
 - [task-specific Graphify/repository question 2]
 - [task-specific Graphify/repository question 3]
 
-Do not implement. After context acquisition, grill the human directly until the
-Confirmation Gate passes, then return an Architecture Package to the
-Orchestrator.
+If the harness provides direct Human access, grill the Human until the
+Confirmation Gate passes. In a headless task-agent harness, return the exact
+material question frontier plus an Interrupted-Session Checkpoint. Continue in
+a fresh Architect run after the Orchestrator relays the Human's exact answers.
+Return the Architecture Package only after confirmation.
 ```
 
 ## Compact Question

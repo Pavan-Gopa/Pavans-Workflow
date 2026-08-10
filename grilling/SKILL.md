@@ -116,6 +116,30 @@ Architect phase itself. Preserve the same boundaries and explicitly return to
 an Orchestrator phase before persisting anything. Do not claim to have a clean
 context if the host cannot provide one.
 
+### Headless task-agent adapter
+
+When the Architect cannot access an interactive user tool, including an OMP
+task-agent run, preserve deep mode through explicit relay iterations:
+
+```text
+Human <-> Orchestrator <-> fresh Architect iterations
+```
+
+Treat the Orchestrator as a transparent relay during the interview:
+
+- do not answer Architect questions on the Human's behalf;
+- do not reinterpret the available choices or silently choose a recommendation;
+- relay only the current material question frontier;
+- return exact Human answers plus the latest grilling checkpoint to a fresh
+  Architect run;
+- keep workflow state blocked until the Confirmation Gate passes.
+
+Before yielding for Human input, the Architect returns the material questions
+and an Interrupted-Session Checkpoint from `references/FORMATS.md`. The next
+fresh Architect continues from that checkpoint rather than repeating discovery.
+The final Architecture Package still returns only after explicit Human
+confirmation.
+
 ## Language
 
 The skill instructions are English for portability.

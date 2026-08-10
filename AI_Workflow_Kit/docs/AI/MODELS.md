@@ -18,6 +18,9 @@
 
 If product renames tiers, map by intent: **strong hub** · **fast code** · **careful review** · **careful tests** · **thoughtful design** · **max security at release** — never “Ultra for every tiny step.”
 
+Naming: **GPT 5.6 Soul** is the product/display name used in this guide; the
+current OMP catalog selector is `openai-codex/gpt-5.6-sol`.
+
 ## OMP role aliases
 
 | Role | Primary | Backup |
@@ -30,9 +33,10 @@ If product renames tiers, map by intent: **strong hub** · **fast code** · **ca
 | Security | `@workflow_security` | `@workflow_security_backup` |
 
 Each pair maps to concrete provider/model selectors in `.omp/config.yml`.
-Task-agent definitions list primary first and backup second, which creates an
-OMP-native per-spawn retry chain. The launcher builds the equivalent concrete
-fallback chain for Main. Agent Hub shows the model actually running.
+Primary worker definitions select only the primary alias. Manual backup
+definitions (`workflow-<role>-backup`) select only the backup alias and require
+an explicit Human authorization recorded by Main. Agent Hub shows the model
+actually running.
 
 ---
 
@@ -72,14 +76,21 @@ omp models find <name>
 ```
 
 Existing workers keep their current resolved model. New workers receive the
-updated pair. Relaunch Main after changing either Orchestrator alias.
+updated assignment. A running Main session must be switched live or relaunched
+after changing its model alias.
 
 ## Failover behavior
 
-- OMP retries transient failures and applies fallback on persistent `429`,
-  quota-wall, or provider-outage errors.
-- `fallbackRevertPolicy: never` pins that session to the backup after failover.
-- A fresh worker starts by trying its primary again.
-- Failover does not repair invalid prompts, failing tests, context overflow, or
-  logically incorrect output; those remain workflow failures.
+- OMP may retry transient failures on the same active model.
+- Persistent `429`, quota-wall, or provider-outage failures pause the workflow;
+  automatic cross-model fallback is disabled.
+- Main records the failed role/model/evidence in `STATE.yaml` and does not
+  increment product-work attempts.
+- Only explicit Human authorization starts the matching fresh
+  `workflow-<role>-backup` agent. A failed backup pauses again.
+- Main's own outage requires the Human to select
+  `@workflow_orchestrator_backup` in the live model selector, then resume from
+  file-backed state.
+- Invalid prompts, failing tests, context overflow, tool errors, and logically
+  incorrect output remain ordinary workflow failures.
 - Direct `.omp/config.yml` editing remains a scripted-setup fallback only.

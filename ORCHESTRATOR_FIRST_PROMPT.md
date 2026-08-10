@@ -17,8 +17,8 @@ omp --model @workflow_orchestrator
 OMP loads the project contract, primary/backup role aliases, worker definitions,
 the live `Alt+W` workflow dashboard, and the `grilling` skill. Main first runs
 onboarding, then becomes the sole Orchestrator; workers are spawned by the
-`task` tool with fresh context, automatic model failover, and structured
-results returned to Main.
+`task` tool with fresh context and structured results. Persistent model failure
+pauses until the Human explicitly authorizes a fresh backup worker.
 
 If a host cannot load project slash commands, send this one prompt to Main:
 

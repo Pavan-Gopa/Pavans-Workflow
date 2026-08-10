@@ -19,14 +19,13 @@ Higher wins on conflict. Plan vs code conflict → **Architect** before large Co
 
 | Role | Writes product code? | Job / write boundary |
 |------|----------------------|----------------------|
-| **Main Orchestrator** | No* | Sole owner of state, plans, feedback, reports, routing, checkpoints |
+| **Main Orchestrator** | No | Sole owner of state, plans, feedback, reports, routing, checkpoints |
 | **Coder** | Yes, assignment target files only | One implementation/fix; structured result to Main |
 | **Reviewer** | No | Read-only verdict and findings |
 | **Tester** | Tests / QA scripts only | Gate, gap-hunt, structured evidence |
 | **Architect** | No | Read-only research, questions, Architecture Package |
 | **Security** | No | Read-only optional final vulnerability audit |
 | **Human** | — | Context, preferences, supervision and intervention |
-\* Emergency code only after `attempts >= 3`; prefer Architect first.
 
 ### Models (summary)
 
@@ -70,7 +69,11 @@ Main's conversation history. Every retry is a new task-agent session.
 2. Gap-hunt against step Done criteria and current source.
 3. Add tests only in assignment-approved test/QA paths.
 4. Return structured counts, commands, new tests, and failures to Main.
-5. Main verifies and writes `REPORT.md` / `BUG_REPORT.md`.
+5. Main inspects every Tester-authored test diff for weakened assertions,
+   implementation-coupled checks, and real product-behavior coverage.
+6. A substantial test diff receives a short targeted Reviewer pass before the
+   step closes.
+7. Main verifies and writes `REPORT.md` / `BUG_REPORT.md`.
 
 ### Architect (when needed)
 
@@ -102,6 +105,8 @@ Do not send bugs to another worker directly. Do not put live secrets in output.
 8. Fresh worker context for every role run and retry.
 9. Main verifies repository/test evidence before every transition.
 10. Stop three materially identical failed attempts and surface the blocker.
+11. Three failed Coder runs never authorize Main to write product code; stop,
+    route to Architect when appropriate, or request Human direction.
 
 ---
 

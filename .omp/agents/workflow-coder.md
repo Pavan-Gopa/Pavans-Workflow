@@ -1,7 +1,7 @@
 ---
 name: workflow-coder
 description: Use this agent when Main dispatches an implementation step from STATE.yaml. Typical triggers include writing or editing product code in the target_files listed in the step card, fixing a bug that Orchestrator has routed back from a Reviewer changes_requested verdict, and completing a step whose Gate checklist is not yet satisfied. See "When to invoke" in the agent body for worked scenarios.
-model: ["@workflow_coder", "@workflow_coder_backup"]
+model: "@workflow_coder"
 color: green
 tools: ["read", "grep", "glob", "bash", "edit", "write", "lsp"]
 output:

@@ -44,7 +44,7 @@ Verification evidence from Coder:
 
 ## Result
 
-Return the schema in `.omp/agents/workflow-reviewer.md`: `approved` or
-`changes_requested`, concise summary, and concrete issues with severity,
-source location, evidence, and fix direction. Main verifies and persists the
-review record.
+Return the schema in `.omp/agents/workflow-reviewer.md`: `approved`,
+`changes_requested`, or `blocked`; concise summary; and concrete issues with
+severity, source location, evidence, and fix direction. Main verifies and
+persists the review record.

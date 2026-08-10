@@ -1,7 +1,7 @@
 ---
 name: workflow-security
 description: Use this agent when Main proposes a final pre-release security audit after implementation, review, and testing are essentially complete. Typical triggers include Main offering the optional security pass to Human and Human agreeing, a large new attack surface being added late in the project such as new auth flows or IPC, and STATE.yaml containing security.next_run set to pending with Human's prior consent. See "When to invoke" in the agent body for worked scenarios.
-model: ["@workflow_security", "@workflow_security_backup"]
+model: "@workflow_security"
 color: red
 tools: ["read", "grep", "glob", "bash", "lsp", "web_search"]
 output:

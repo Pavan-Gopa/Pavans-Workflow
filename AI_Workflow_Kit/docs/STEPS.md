@@ -25,9 +25,10 @@
 
 **Done when:**
 - [ ] …
-- [ ] tests/QA green
+- [ ] tests/QA green, or explicitly skipped by Human with a recorded reason
 
-**Stop-gate:** Reviewer APPROVED + Tester qa_green
+**Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
+(Tester qa_green | QA explicitly skipped by Human)
 ```
 
 ---
@@ -73,9 +74,10 @@
 
 **Done when:**
 - [ ] 
-- [ ] project tests green
+- [ ] project tests green, or QA explicitly skipped by Human with a recorded reason
 
-**Stop-gate:** Reviewer APPROVED + Tester qa_green
+**Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
+(Tester qa_green | QA explicitly skipped by Human)
 
 ---
 

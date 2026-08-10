@@ -44,5 +44,8 @@ Commands:
 ## Result
 
 Return the schema in `.omp/agents/workflow-tester.md`: `qa_green`, `bugs`, or
-`blocked`; commands and counts; new tests; failures/reproductions; summary.
-Main verifies and writes `REPORT.md`, `BUG_REPORT.md`, `FEEDBACK.md`, and state.
+`blocked`; commands and counts; every created or modified test path;
+failures/reproductions; summary. Main inspects the actual test diff for genuine
+product-behavior coverage and weakened assertions. A substantial test diff gets
+a short targeted Reviewer pass before Main writes `REPORT.md`, `BUG_REPORT.md`,
+`FEEDBACK.md`, and state.

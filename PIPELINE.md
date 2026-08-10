@@ -50,9 +50,11 @@ The Orchestrator saves a short version into `AI_Workflow_Kit/docs/PROJECT_CONTEX
 ### Architect (when planning is hard)
 
 Main dispatches `workflow-architect` as a fresh OMP task agent. For deep
-discovery it autoloads the `grilling` skill, may return focused questions, and
-ultimately returns an Architecture Package. It does not implement or persist
-plans. Main verifies and writes accepted plan/ADR changes.
+discovery it autoloads the `grilling` skill. Headless iterations return exact
+material questions and a checkpoint; Main transparently relays exact Human
+answers into the next fresh Architect. Only after explicit confirmation does the
+Architect return an Architecture Package. It never implements or persists
+plans; Main verifies and writes accepted plan/ADR changes.
 
 ---
 
@@ -69,8 +71,8 @@ Human ↔ Main Orchestrator only
 
 | Gate | Default | Human choice |
 |------|---------|--------------|
-| **Code review** | **On** every step | Skip only explicitly |
-| **Tester** | **Recommended on** | Opt out explicitly |
+| **Code review** | **On** every step | Explicit skip is recorded in state |
+| **Tester** | **Recommended on** | Explicit opt-out is recorded in state |
 | **Security** | **Offer once** near release | Optional, expensive |
 
 Workers never invent the pipeline, write workflow-state files, invoke another
@@ -82,7 +84,7 @@ worker, or commit. Main is the only workflow-state owner.
 
 | Role | Job |
 |------|-----|
-| **Orchestrator** | Reads state, decides next move, writes full kick prompts + model tips |
+| **Orchestrator** | Reads state, verifies results, and routes compact self-contained assignments through model aliases |
 | **Coder** | Implements the current step only |
 | **Reviewer** | Approves or requests changes |
 | **Tester** | Runs gate, finds coverage gaps, adds tests (no product fixes) |
@@ -107,6 +109,10 @@ Runtime aliases are in `.omp/config.yml`:
 
 Change either assignment through `Alt+M`; no agent prompt changes.
 
+Persistent worker model/provider failure pauses the workflow. Main records the
+failure and starts `workflow-<role>-backup` only after explicit Human
+authorization. Automatic cross-model fallback is disabled.
+
 ---
 
 ## Folder map
@@ -121,7 +127,7 @@ grilling/                         ← discovery skill
 AI_Workflow_Kit/
   docs/                           ← file-backed state, plans, reports
   script/omp_workflow.sh          ← OMP launcher
-  script/workflow_models.sh        ← model-pair validation + Main fallback overlay
+  script/workflow_models.sh        ← primary/backup model-pair validation
   script/graphify_rebuild.sh      ← Graphify refresh
 ```
 

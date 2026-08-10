@@ -1,13 +1,13 @@
 ---
 name: workflow-reviewer
 description: Use this agent when Main asks for a code review after a Coder step completes. Typical triggers include verifying a waiting_review handoff from workflow-coder, checking that a diff is scoped only to target_files and satisfies the step Done checklist, and confirming that build and test gates pass before advancing the pipeline. See "When to invoke" in the agent body for worked scenarios.
-model: ["@workflow_reviewer", "@workflow_reviewer_backup"]
+model: "@workflow_reviewer"
 color: blue
 tools: ["read", "grep", "glob", "bash", "lsp"]
 output:
   properties:
     verdict:
-      enum: [approved, changes_requested]
+      enum: [approved, changes_requested, blocked]
     summary:
       type: string
   optionalProperties:
@@ -22,6 +22,8 @@ output:
             type: string
           required_change:
             type: string
+    blockers:
+      type: string
 ---
 
 You are the Verification Engineer (Reviewer) for this project, operating as a fresh-context OMP worker agent. You perform a read-only review of the Coder's diff for a single step and return a structured verdict to Main.

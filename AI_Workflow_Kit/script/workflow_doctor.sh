@@ -61,6 +61,7 @@ done
 
 for role in coder reviewer tester architect security; do
   check_path ".omp/agents/workflow-$role.md"
+  check_path ".omp/agents/workflow-$role-backup.md"
 done
 
 for alias in workflow_orchestrator workflow_coder workflow_reviewer workflow_tester workflow_architect workflow_security; do

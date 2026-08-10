@@ -11,36 +11,55 @@
 #   bash AI_Workflow_Kit/script/checkpoint.sh rollback pre|post S1
 #
 # Env:
-#   WF_PROJECT_PREFIX  tag/commit prefix (default: proj)
-#   WF_STAGE_PATHS     space-separated paths relative to git root to stage
-#                      (default: auto — this project root as "." if nested repo,
-#                       or relative path from monorepo root to this project)
+#   WF_PROJECT_PREFIX   tag/commit prefix (default: proj)
+#   WF_STAGE_PATHS      explicit whitespace-separated paths relative to git root;
+#                       use newline separation for paths containing spaces.
+#                       Required whenever dirty work should be committed.
+#   WF_PUSH_CHECKPOINTS set to 1 to push branch and tag (default: local only)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PRODUCT_PREFIX="${WF_PROJECT_PREFIX:-proj}"
+PUSH_CHECKPOINTS="${WF_PUSH_CHECKPOINTS:-0}"
 
 die() { echo "error: $*" >&2; exit 1; }
+
+case "$PUSH_CHECKPOINTS" in
+  0|1) ;;
+  *) die "WF_PUSH_CHECKPOINTS must be 0 or 1" ;;
+esac
 
 cd "$PROJECT_ROOT"
 GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git work tree"
 cd "$GIT_ROOT"
 
-# Resolve what to stage
+# Resolve the explicitly authorized commit scope. With no scope, checkpoints may
+# tag a clean HEAD but never absorb working-tree changes.
+STAGE_PATHS=()
 if [[ -n "${WF_STAGE_PATHS:-}" ]]; then
-  # shellcheck disable=SC2206
-  STAGE_PATHS=($WF_STAGE_PATHS)
-elif [[ "$GIT_ROOT" == "$PROJECT_ROOT" ]]; then
-  STAGE_PATHS=(".")
-else
-  REL_FROM_ROOT="${PROJECT_ROOT#"$GIT_ROOT"/}"
-  if [[ "$REL_FROM_ROOT" == "$PROJECT_ROOT" || -z "$REL_FROM_ROOT" ]]; then
-    die "could not resolve project path relative to git root; set WF_STAGE_PATHS"
+  if [[ "$WF_STAGE_PATHS" == *$'\n'* ]]; then
+    while IFS= read -r stage_path; do
+      [[ -n "$stage_path" ]] && STAGE_PATHS+=("$stage_path")
+    done <<<"$WF_STAGE_PATHS"
+  else
+    # shellcheck disable=SC2206
+    STAGE_PATHS=($WF_STAGE_PATHS)
   fi
-  STAGE_PATHS=("$REL_FROM_ROOT")
 fi
+
+for ((i = 0; i < ${#STAGE_PATHS[@]}; i++)); do
+  stage_path="${STAGE_PATHS[$i]}"
+  stage_path="${stage_path#./}"
+  stage_path="${stage_path%/}"
+  [[ -n "$stage_path" ]] || die "WF_STAGE_PATHS contains an empty path"
+  [[ "$stage_path" != /* ]] || die "stage path must be relative to git root: $stage_path"
+  if [[ "/$stage_path/" == *"/../"* ]]; then
+    die "stage path may not traverse outside git root: $stage_path"
+  fi
+  STAGE_PATHS[$i]="$stage_path"
+done
 
 resolve_step() {
   local step="${1:-}"
@@ -56,46 +75,92 @@ resolve_step() {
 pre_tag_for()  { echo "${PRODUCT_PREFIX}/pre-${1}"; }
 post_tag_for() { echo "${PRODUCT_PREFIX}/${1}-done"; }
 
-has_remote_push() {
+resolve_push_remote() {
+  local remote
   local url
-  url="$(git remote get-url origin 2>/dev/null || true)"
-  if [[ -z "$url" ]]; then
-    url="$(git remote -v 2>/dev/null | awk '/\(push\)/{print $2; exit}')"
-  fi
-  [[ -n "$url" && "$url" != "DISABLED" && "$url" != *"DISABLED"* ]]
+  while IFS= read -r remote; do
+    [[ -n "$remote" ]] || continue
+    url="$(git remote get-url --push "$remote" 2>/dev/null || true)"
+    if [[ -n "$url" && "$url" != "DISABLED" && "$url" != *"DISABLED"* ]]; then
+      printf '%s\n' "$remote"
+      return 0
+    fi
+  done < <(git remote)
+  return 1
 }
 
-push_all() {
+push_checkpoint() {
   local tag="$1"
-  if has_remote_push; then
-    local remote
-    remote="$(git remote | head -1)"
+  if [[ "$PUSH_CHECKPOINTS" != "1" ]]; then
+    echo "checkpoint kept local (set WF_PUSH_CHECKPOINTS=1 to push branch and tag)"
+    return 0
+  fi
+  local remote
+  if remote="$(resolve_push_remote)"; then
     echo "→ git push $remote HEAD"
     git push -u "$remote" HEAD || echo "warn: push branch failed — local commit/tag kept"
     echo "→ git push $remote $tag"
     git push "$remote" "$tag" || echo "warn: push tag failed — local tag kept"
   else
-    echo "warn: no pushable remote (DISABLED or missing) — commit/tag are LOCAL ONLY"
-    echo "      human: enable remote and run: git push && git push --tags"
+    echo "warn: push requested but no pushable remote exists — commit/tag are LOCAL ONLY"
+  fi
+}
+
+changed_paths() {
+  git diff --name-only -z
+  git diff --cached --name-only -z
+  git ls-files --others --exclude-standard -z
+}
+
+path_is_allowed() {
+  local changed="$1"
+  local allowed
+  for allowed in "${STAGE_PATHS[@]}"; do
+    if [[ "$allowed" == "." || "$changed" == "$allowed" || "$changed" == "$allowed/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+assert_scope_safe() {
+  local changed
+  local unsafe=()
+  while IFS= read -r -d '' changed; do
+    if ! path_is_allowed "$changed"; then
+      unsafe+=("$changed")
+    fi
+  done < <(changed_paths)
+
+  if (( ${#unsafe[@]} > 0 )); then
+    echo "error: changed paths exist outside the authorized checkpoint scope:" >&2
+    printf '  %s\n' "${unsafe[@]}" >&2
+    if (( ${#STAGE_PATHS[@]} == 0 )); then
+      echo "Set WF_STAGE_PATHS explicitly, or commit/stash the changes before checkpointing." >&2
+    else
+      echo "Commit/stash unrelated changes or deliberately expand WF_STAGE_PATHS." >&2
+    fi
+    exit 1
   fi
 }
 
 stage_scoped() {
   local p
   for p in "${STAGE_PATHS[@]}"; do
-    if [[ "$p" == "." ]]; then
-      git add -A -- .
-    else
-      git add -A -- "$p"
-    fi
+    git add -A -- "$p"
   done
 }
 
 commit_if_dirty_scoped() {
   local message="$1"
+  assert_scope_safe
+  if (( ${#STAGE_PATHS[@]} == 0 )); then
+    echo "clean worktree and no WF_STAGE_PATHS — tagging current HEAD without a commit"
+    return 0
+  fi
   stage_scoped
   if git diff --cached --quiet; then
-    echo "nothing staged under project scope — no new commit"
+    echo "nothing staged under authorized scope — no new commit"
     return 0
   fi
   git commit -m "$message"
@@ -115,7 +180,7 @@ cmd_pre() {
   commit_if_dirty_scoped "chore(${PRODUCT_PREFIX}): checkpoint before ${step}"
   git tag -a "$tag" -m "${PRODUCT_PREFIX} checkpoint before ${step}"
   echo "created tag $tag → $(git rev-parse --short HEAD)"
-  push_all "$tag"
+  push_checkpoint "$tag"
   echo "PRE-CHECK DONE: $tag"
 }
 
@@ -131,15 +196,19 @@ cmd_post() {
   commit_if_dirty_scoped "feat(${PRODUCT_PREFIX}): ${step} — ${detail}"
   git tag -a "$tag" -m "${PRODUCT_PREFIX} ${step} done: ${detail}"
   echo "created tag $tag → $(git rev-parse --short HEAD)"
-  push_all "$tag"
+  push_checkpoint "$tag"
   echo "POST-CHECK DONE: $tag"
 }
 
 cmd_list() {
   echo "=== ${PRODUCT_PREFIX}/* tags ==="
   git tag -l "${PRODUCT_PREFIX}/*" --sort=creatordate
-  echo "=== stage paths ==="
-  printf '  %s\n' "${STAGE_PATHS[@]}"
+  echo "=== authorized stage paths ==="
+  if (( ${#STAGE_PATHS[@]} > 0 )); then
+    printf '  %s\n' "${STAGE_PATHS[@]}"
+  else
+    echo "  (none; dirty checkpoints require WF_STAGE_PATHS)"
+  fi
   echo "=== recent commits (15) ==="
   git log --oneline --decorate -15
 }
@@ -171,11 +240,13 @@ Usage:
   bash AI_Workflow_Kit/script/checkpoint.sh rollback pre|post <step>
 
 Env:
-  WF_PROJECT_PREFIX   default: proj
-  WF_STAGE_PATHS      paths relative to git root (default: auto)
+  WF_PROJECT_PREFIX    default: proj
+  WF_STAGE_PATHS       explicit paths relative to git root; required for dirty
+                       checkpoints. Use "." only to authorize the whole repo.
+  WF_PUSH_CHECKPOINTS  1 pushes branch and tag; default 0 keeps both local.
 
 Tags: <prefix>/pre-<step>, <prefix>/<step>-done
-Stages only this project scope — never whole monorepo by accident.
+Refuses changed paths outside WF_STAGE_PATHS.
 EOF
 }
 

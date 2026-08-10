@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Inspect primary/backup role assignments and build the runtime fallback overlay.
+# Inspect primary/backup role assignments for manual failover.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ACTION="${1:-status}"
-OUTPUT_PATH="${2:-}"
 
 if ! command -v omp >/dev/null 2>&1; then
   echo "ERROR: omp is not on PATH." >&2
@@ -18,17 +17,12 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 case "$ACTION" in
-  status|validate|overlay) ;;
+  status|validate) ;;
   *)
-    echo "Usage: $0 [status|validate|overlay <output-file>]" >&2
+    echo "Usage: $0 [status|validate]" >&2
     exit 2
     ;;
 esac
-
-if [[ "$ACTION" == "overlay" && -z "$OUTPUT_PATH" ]]; then
-  echo "ERROR: overlay requires an output file." >&2
-  exit 2
-fi
 
 cd "$PROJECT_ROOT"
 ROLES_JSON="$(mktemp -t pavans-workflow-roles.XXXXXX)"
@@ -36,19 +30,15 @@ CATALOG_JSON="$(mktemp -t pavans-workflow-models.XXXXXX)"
 trap 'rm -f "$ROLES_JSON" "$CATALOG_JSON"' EXIT
 
 omp config get modelRoles --json >"$ROLES_JSON"
-if [[ "$ACTION" != "overlay" ]]; then
-  omp models --json >"$CATALOG_JSON"
-else
-  printf '{"models":[]}' >"$CATALOG_JSON"
-fi
+omp models --json >"$CATALOG_JSON"
 
-python3 - "$ACTION" "$ROLES_JSON" "$CATALOG_JSON" "$OUTPUT_PATH" <<'PY'
+python3 - "$ACTION" "$ROLES_JSON" "$CATALOG_JSON" <<'PY'
 import json
 import re
 import sys
 from pathlib import Path
 
-ACTION, ROLES_PATH, CATALOG_PATH, OUTPUT_PATH = sys.argv[1:]
+ACTION, ROLES_PATH, CATALOG_PATH = sys.argv[1:]
 PAIRS = (
     ("Orchestrator", "workflow_orchestrator", "workflow_orchestrator_backup"),
     ("Architect", "workflow_architect", "workflow_architect_backup"),
@@ -112,27 +102,6 @@ def selector_identity(selector):
 def provider_of(selector):
     return selector.split("/", 1)[0] if selector and "/" in selector else None
 
-if ACTION == "overlay":
-    chains = {}
-    missing = []
-    for label, primary_role, backup_role in PAIRS:
-        backup = concrete_role(backup_role)
-        if backup and "/" in backup:
-            chains[primary_role] = [backup]
-        else:
-            missing.append(f"{label} ({backup_role})")
-    overlay = {
-        "retry": {
-            "enabled": True,
-            "modelFallback": True,
-            "fallbackRevertPolicy": "never",
-            "fallbackChains": chains,
-        }
-    }
-    Path(OUTPUT_PATH).write_text(json.dumps(overlay, indent=2) + "\n")
-    if missing:
-        print("WARN: no runtime fallback for " + ", ".join(missing), file=sys.stderr)
-    raise SystemExit(0)
 
 print("Role         Primary                                      Backup                                       Status")
 print("-----------  -------------------------------------------  -------------------------------------------  ----------------")

@@ -23,10 +23,13 @@ features or persists workflow documents.
    actual source/docs.
 3. For deep grilling, maintain the decision tree and Unknowns Tracker from
    `skill://grilling`.
-4. Return focused questions when Human judgment is still required.
-5. After explicit confirmation, return an Architecture Package with scope,
-   evidence, decisions, rejected alternatives, implementation phases, risks,
-   accepted assumptions, and proposed ADR/glossary text.
+4. In OMP's headless task-agent mode, return exact material questions plus a
+   grilling checkpoint. Main transparently relays the Human's exact answers to a
+   fresh Architect run.
+5. After explicit confirmation, return the full Markdown Architecture Package:
+   scope, success criteria, evidence, decisions and rejected alternatives,
+   solution structure, implementation phases, risks, assumptions, deferred
+   items, and only justified ADR/glossary proposals.
 
 ## Forbidden
 
@@ -55,7 +58,8 @@ Deliverable:
 
 ## Result
 
-Return the schema in `.omp/agents/workflow-architect.md`:
-`needs_human_input`, `design_ready`, or `blocked`; summary; material questions;
-and Architecture Package when ready. Main verifies, obtains any required Human
-approval, and persists accepted decisions.
+Return the schema in `.omp/agents/workflow-architect.md`: status and summary;
+material questions plus a Markdown grilling checkpoint when Human input is
+needed; or a complete Markdown Architecture Package when design is confirmed.
+ADR text is optional and threshold-based. Main verifies the result, obtains or
+relays Human approval, and persists accepted decisions.

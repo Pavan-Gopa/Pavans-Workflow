@@ -202,9 +202,13 @@ function parseRolePairs(source: string): RolePair[] {
 	}));
 }
 
+function isBackupAgent(agent: string): boolean {
+	return /-backup$/.test(agent);
+}
+
 function roleLabel(agent: string): string {
-	const normalized = agent.replace(/^workflow-/, "").replace(/^workflow_/, "");
-	return ({
+	const normalized = agent.replace(/^workflow-/, "").replace(/^workflow_/, "").replace(/-backup$/, "");
+	const label = ({
 		orchestrator: "Main Orchestrator",
 		architect: "Architect",
 		coder: "Coder",
@@ -212,6 +216,7 @@ function roleLabel(agent: string): string {
 		tester: "Tester / QA",
 		security: "Security Reviewer",
 	} as Record<string, string>)[normalized] ?? agent;
+	return isBackupAgent(agent) ? `${label} (Human-authorized backup)` : label;
 }
 
 function workflowPhase(state: WorkflowState, worker?: WorkerProgress): string {
@@ -327,7 +332,7 @@ function buildBody(data: DashboardData, width: number): Line[] {
 	lines.push({ text: "ACTIVE MODEL", tone: "accent" });
 	if (worker) {
 		lines.push({ text: `${roleLabel(worker.agent)}  [${worker.status}]  agent=${worker.id}` });
-		lines.push({ text: `Model: ${worker.resolvedModel ?? "resolving"}${worker.resolvedModelIsFallback ? "  [BACKUP ACTIVE]" : ""}` });
+		lines.push({ text: `Model: ${worker.resolvedModel ?? "resolving"}${worker.resolvedModelIsFallback || isBackupAgent(worker.agent) ? "  [BACKUP ACTIVE]" : ""}` });
 		const elapsed = Math.max(worker.durationMs ?? 0, Date.now() - worker.startedAt);
 		lines.push({ text: `Run: ${duration(elapsed)}  tools=${worker.toolCount ?? 0}  requests=${worker.requests ?? 0}  tokens=${worker.tokens ?? 0}` });
 		if (worker.lastIntent) for (const line of wrap(worker.lastIntent, width, "Intent: ")) lines.push({ text: line });
