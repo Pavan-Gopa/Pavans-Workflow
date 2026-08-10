@@ -95,32 +95,39 @@ graphify --version
 
 Graphify's code index is local and deterministic. Semantic extraction of docs/media requires a supported backend; without one, this workflow explicitly falls back to local AST code-only indexing.
 
-## 4. Choose a model for each role
+## 4. Complete first-run onboarding
 
-Launch OMP from the target project's root and press **Alt+M**, or run:
-
-```text
-/models
-```
-
-In the model selector's **Roles** view, choose each `workflow_*` role and assign
-an available provider/model plus reasoning level. Type in the selector to
-filter the available catalog.
-
-This template sets `modelRoleStorage: project`, so the UI persists these role
-assignments under `modelRoles` in the target project's `.omp/config.yml`.
-Manual YAML editing is not required.
-
-For a terminal listing or exact-name search:
+Launch:
 
 ```bash
-omp models
-omp models find <name>
+./AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Every role may use a different provider/model. Existing running workers keep
-the model resolved at launch; the next worker uses the changed assignment.
-Restart Main after changing `workflow_orchestrator`.
+Main opens onboarding before the first worker starts. Choose **Configure model
+pairs**, press **Alt+M**, and open the model selector's **Roles** view.
+
+Assign both entries for every role:
+
+```text
+workflow_<role>          primary model
+workflow_<role>_backup   backup model
+```
+
+Typing filters the available OMP catalog. Use different providers for the two
+entries when possible. `modelRoleStorage: project` makes the UI persist all
+assignments in the target project's `.omp/config.yml`.
+
+Return to Main and run `/workflow ready`. Main validates every primary and
+backup before dispatching work. Worker changes apply on their next spawn.
+Relaunch after changing either Orchestrator entry so its runtime fallback chain
+is rebuilt.
+
+Terminal inspection remains available:
+
+```bash
+AI_Workflow_Kit/script/workflow_models.sh status
+omp models find <name>
+```
 
 ## 5. Start
 
@@ -128,11 +135,11 @@ Restart Main after changing `workflow_orchestrator`.
 ./AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Or:
+Or launch OMP directly:
 
 ```bash
 omp --model @workflow_orchestrator
-/workflow start
+/workflow onboard
 ```
 
 Useful controls:

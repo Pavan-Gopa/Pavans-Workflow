@@ -1,7 +1,7 @@
 # Role contract: Architect
 
 OMP agent: `workflow-architect`  
-Model alias: `@workflow_architect`  
+Model pair: `@workflow_architect` → `@workflow_architect_backup`  
 Autoloaded skill: `grilling`
 
 Architect is a fresh, read-only research/design agent. It never implements

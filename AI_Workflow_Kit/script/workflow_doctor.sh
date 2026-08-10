@@ -35,18 +35,21 @@ check_path .omp/AGENTS.md
 check_path .omp/commands/workflow.md
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
+check_path AI_Workflow_Kit/script/workflow_models.sh
 
 for role in coder reviewer tester architect security; do
   check_path ".omp/agents/workflow-$role.md"
 done
 
 for alias in workflow_orchestrator workflow_coder workflow_reviewer workflow_tester workflow_architect workflow_security; do
-  if grep -q "^[[:space:]]*$alias:" .omp/config.yml; then
-    printf 'OK   model alias: %s\n' "$alias"
-  else
-    printf 'FAIL model alias: %s\n' "$alias" >&2
-    failures=$((failures + 1))
-  fi
+  for configured_role in "$alias" "${alias}_backup"; do
+    if grep -q "^[[:space:]]*$configured_role:" .omp/config.yml; then
+      printf 'OK   model alias: %s\n' "$configured_role"
+    else
+      printf 'FAIL model alias: %s\n' "$configured_role" >&2
+      failures=$((failures + 1))
+    fi
+  done
 done
 
 if [[ -f graphify-out/graph.json ]]; then

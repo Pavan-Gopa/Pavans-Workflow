@@ -1,7 +1,7 @@
 # Role contract: Verification Engineer (Reviewer)
 
 OMP agent: `workflow-reviewer`  
-Model alias: `@workflow_reviewer`
+Model pair: `@workflow_reviewer` → `@workflow_reviewer_backup`
 
 Review is required by default. Every review is a fresh, read-only task-agent
 session started only after Main verifies the Coder handoff and refreshes

@@ -1,7 +1,7 @@
 # Role contract: Security Reviewer
 
 OMP agent: `workflow-security`  
-Model alias: `@workflow_security`
+Model pair: `@workflow_security` → `@workflow_security_backup`
 
 Security is an optional, one-time pre-release audit. Main offers it only when
 feature work, review, and QA are essentially complete and the Human agrees.

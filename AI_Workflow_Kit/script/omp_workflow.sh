@@ -14,5 +14,9 @@ fi
 
 cd "$PROJECT_ROOT"
 
-INSTRUCTION="${*:-start}"
-exec omp --model "$OMP_MODEL" "/workflow $INSTRUCTION"
+INSTRUCTION="${*:-onboard}"
+FALLBACK_CONFIG="$(mktemp -t pavans-workflow-fallback.XXXXXX)"
+trap 'rm -f "$FALLBACK_CONFIG"' EXIT
+
+"$SCRIPT_DIR/workflow_models.sh" overlay "$FALLBACK_CONFIG"
+omp --config "$FALLBACK_CONFIG" --model "$OMP_MODEL" "/workflow $INSTRUCTION"

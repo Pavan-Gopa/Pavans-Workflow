@@ -76,10 +76,10 @@ cat <<'MESSAGE'
 Pavan's Workflow is installed.
 
 Next:
-  1. Run: omp models
-  2. Edit .omp/config.yml modelRoles.workflow_* mappings as desired.
-  3. Launch: ./AI_Workflow_Kit/script/omp_workflow.sh
-  4. Press Alt+A in OMP to supervise active workers.
+  1. Launch: ./AI_Workflow_Kit/script/omp_workflow.sh
+  2. Follow the first-run onboarding screen.
+  3. Press Alt+M to assign a primary and backup model to every workflow role.
+  4. Press Alt+A to supervise active workers.
 
 OMP loads the project agents, /workflow command, and grilling skill automatically.
 MESSAGE

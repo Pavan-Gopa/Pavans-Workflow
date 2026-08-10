@@ -10,6 +10,19 @@ This project runs its established workflow inside one OMP session.
 - Workers never commit, tag, push, invoke another worker, or send work directly to another worker. Their only normal handoff is their structured task result to `Main`.
 - Run one specialized worker at a time. Every retry is a new task agent session.
 
+## Onboarding and model failover
+
+- Before the first worker, Main completes the `STATE.yaml` onboarding gate.
+- `Alt+M` configures paired `workflow_<role>` and
+  `workflow_<role>_backup` aliases through OMP's native Roles selector.
+- Worker agent definitions list primary then backup; OMP performs runtime
+  failover for quota walls, repeated `429` responses, and provider outages.
+- `omp_workflow.sh` resolves the Orchestrator backup into a runtime fallback
+  chain. Relaunch Main after changing either Orchestrator alias.
+- Main never interprets failover as task success; repository and test
+  verification remain mandatory.
+
+
 ## Source of truth
 
 Conversation history is not authoritative. Before every routing or stage transition, `Main` rereads:

@@ -1,7 +1,7 @@
 ---
 name: workflow-architect
 description: Use this agent when Main needs a research-backed design decision or a detailed implementation plan before Coder work can begin safely. Typical triggers include a vague or branching design question that would cause a Coder to guess, a Coder failing the same step three or more times due to a design blocker, and a Human asking "how should we structure X" or requesting a technology trade-off analysis. See "When to invoke" in the agent body for worked scenarios.
-model: "@workflow_architect"
+model: ["@workflow_architect", "@workflow_architect_backup"]
 autoloadSkills: ["grilling"]
 color: cyan
 tools: ["read", "grep", "glob", "bash", "lsp", "web_search"]

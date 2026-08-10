@@ -7,6 +7,17 @@ modelRoles:
   workflow_tester: openai-codex/gpt-5.6-terra:max
   workflow_architect: openai-codex/gpt-5.6-sol:xhigh
   workflow_security: nvidia/z-ai/glm-5.2:max
+  workflow_orchestrator_backup: google-antigravity/gemini-3.6-flash:high
+  workflow_coder_backup: google-antigravity/gemini-3.6-flash:high
+  workflow_reviewer_backup: openai-codex/gpt-5.6-sol:high
+  workflow_tester_backup: google-antigravity/gemini-3.6-flash:high
+  workflow_architect_backup: google-antigravity/gemini-3.6-flash:high
+  workflow_security_backup: openai-codex/gpt-5.6-sol:max
+
+retry:
+  enabled: true
+  modelFallback: true
+  fallbackRevertPolicy: never
 
 async:
   enabled: true

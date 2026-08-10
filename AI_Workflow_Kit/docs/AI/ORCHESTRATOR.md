@@ -16,7 +16,7 @@ Preferred:
 ./AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Equivalent: launch `omp` from the project root and run `/workflow start`.
+Equivalent: launch `omp` from the project root and run `/workflow onboard`.
 
 At start, read:
 
@@ -26,8 +26,15 @@ At start, read:
 4. `PROJECT_CONTEXT.md`, `STEPS.md`, `STATE.yaml`, `DECISIONS.md`
 5. feedback/reports relevant to the current gate
 
-If project context is missing, ask the Human for it. Otherwise reconstruct the
-current stage from files and continue.
+Before the first worker, honor `onboarding.status`. Run
+`AI_Workflow_Kit/script/workflow_models.sh status`, show the primary/backup
+pairs, and direct configuration through `Alt+M`. `/workflow ready` must pass
+`workflow_models.sh validate` before Main marks onboarding complete. If either
+Orchestrator alias changed, tell the Human to relaunch so the launcher's runtime
+fallback overlay uses the new backup.
+
+If project context is missing after onboarding, ask the Human for it. Otherwise
+reconstruct the current stage from files and continue.
 
 ## Source-of-truth discipline
 
@@ -42,13 +49,13 @@ verify its claims before recording a result or moving the workflow.
 
 Dispatch workers through OMP `task`:
 
-| Role | Project agent | Model alias | When |
-|------|---------------|-------------|------|
-| Coder | `workflow-coder` | `@workflow_coder` | Implementation/fix |
-| Reviewer | `workflow-reviewer` | `@workflow_reviewer` | After verified Coder handoff |
-| Tester | `workflow-tester` | `@workflow_tester` | After approved review, when enabled |
-| Architect | `workflow-architect` | `@workflow_architect` | Design uncertainty, deep grilling, thrash |
-| Security | `workflow-security` | `@workflow_security` | Optional one-time pre-release audit |
+| Role | Project agent | Primary | Backup | When |
+|------|---------------|---------|--------|------|
+| Coder | `workflow-coder` | `@workflow_coder` | `@workflow_coder_backup` | Implementation/fix |
+| Reviewer | `workflow-reviewer` | `@workflow_reviewer` | `@workflow_reviewer_backup` | After verified Coder handoff |
+| Tester | `workflow-tester` | `@workflow_tester` | `@workflow_tester_backup` | After approved review, when enabled |
+| Architect | `workflow-architect` | `@workflow_architect` | `@workflow_architect_backup` | Design uncertainty, deep grilling, thrash |
+| Security | `workflow-security` | `@workflow_security` | `@workflow_security_backup` | Optional one-time pre-release audit |
 
 Each run:
 

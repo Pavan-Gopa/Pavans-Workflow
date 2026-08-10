@@ -1,7 +1,7 @@
 # Pipeline — multi-model, multi-agent OMP workflow
 
-Drop this kit into any project. Choose a model alias per role, then control the
-entire fresh-context agent loop through one OMP Main session.
+Drop this kit into any project. Choose a primary and backup model alias per
+role, then control the fresh-context agent loop through one OMP Main session.
 
 ---
 
@@ -13,12 +13,14 @@ Run from the project root:
 ./AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Equivalent: launch `omp`, then run `/workflow start`.
+Equivalent: launch `omp`, then run `/workflow onboard`.
 
 OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, and the
-`grilling` skill. Main reads the file-backed workflow and asks for project
-context when `STATE.yaml` is still at bootstrap. Do not start a separate worker
-terminal or copy a kick prompt.
+`grilling` skill. On first launch, Main shows onboarding and validates all
+primary/backup model pairs before dispatching a worker. Press `Alt+M` to
+configure roles, then run `/workflow ready`. After onboarding, Main reads the
+file-backed workflow and asks for missing project context. Do not start a
+separate worker terminal or copy a kick prompt.
 
 ---
 
@@ -92,16 +94,17 @@ worker, or commit. Main is the only workflow-state owner.
 Canonical recommendations: `AI_Workflow_Kit/docs/AI/MODELS.md`.
 Runtime aliases are in `.omp/config.yml`:
 
-| Role | Alias |
-|------|-------|
-| Orchestrator | `@workflow_orchestrator` |
-| Coder | `@workflow_coder` |
-| Reviewer | `@workflow_reviewer` |
-| Tester | `@workflow_tester` |
-| Architect | `@workflow_architect` |
-| Security | `@workflow_security` |
+| Role | Primary | Backup |
+|------|---------|--------|
+| Orchestrator | `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
+| Coder | `@workflow_coder` | `@workflow_coder_backup` |
+| Reviewer | `@workflow_reviewer` | `@workflow_reviewer_backup` |
+| Tester | `@workflow_tester` | `@workflow_tester_backup` |
+| Architect | `@workflow_architect` | `@workflow_architect_backup` |
+| Security | `@workflow_security` | `@workflow_security_backup` |
 
-Change an alias mapping to switch one role's model without editing its agent.
+Change either assignment through `Alt+M`; no agent prompt changes.
+
 ---
 
 ## Folder map
@@ -116,6 +119,7 @@ grilling/                         ← discovery skill
 AI_Workflow_Kit/
   docs/                           ← file-backed state, plans, reports
   script/omp_workflow.sh          ← OMP launcher
+  script/workflow_models.sh        ← model-pair validation + Main fallback overlay
   script/graphify_rebuild.sh      ← Graphify refresh
 ```
 

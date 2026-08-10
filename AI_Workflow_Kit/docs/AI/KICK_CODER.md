@@ -1,7 +1,7 @@
 # Role contract: Implementation Engineer (Coder)
 
 OMP agent: `workflow-coder`  
-Model alias: `@workflow_coder`
+Model pair: `@workflow_coder` → `@workflow_coder_backup`
 
 Each run is a fresh task-agent session. Main supplies one complete assignment.
 

@@ -1,7 +1,7 @@
 ---
 name: workflow-reviewer
 description: Use this agent when Main asks for a code review after a Coder step completes. Typical triggers include verifying a waiting_review handoff from workflow-coder, checking that a diff is scoped only to target_files and satisfies the step Done checklist, and confirming that build and test gates pass before advancing the pipeline. See "When to invoke" in the agent body for worked scenarios.
-model: "@workflow_reviewer"
+model: ["@workflow_reviewer", "@workflow_reviewer_backup"]
 color: blue
 tools: ["read", "grep", "glob", "bash", "lsp"]
 output:

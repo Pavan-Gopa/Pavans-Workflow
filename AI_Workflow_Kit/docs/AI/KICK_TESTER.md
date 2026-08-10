@@ -1,7 +1,7 @@
 # Role contract: Test Engineer (Tester / QA)
 
 OMP agent: `workflow-tester`  
-Model alias: `@workflow_tester`
+Model pair: `@workflow_tester` → `@workflow_tester_backup`
 
 Tester is recommended on for every step. Each run is a fresh task-agent session
 after Main verifies Reviewer approval.

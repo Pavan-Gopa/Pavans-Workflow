@@ -1,11 +1,36 @@
 ---
 description: Advance the file-backed multi-agent workflow
-argument-hint: [start|status|next|human instruction]
+argument-hint: [onboard|setup|ready|start|status|next|human instruction]
 ---
 
 Act as the sole Orchestrator for this project. Treat `$ARGUMENTS` as the Human's latest instruction, not as workflow state.
 
 Read `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`, `TEAM_CONTRACT.md`, `MODELS.md`, `STATE.yaml`, `AI_Workflow_Kit/docs/STEPS.md`, `PROJECT_CONTEXT.md`, `DECISIONS.md`, and the feedback/report files relevant to the current gate. Inspect repository status and actual source/test evidence before deciding.
+
+## Onboarding
+
+Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
+
+- For `onboard`, `setup`, or an incomplete onboarding state, run
+  `AI_Workflow_Kit/script/workflow_models.sh status` and show a concise welcome
+  screen explaining Main, fresh workers, primary/backup model pairs, `Alt+M`
+  model selection, `Alt+A` supervision, file-backed state, and automatic
+  failover. Do not dispatch a worker yet.
+- Use the interactive `ask` tool with these choices: **Configure model pairs**,
+  **Use current pairs and start**, **Explain failover**, and **Pause here**.
+- If the Human chooses configuration, tell them to press `Alt+M`, open the
+  **Roles** view, and assign both `workflow_<role>` and
+  `workflow_<role>_backup`. Then wait for `/workflow ready`.
+- On `ready`, run `AI_Workflow_Kit/script/workflow_models.sh validate`. Only
+  when it succeeds, set `onboarding.status: complete`,
+  `model_pairs_confirmed: true`, and `completed_at` to the current ISO timestamp.
+  Explain that worker changes apply on their next spawn and that changing either
+  Orchestrator model requires relaunching `omp_workflow.sh` to rebuild Main's
+  runtime fallback chain. Continue immediately when no relaunch is needed.
+- If onboarding is already complete, show a one-line readiness banner and
+  continue. `setup` explicitly reopens the full onboarding screen.
+
+## Automatic workflow
 
 Advance the established workflow automatically inside this OMP session:
 

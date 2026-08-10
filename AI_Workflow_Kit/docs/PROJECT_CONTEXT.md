@@ -47,8 +47,9 @@ Launch from this project root:
 ./AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Project agents and model aliases live in `.omp/`. The Human may change any
-`modelRoles.workflow_*` mapping without changing role instructions.
+Project agents and primary/backup model aliases live in `.omp/`. The Human may
+change any `modelRoles.workflow_*` mapping through `Alt+M` without changing role
+instructions.
 
 ## Build / test commands
 
