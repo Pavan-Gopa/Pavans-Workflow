@@ -155,9 +155,20 @@ Useful controls:
 - `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
-- `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, and provider-quota panel.
+- `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, local-metrics, and provider-quota panel.
+- `/workflow metrics` — show the passive local workflow report.
+- `/workflow metrics rate good|overkill|underchecked [step]` — add an optional Human rating.
+- `/workflow metrics reset` — delete only local telemetry and start fresh.
 - `/pause` — pause Main and subagents at safe boundaries.
 - `continue <role> with backup` — authorize one fresh backup worker after a recorded model/provider failure.
+
+Metrics use the Python standard-library runtime already required by Graphify.
+Events default to
+`<git-common-dir>/pavans-workflow/metrics/events.jsonl`; the helper resolves the
+Git common directory rather than assuming `.git`, so worktrees remain correct.
+The store is outside the worktree and cannot enter commits. No historical data
+is reconstructed. See `AI_Workflow_Kit/docs/AI/METRICS.md`.
+
 
 ## Update
 

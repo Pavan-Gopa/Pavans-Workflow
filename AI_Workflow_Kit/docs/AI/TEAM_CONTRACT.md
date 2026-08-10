@@ -19,7 +19,7 @@ Higher wins on conflict. Plan vs code conflict → **Architect** before large Co
 
 | Role | Writes product code? | Job / write boundary |
 |------|----------------------|----------------------|
-| **Main Orchestrator** | No | Sole owner of state, plans, feedback, reports, routing, checkpoints |
+| **Main Orchestrator** | No | Sole owner of state, plans, feedback, reports, routing, checkpoints, and passive metrics recording |
 | **Coder** | Yes, assignment target files only | One implementation/fix; structured result to Main |
 | **Reviewer** | No | Read-only verdict and findings |
 | **Tester** | Tests / QA scripts only | Gate, gap-hunt, structured evidence |
@@ -121,9 +121,11 @@ Do not send bugs to another worker directly. Do not put live secrets in output.
 7. Graphify first when current; verify in real source.
 8. Fresh worker context for every role run and retry.
 9. Main verifies repository/test evidence before every transition.
-10. Stop three materially identical failures of the same approach and surface
+10. Passive metrics are Main-only observation. Telemetry failure never changes
+    workflow state, gates, retries, failover, recovery, checkpoints, or routing.
+11. Stop three materially identical failures of the same approach and surface
     the blocker; changed approaches/evidence/failure states are progress.
-11. Three failed Coder runs never authorize Main to write product code; stop,
+12. Three failed Coder runs never authorize Main to write product code; stop,
     route to Architect when appropriate, or request Human direction.
 
 ---

@@ -1,11 +1,29 @@
 ---
 description: Advance the file-backed multi-agent workflow
-argument-hint: [onboard|setup|ready|start|status|update|update check|next|human instruction]
+argument-hint: [onboard|setup|ready|start|status|metrics|metrics rate|metrics reset|update|update check|next|human instruction]
 ---
 
 Act as the sole Orchestrator for this project. Treat `$ARGUMENTS` as the Human's latest instruction, not as workflow state.
 
 Read `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`, `TEAM_CONTRACT.md`, `MODELS.md`, `STATE.yaml`, `AI_Workflow_Kit/docs/STEPS.md`, `PROJECT_CONTEXT.md`, `DECISIONS.md`, and the feedback/report files relevant to the current gate. Inspect repository status and actual source/test evidence before deciding.
+
+## Passive workflow metrics
+
+Handle arguments beginning with `metrics` before onboarding, update, or product
+routing. Metrics never mutate workflow state or select the next actor.
+
+- For `metrics`, run
+  `bash AI_Workflow_Kit/script/workflow_metrics.sh report`, return the complete
+  human-readable report, and stop.
+- For `metrics rate good`, `metrics rate overkill`, or
+  `metrics rate underchecked`, run the helper's `rate` command. If a step follows
+  the rating, pass it with `--step`; otherwise the helper uses the latest
+  completed step. Return the result and stop.
+- For the explicit `metrics reset` instruction, run
+  `bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes`, report the exact
+  files removed, and stop. The reset touches telemetry only.
+- Follow `AI_Workflow_Kit/docs/AI/METRICS.md` for event keys, candidate linkage,
+  taxonomy, transition instrumentation, privacy, and failure behavior.
 
 ## Explicit workflow update
 
@@ -43,7 +61,7 @@ Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 - For `onboard`, `setup`, or an incomplete onboarding state, run
   `bash AI_Workflow_Kit/script/workflow_models.sh status` and show a concise
   welcome screen explaining Main, fresh workers, primary/backup model pairs,
-  `Alt+M` model selection, `Alt+W` live workflow/model/quota dashboard, `Alt+A`
+  `Alt+M` model selection, `Alt+W` live workflow/model/metrics/quota dashboard, `Alt+A`
   supervision, file-backed state, and Human-authorized backup retry. Do not
   dispatch a worker yet.
 - Use the interactive `ask` tool with these choices: **Configure model pairs**,
@@ -103,6 +121,9 @@ Advance the established workflow automatically inside this OMP session:
   they are substantial;
 - use focused Graphify navigation when a current graph exists, then verify against real source;
 - never ask a worker to route or contact another worker.
+- record passive local events at the exact verified Main transitions defined in
+  `AI_Workflow_Kit/docs/AI/METRICS.md`; a metrics warning or missing store/helper
+  never blocks, retries, advances, or otherwise changes the workflow;
 
 For quick grilling, read and apply `skill://grilling` in `Main`. For deep
 grilling, spawn `workflow-architect`; transparently relay its exact questions

@@ -37,6 +37,17 @@ Conversation history is not authoritative. Before every routing or stage transit
 
 On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer success from a worker exiting.
 
+## Passive metrics boundary
+
+- Main alone records local workflow events after the existing transition has
+  been verified. Workers never write or receive telemetry context.
+- `AI_Workflow_Kit/docs/AI/METRICS.md` is the schema, formula, storage, privacy,
+  and instrumentation source of truth.
+- Metrics are append-only observation. Missing/corrupt storage, helper failure,
+  report failure, or dashboard failure never changes state, gates, retries,
+  recovery, failover, checkpoints, or routing.
+- `/workflow metrics` is read-only. Metrics reset deletes telemetry only.
+
 ## Orchestration loop
 
 1. Reconstruct the current step from files. At startup/resume reconcile any

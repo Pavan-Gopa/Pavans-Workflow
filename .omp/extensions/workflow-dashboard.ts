@@ -7,6 +7,8 @@ const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
 const STEPS_PATH = "AI_Workflow_Kit/docs/STEPS.md";
 const CONFIG_PATH = ".omp/config.yml";
 const QUOTA_REFRESH_MS = 60_000;
+const METRICS_REFRESH_MS = 15_000;
+const METRICS_HELPER_PATH = "AI_Workflow_Kit/script/workflow_metrics.sh";
 
 type Tone = "normal" | "accent" | "muted";
 type ThemeLike = { fg: (tone: "accent" | "muted", text: string) => string };
@@ -83,10 +85,36 @@ type QuotaSnapshot = {
 	disabledCredentials?: Array<{ provider?: string }>;
 };
 
+type MetricRatio = {
+	count: number;
+	total: number;
+	rate_pct?: number | null;
+};
+
+type MetricsReport = {
+	available?: boolean;
+	error?: string;
+	storage?: { data_since?: string | null };
+	summary?: {
+		completed_steps?: number;
+		first_pass_step_success?: MetricRatio;
+		average_coder_attempts?: number | null;
+		reviewer_rejection?: MetricRatio;
+		qa_escape?: MetricRatio;
+		architect_escalation?: MetricRatio;
+		advisor_usage?: MetricRatio;
+		repeated_failure_incidents?: number;
+		runtime_interruption?: MetricRatio;
+		model_failure?: MetricRatio;
+	};
+};
+
 type DashboardData = {
 	state: WorkflowState;
 	steps: StepCard[];
 	rolePairs: RolePair[];
+	metrics?: MetricsReport;
+	metricsError?: string;
 	quota?: QuotaSnapshot;
 	quotaError?: string;
 	quotaFetchedAt?: number;
@@ -99,6 +127,7 @@ let mainActivity = "Ready";
 let listenersInstalled = false;
 let activePanel: WorkflowDashboard | undefined;
 let quotaCache: { data?: QuotaSnapshot; error?: string; fetchedAt: number } = { fetchedAt: 0 };
+let metricsCache: { data?: MetricsReport; error?: string; fetchedAt: number } = { fetchedAt: 0 };
 
 function cleanScalar(value: string | undefined, fallback = "-"): string {
 	if (!value) return fallback;
@@ -261,6 +290,11 @@ function duration(value?: number): string {
 	return `${minutes}m ${seconds % 60}s`;
 }
 
+function metricRatio(value?: MetricRatio): string {
+	if (!value || value.rate_pct === null || value.rate_pct === undefined) return "n/a";
+	return `${value.rate_pct.toFixed(1)}%`;
+}
+
 function resetIn(resetsAt?: number): string {
 	if (!resetsAt) return "";
 	const delta = resetsAt - Date.now();
@@ -333,6 +367,20 @@ async function refreshQuota(pi: ExtensionAPI, cwd: string, force = false): Promi
 	}
 }
 
+async function refreshMetrics(pi: ExtensionAPI, cwd: string, force = false): Promise<void> {
+	if (!force && Date.now() - metricsCache.fetchedAt < METRICS_REFRESH_MS) return;
+	metricsCache = { ...metricsCache, fetchedAt: Date.now() };
+	try {
+		const result = await pi.exec("bash", [METRICS_HELPER_PATH, "report", "--json"], { cwd, timeout: 10_000 });
+		if (result.code !== 0) throw new Error(result.stderr.trim() || `metrics helper exited ${result.code}`);
+		const data = JSON.parse(result.stdout) as MetricsReport;
+		if (data.available === false) throw new Error(data.error ?? "metrics unavailable");
+		metricsCache = { data, fetchedAt: Date.now() };
+	} catch (error) {
+		metricsCache = { error: error instanceof Error ? error.message : String(error), fetchedAt: Date.now() };
+	}
+}
+
 function currentWorker(): WorkerProgress | undefined {
 	return [...liveWorkers.values()]
 		.filter(worker => worker.status === "running" || worker.status === "pending")
@@ -355,6 +403,28 @@ function buildBody(data: DashboardData, width: number): Line[] {
 	for (const line of wrap(state.stepDescription, width, "  ")) lines.push({ text: line, tone: "muted" });
 	if (state.interruptionStatus !== "-" && state.interruptionStatus !== "none") {
 		lines.push({ text: `Recovery: ${state.interruptionStatus}`, tone: "muted" });
+	}
+	lines.push({ text: "" });
+
+	lines.push({ text: "LOCAL WORKFLOW METRICS", tone: "accent" });
+	if (data.metricsError || !data.metrics?.summary) {
+		lines.push({ text: `Unavailable: ${data.metricsError ?? "no valid metrics report"}`, tone: "muted" });
+		lines.push({ text: "Metrics never block workflow execution.", tone: "muted" });
+	} else {
+		const metrics = data.metrics.summary;
+		lines.push({
+			text: `Completed=${metrics.completed_steps ?? 0}  First-pass=${metricRatio(metrics.first_pass_step_success)}  Avg Coder=${metrics.average_coder_attempts ?? "n/a"}`,
+		});
+		lines.push({
+			text: `Review reject=${metricRatio(metrics.reviewer_rejection)}  QA escape=${metricRatio(metrics.qa_escape)}`,
+		});
+		lines.push({
+			text: `Interruptions=${metricRatio(metrics.runtime_interruption)}  Model fail=${metricRatio(metrics.model_failure)}  Repeats=${metrics.repeated_failure_incidents ?? 0}`,
+		});
+		lines.push({
+			text: `Architect=${metricRatio(metrics.architect_escalation)}  Advisor=${metricRatio(metrics.advisor_usage)}  Since=${data.metrics.storage?.data_since ?? "no events"}`,
+			tone: "muted",
+		});
 	}
 	lines.push({ text: "" });
 
@@ -472,9 +542,14 @@ class WorkflowDashboard implements Component {
 		this.refreshing = true;
 		try {
 			const files = await readDashboardFiles(this.ctx.cwd);
-			await refreshQuota(this.pi, this.ctx.cwd, forceQuota);
+			await Promise.all([
+				refreshQuota(this.pi, this.ctx.cwd, forceQuota),
+				refreshMetrics(this.pi, this.ctx.cwd, forceQuota),
+			]);
 			this.data = {
 				...files,
+				metrics: metricsCache.data,
+				metricsError: metricsCache.error,
 				quota: quotaCache.data,
 				quotaError: quotaCache.error,
 				quotaFetchedAt: quotaCache.fetchedAt,
@@ -546,7 +621,7 @@ class WorkflowDashboard implements Component {
 		const rows = [
 			border,
 			renderLine({ text: title, tone: "accent" }),
-			renderLine({ text: "Alt+W/Esc/q close  Up/Down/PgUp/PgDn scroll  r refresh quota", tone: "muted" }),
+			renderLine({ text: "Alt+W/Esc/q close  Up/Down/PgUp/PgDn scroll  r refresh metrics + quota", tone: "muted" }),
 			border,
 			...visible.map(renderLine),
 		];

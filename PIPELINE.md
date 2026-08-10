@@ -19,8 +19,8 @@ OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, dashboard
 extension, and `grilling` skill. On first launch, Main shows onboarding and
 validates all primary/backup model pairs before dispatching a worker. Press
 `Alt+M` to configure roles, then run `/workflow ready`. Press `Alt+W` at any
-time to inspect live step progress, the active model, and provider quota;
-`Alt+A` opens the detailed Agent Hub. After onboarding, Main reads the
+time to inspect live step progress, the active model, passive local metrics, and
+provider quota; `Alt+A` opens the detailed Agent Hub. After onboarding, Main reads the
 file-backed workflow and asks for missing project context. Do not start a
 separate worker terminal or copy a kick prompt.
 
@@ -156,3 +156,5 @@ AI_Workflow_Kit/
 7. Stop only materially identical failures of the same approach after three
    attempts; preserve compact verified retry memory.
 8. Reconcile stale runtime state before routing.
+9. Passive local metrics observe verified Main transitions only; telemetry
+   failure never changes state, gates, retries, or routing.

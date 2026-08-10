@@ -239,6 +239,44 @@ snapshot, never the source of truth.
 - Main alone persists the confirmed Architecture Package, ADRs, glossary, and
   downstream steps.
 
+## Passive local metrics
+
+Read `METRICS.md` before the first product transition. It is the canonical event
+schema, formula, privacy, and CLI contract. Metrics observe Main's existing
+transitions; they never create a transition.
+
+Only Main invokes `workflow_metrics.sh`. Workers keep their current role and
+output contracts and never write telemetry. After the underlying transition is
+verified normally, record:
+
+```text
+step opened -> step_started
+task accepted -> worker_started
+verified worker result -> worker_result
+verified product/workflow failure -> failure
+runtime reconciliation -> runtime_interruption
+persistent model/provider blocker -> model_failure
+explicit Human gate skip -> gate_skipped
+retry safeguard threshold -> retry_safeguard_triggered
+verified full Stop-gate -> step_completed
+```
+
+Use the OMP run/agent id as `run_id`. A Coder run id is also the candidate id
+carried through product Reviewer and Tester events. Mark targeted review of a
+Tester-authored diff as `review_kind: test_diff`; it must not be counted as a
+normal product rejection. Record actual resolved provider/model only when OMP
+exposes them; never guess.
+
+The helper generates timestamps, validates a bounded allowlist, and deduplicates
+stable `event_key` values. A warning, absent/corrupt store, missing runtime, or
+dashboard/report error is observational only: continue the normal state update
+and routing. Never write a metrics failure to `STATE.yaml`, increment
+`retry_guard`, dispatch a worker, or change a gate because of telemetry.
+
+`/workflow metrics` is read-only. Human ratings are optional and separate from
+workflow success. `/workflow metrics reset` deletes only local telemetry and
+does not modify canonical workflow files.
+
 ## Checkpoints
 
 Only Main runs checkpoints. It derives `WF_STAGE_PATHS` from the current step's
@@ -267,8 +305,8 @@ transcript. The Human can steer or kill a worker there. After a kill or steer,
 Main verifies actual repository state before continuing.
 
 `Alt+W` opens the read-only workflow dashboard: current step and checklist,
-gate progress, active role/model/manual-backup status, and redacted provider
-quota.
+gate progress, active role/model/manual-backup status, passive local workflow
+metrics, and redacted provider quota.
 Use Agent Hub for transcripts, steering, and termination.
 
 ## Forbidden

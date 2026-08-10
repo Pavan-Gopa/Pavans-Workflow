@@ -349,7 +349,10 @@ Useful controls:
 | Check upstream workflow updates | `/workflow update check` |
 | Conservatively update workflow framework | `/workflow update` |
 | Redirect Main | `/workflow <new instruction>` |
-| Open live workflow/model/quota panel | `Alt+W` or `/workflow-dashboard` |
+| Open live workflow/model/metrics/quota panel | `Alt+W` or `/workflow-dashboard` |
+| View passive local workflow metrics | `/workflow metrics` |
+| Rate the latest completed step | `/workflow metrics rate good`, `overkill`, or `underchecked` |
+| Delete local telemetry only | `/workflow metrics reset` |
 | Inspect/steer/kill workers | `Alt+A` |
 | Pause Main and workers safely | `/pause` |
 | Change role model assignments | `Alt+M` or `/models` |
@@ -365,19 +368,27 @@ Useful controls:
   config.yml                  role aliases and task lifecycle
   agents/                     five roles + five manual backup execution variants
   commands/workflow.md        orchestration entry point
-  extensions/workflow-dashboard.ts live workflow/model/quota panel
+  extensions/workflow-dashboard.ts live workflow/model/metrics/quota panel
 grilling/                     discovery and decision skill
 AI_Workflow_Kit/
   docs/                       state, plans, role contracts, reports
+  docs/AI/METRICS.md            passive observer schema and formulas
   script/omp_workflow.sh      launcher
   script/workflow_models.sh    primary/backup model-pair validation
   script/graphify_rebuild.sh  Graphify refresh
   script/workflow_doctor.sh   installation/configuration check
+  script/workflow_metrics.sh    local event writer/report/reset/selftest
   script/checkpoint.sh        scoped Git checkpoints
 PIPELINE.md                   concise process overview
 INSTALL.md                    full installation guide
 install.sh                    safe template installer
 ```
+
+Workflow metrics are local append-only JSONL under Git's private common
+directory, not the worktree. They cannot enter commits and never control routing
+or gates. Collection starts when the first new event is recorded; existing
+history is not backfilled. See `AI_Workflow_Kit/docs/AI/METRICS.md`.
+
 
 ## Update the workflow
 
