@@ -12,7 +12,7 @@ Read `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`, `TEAM_CONTRACT.md
 Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 
 - For `onboard`, `setup`, or an incomplete onboarding state, run
-  `AI_Workflow_Kit/script/workflow_models.sh status` and show a concise welcome
+  `bash AI_Workflow_Kit/script/workflow_models.sh status` and show a concise welcome
   screen explaining Main, fresh workers, primary/backup model pairs, `Alt+M`
   model selection, `Alt+W` live workflow/model/quota dashboard, `Alt+A`
   supervision, file-backed state, and automatic failover. Do not dispatch a
@@ -22,7 +22,7 @@ Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 - If the Human chooses configuration, tell them to press `Alt+M`, open the
   **Roles** view, and assign both `workflow_<role>` and
   `workflow_<role>_backup`. Then wait for `/workflow ready`.
-- On `ready`, run `AI_Workflow_Kit/script/workflow_models.sh validate`. Only
+- On `ready`, run `bash AI_Workflow_Kit/script/workflow_models.sh validate`. Only
   when it succeeds, set `onboarding.status: complete`,
   `model_pairs_confirmed: true`, and `completed_at` to the current ISO timestamp.
   Explain that worker changes apply on their next spawn and that changing either

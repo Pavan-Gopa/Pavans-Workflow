@@ -39,7 +39,7 @@ Start `omp` once and configure/authenticate the model providers you plan to use.
 ```bash
 git clone https://github.com/Pavan-Gopa/Pavans-Workflow.git my-project
 cd my-project
-./install.sh .
+bash install.sh .
 ```
 
 Replace the template `PROJECT_CONTEXT.md`, step cards, and product files with your project details. Keep `.omp/`, `AI_Workflow_Kit/`, `grilling/`, and `PIPELINE.md`.
@@ -49,7 +49,7 @@ Replace the template `PROJECT_CONTEXT.md`, step cards, and product files with yo
 ```bash
 tmp_dir="$(mktemp -d)"
 git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pavans-workflow"
-"$tmp_dir/pavans-workflow/install.sh" /absolute/path/to/your/project
+bash "$tmp_dir/pavans-workflow/install.sh" /absolute/path/to/your/project
 ```
 
 The installer refuses to overwrite existing workflow paths. If the target already has `.omp/`, `AI_Workflow_Kit/`, or similarly named workflow files, use the OMP-agent installation prompt below so the agent can merge deliberately.
@@ -100,8 +100,11 @@ Graphify's code index is local and deterministic. Semantic extraction of docs/me
 Launch:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
+
+Use the explicit `bash` form shown above. It remains valid if a GitHub API
+download or AI-assisted file copy dropped the script's executable bit.
 
 Main opens onboarding before the first worker starts. Choose **Configure model
 pairs**, press **Alt+M**, and open the model selector's **Roles** view.
@@ -125,14 +128,14 @@ is rebuilt.
 Terminal inspection remains available:
 
 ```bash
-AI_Workflow_Kit/script/workflow_models.sh status
+bash AI_Workflow_Kit/script/workflow_models.sh status
 omp models find <name>
 ```
 
 ## 5. Start
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Or launch OMP directly:

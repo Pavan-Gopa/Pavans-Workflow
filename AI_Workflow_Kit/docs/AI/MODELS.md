@@ -67,7 +67,7 @@ cover a model-specific limit but not a provider-wide outage.
 For terminal inspection:
 
 ```bash
-AI_Workflow_Kit/script/workflow_models.sh status
+bash AI_Workflow_Kit/script/workflow_models.sh status
 omp models find <name>
 ```
 

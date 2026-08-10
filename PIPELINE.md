@@ -10,7 +10,7 @@ role, then control the fresh-context agent loop through one OMP Main session.
 Run from the project root:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Equivalent: launch `omp`, then run `/workflow onboard`.

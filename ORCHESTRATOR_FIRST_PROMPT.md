@@ -3,7 +3,7 @@
 The preferred entry point is:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Equivalent interactive flow:

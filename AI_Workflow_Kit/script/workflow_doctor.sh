@@ -27,6 +27,25 @@ check_command() {
   fi
 }
 
+check_script() {
+  if [[ ! -f "$1" ]]; then
+    printf 'FAIL %s\n' "$1" >&2
+    failures=$((failures + 1))
+    return
+  fi
+  if bash -n "$1"; then
+    printf 'OK   shell syntax: %s\n' "$1"
+  else
+    printf 'FAIL shell syntax: %s\n' "$1" >&2
+    failures=$((failures + 1))
+  fi
+  if [[ -x "$1" ]]; then
+    printf 'OK   executable: %s\n' "$1"
+  else
+    printf 'WARN not executable: %s (launch with bash; installer repairs this)\n' "$1"
+  fi
+}
+
 check_command omp
 check_command graphify
 
@@ -36,7 +55,9 @@ check_path .omp/commands/workflow.md
 check_path .omp/extensions/workflow-dashboard.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
-check_path AI_Workflow_Kit/script/workflow_models.sh
+for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_models; do
+  check_script "AI_Workflow_Kit/script/$script.sh"
+done
 
 for role in coder reviewer tester architect security; do
   check_path ".omp/agents/workflow-$role.md"
@@ -65,4 +86,4 @@ if (( failures > 0 )); then
 fi
 
 printf '\nWorkflow doctor: ready\n'
-printf 'Launch: ./AI_Workflow_Kit/script/omp_workflow.sh\n'
+printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'

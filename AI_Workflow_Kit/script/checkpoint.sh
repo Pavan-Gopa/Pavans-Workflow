@@ -5,10 +5,10 @@
 # on a monorepo parent.
 #
 # Usage (from project root that contains AI_Workflow_Kit/):
-#   ./AI_Workflow_Kit/script/checkpoint.sh pre S1
-#   ./AI_Workflow_Kit/script/checkpoint.sh post S1 "short description"
-#   ./AI_Workflow_Kit/script/checkpoint.sh list
-#   ./AI_Workflow_Kit/script/checkpoint.sh rollback pre|post S1
+#   bash AI_Workflow_Kit/script/checkpoint.sh pre S1
+#   bash AI_Workflow_Kit/script/checkpoint.sh post S1 "short description"
+#   bash AI_Workflow_Kit/script/checkpoint.sh list
+#   bash AI_Workflow_Kit/script/checkpoint.sh rollback pre|post S1
 #
 # Env:
 #   WF_PROJECT_PREFIX  tag/commit prefix (default: proj)
@@ -165,10 +165,10 @@ cmd_rollback() {
 usage() {
   cat <<EOF
 Usage:
-  ./AI_Workflow_Kit/script/checkpoint.sh pre <step>
-  ./AI_Workflow_Kit/script/checkpoint.sh post <step> [description]
-  ./AI_Workflow_Kit/script/checkpoint.sh list
-  ./AI_Workflow_Kit/script/checkpoint.sh rollback pre|post <step>
+  bash AI_Workflow_Kit/script/checkpoint.sh pre <step>
+  bash AI_Workflow_Kit/script/checkpoint.sh post <step> [description]
+  bash AI_Workflow_Kit/script/checkpoint.sh list
+  bash AI_Workflow_Kit/script/checkpoint.sh rollback pre|post <step>
 
 Env:
   WF_PROJECT_PREFIX   default: proj

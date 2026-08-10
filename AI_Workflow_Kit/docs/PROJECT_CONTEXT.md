@@ -44,7 +44,7 @@ Fill a real tree when you know it:
 Launch from this project root:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Project agents and primary/backup model aliases live in `.omp/`. The Human may
@@ -91,7 +91,7 @@ Additional hard rules for this product:
 
 ```bash
 cd "<PROJECT_ROOT>"
-./AI_Workflow_Kit/script/graphify_rebuild.sh
+bash AI_Workflow_Kit/script/graphify_rebuild.sh
 graphify query "…" --graph graphify-out/graph.json
 ```
 

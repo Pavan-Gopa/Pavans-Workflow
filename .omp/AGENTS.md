@@ -54,7 +54,7 @@ Use `GRAPHIFY -> FIND; SOURCE -> VERIFY`:
 
 1. If `graphify-out/graph.json` exists, start with focused `graphify query`, `path`, `explain`, or `affected` calls.
 2. Read the smallest relevant real source/doc slice before editing or making a consequential claim.
-3. If the graph is missing or stale, `Main` runs `AI_Workflow_Kit/script/graphify_rebuild.sh`. Workers report staleness rather than rebuilding it.
+3. If the graph is missing or stale, `Main` runs `bash AI_Workflow_Kit/script/graphify_rebuild.sh`. Workers report staleness rather than rebuilding it.
 4. Never wander through the repository without a task-specific reason.
 
 ## Grilling

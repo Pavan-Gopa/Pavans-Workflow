@@ -6,8 +6,8 @@
 # over dumping whole source trees.
 #
 # Usage (from project root that contains AI_Workflow_Kit/):
-#   ./AI_Workflow_Kit/script/graphify_rebuild.sh
-#   ./AI_Workflow_Kit/script/graphify_rebuild.sh --force
+#   bash AI_Workflow_Kit/script/graphify_rebuild.sh
+#   bash AI_Workflow_Kit/script/graphify_rebuild.sh --force
 #
 # Requires: `graphify` on PATH (e.g. uv tool install graphifyy)
 #

@@ -232,7 +232,7 @@ New project from the template:
 ```bash
 git clone https://github.com/Pavan-Gopa/Pavans-Workflow.git my-project
 cd my-project
-./install.sh .
+bash install.sh .
 ```
 
 Existing project:
@@ -240,7 +240,7 @@ Existing project:
 ```bash
 tmp_dir="$(mktemp -d)"
 git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pavans-workflow"
-"$tmp_dir/pavans-workflow/install.sh" /absolute/path/to/your/project
+bash "$tmp_dir/pavans-workflow/install.sh" /absolute/path/to/your/project
 ```
 
 The installer refuses to overwrite existing workflow paths.
@@ -252,8 +252,11 @@ Full platform instructions: [INSTALL.md](INSTALL.md).
 Launch the workflow:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
+
+The explicit `bash` form also works when an API download or AI-assisted update
+drops Unix executable permissions from the script.
 
 On first launch, Main shows an onboarding screen before dispatching any worker.
 It explains the pipeline, displays all primary/backup assignments, and offers
@@ -284,7 +287,7 @@ Orchestrator model so Main's fallback chain is rebuilt.
 Inspect pairs from a terminal:
 
 ```bash
-AI_Workflow_Kit/script/workflow_models.sh status
+bash AI_Workflow_Kit/script/workflow_models.sh status
 omp models find <name>
 ```
 
@@ -294,7 +297,7 @@ family for Reviewer than Coder.
 ## Start the workflow
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Or launch OMP normally, then start onboarding:

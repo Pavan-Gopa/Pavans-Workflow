@@ -20,9 +20,9 @@
 
 ```bash
 cd "<PROJECT_ROOT>"
-./AI_Workflow_Kit/script/checkpoint.sh pre S1
-./AI_Workflow_Kit/script/checkpoint.sh post S1 "short description"
-./AI_Workflow_Kit/script/checkpoint.sh list
+bash AI_Workflow_Kit/script/checkpoint.sh pre S1
+bash AI_Workflow_Kit/script/checkpoint.sh post S1 "short description"
+bash AI_Workflow_Kit/script/checkpoint.sh list
 ```
 
 Optional env overrides:
@@ -44,7 +44,7 @@ export WF_STAGE_PATHS="."       # or relative path of product inside monorepo
 ## Rollback (careful — destructive)
 
 ```bash
-./AI_Workflow_Kit/script/checkpoint.sh list
+bash AI_Workflow_Kit/script/checkpoint.sh list
 # hard reset only if Human confirms
 git reset --hard <prefix>/pre-S1
 ```

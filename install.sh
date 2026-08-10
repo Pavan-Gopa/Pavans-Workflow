@@ -41,6 +41,12 @@ if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   done
 fi
 
+# GitHub API downloads and AI-assisted file copies may lose executable bits.
+# Restore them, while keeping every documented command runnable through `bash`.
+if ! chmod +x "$TARGET_ROOT"/AI_Workflow_Kit/script/*.sh; then
+  echo "WARN: could not restore script executable bits; use the documented bash commands." >&2
+fi
+
 GITIGNORE="$TARGET_ROOT/.gitignore"
 if [[ ! -f "$GITIGNORE" ]] || ! grep -qxF 'graphify-out/' "$GITIGNORE"; then
   printf '\ngraphify-out/\n' >> "$GITIGNORE"
@@ -65,18 +71,18 @@ if ! command -v graphify >/dev/null 2>&1; then
 fi
 
 cd "$TARGET_ROOT"
-if ! ./AI_Workflow_Kit/script/graphify_rebuild.sh; then
+if ! bash ./AI_Workflow_Kit/script/graphify_rebuild.sh; then
   echo "WARN: initial Graphify index was not built; the workflow can rebuild it after product source exists." >&2
 fi
 
-./AI_Workflow_Kit/script/workflow_doctor.sh
+bash ./AI_Workflow_Kit/script/workflow_doctor.sh
 
 cat <<'MESSAGE'
 
 Pavan's Workflow is installed.
 
 Next:
-  1. Launch: ./AI_Workflow_Kit/script/omp_workflow.sh
+  1. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh
   2. Follow the first-run onboarding screen.
   3. Press Alt+M to assign a primary and backup model to every workflow role.
   4. Press Alt+A to supervise active workers.

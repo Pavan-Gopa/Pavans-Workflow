@@ -13,7 +13,7 @@ Only Main writes workflow documents: `STATE.yaml`, `STEPS.md`, `DECISIONS.md`,
 Preferred:
 
 ```bash
-./AI_Workflow_Kit/script/omp_workflow.sh
+bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
 Equivalent: launch `omp` from the project root and run `/workflow onboard`.
@@ -27,9 +27,9 @@ At start, read:
 5. feedback/reports relevant to the current gate
 
 Before the first worker, honor `onboarding.status`. Run
-`AI_Workflow_Kit/script/workflow_models.sh status`, show the primary/backup
+`bash AI_Workflow_Kit/script/workflow_models.sh status`, show the primary/backup
 pairs, and direct configuration through `Alt+M`. `/workflow ready` must pass
-`workflow_models.sh validate` before Main marks onboarding complete. If either
+`bash AI_Workflow_Kit/script/workflow_models.sh validate` before Main marks onboarding complete. If either
 Orchestrator alias changed, tell the Human to relaunch so the launcher's runtime
 fallback overlay uses the new backup.
 
@@ -123,7 +123,7 @@ blocker. If one gate fails three times without material progress:
 Main owns graph freshness:
 
 ```bash
-./AI_Workflow_Kit/script/graphify_rebuild.sh
+bash AI_Workflow_Kit/script/graphify_rebuild.sh
 graphify query "focused question" --graph graphify-out/graph.json
 ```
 
@@ -147,9 +147,9 @@ snapshot, never the source of truth.
 Only Main runs:
 
 ```bash
-./AI_Workflow_Kit/script/checkpoint.sh pre S1
-./AI_Workflow_Kit/script/checkpoint.sh post S1 "short summary"
-./AI_Workflow_Kit/script/checkpoint.sh list
+bash AI_Workflow_Kit/script/checkpoint.sh pre S1
+bash AI_Workflow_Kit/script/checkpoint.sh post S1 "short summary"
+bash AI_Workflow_Kit/script/checkpoint.sh list
 ```
 
 Never stage unrelated monorepo paths.
