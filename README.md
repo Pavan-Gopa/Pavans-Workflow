@@ -217,29 +217,38 @@ The installer refuses to overwrite existing workflow paths.
 
 Full platform instructions: [INSTALL.md](INSTALL.md).
 
-## Choose your models
+## Choose your models in OMP
 
-List models available through your OMP providers:
+Start OMP from the project root, then press **Alt+M** (or run `/models`) to
+open the native model selector. Switch to its **Roles** view, select any
+`workflow_*` role, and choose an available provider/model and reasoning level:
+
+- `workflow_orchestrator`
+- `workflow_architect`
+- `workflow_coder`
+- `workflow_reviewer`
+- `workflow_tester`
+- `workflow_security`
+
+Typing in the selector filters the models currently available through your OMP
+providers. Because this template sets `modelRoleStorage: project`, assignments
+made in the UI are persisted to this repository's `.omp/config.yml`, not only
+to your global OMP profile.
+
+A worker that is already running keeps the model it resolved at launch. The
+next worker for that role uses the new assignment automatically. Restart Main
+after changing `workflow_orchestrator`.
+
+The terminal catalog remains useful for checking exact selectors:
 
 ```bash
 omp models
+omp models find <name>
 ```
 
-Edit `.omp/config.yml`:
-
-```yaml
-modelRoles:
-  workflow_orchestrator: openai-codex/gpt-5.6-sol:medium
-  workflow_architect: openai-codex/gpt-5.6-sol:xhigh
-  workflow_coder: openai-codex/gpt-5.6-luna:max
-  workflow_reviewer: google-antigravity/gemini-3.6-flash:high
-  workflow_tester: openai-codex/gpt-5.6-terra:max
-  workflow_security: nvidia/z-ai/glm-5.2:max
-```
-
-These are example defaults, not requirements. Use any concrete selectors shown
-by `omp models`. Prefer a different model family for Reviewer than Coder when
-available.
+Editing `.omp/config.yml` directly is only a fallback. The included mappings
+are examples, not requirements. Prefer a different model family for Reviewer
+than Coder when available.
 
 ## Start the workflow
 
@@ -262,7 +271,8 @@ Useful controls:
 | Redirect Main | `/workflow <new instruction>` |
 | Inspect/steer/kill workers | `Alt+A` |
 | Pause Main and workers safely | `/pause` |
-| Query available models | `omp models` |
+| Change role model assignments | `Alt+M` or `/models` |
+| Query models from the terminal | `omp models` |
 
 ## Repository map
 

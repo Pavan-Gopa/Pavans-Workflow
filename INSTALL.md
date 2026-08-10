@@ -97,25 +97,30 @@ Graphify's code index is local and deterministic. Semantic extraction of docs/me
 
 ## 4. Choose a model for each role
 
-List models available through your configured OMP providers:
+Launch OMP from the target project's root and press **Alt+M**, or run:
+
+```text
+/models
+```
+
+In the model selector's **Roles** view, choose each `workflow_*` role and assign
+an available provider/model plus reasoning level. Type in the selector to
+filter the available catalog.
+
+This template sets `modelRoleStorage: project`, so the UI persists these role
+assignments under `modelRoles` in the target project's `.omp/config.yml`.
+Manual YAML editing is not required.
+
+For a terminal listing or exact-name search:
 
 ```bash
 omp models
+omp models find <name>
 ```
 
-Edit `.omp/config.yml`:
-
-```yaml
-modelRoles:
-  workflow_orchestrator: provider/orchestrator-model:medium
-  workflow_architect: provider/architect-model:high
-  workflow_coder: provider/coder-model:high
-  workflow_reviewer: provider/reviewer-model:high
-  workflow_tester: provider/tester-model:high
-  workflow_security: provider/security-model:max
-```
-
-These are aliases, not hard-coded dependencies. Every role can use a different provider/model, and changing an alias does not alter the role prompt. New worker sessions pick up the new mapping automatically.
+Every role may use a different provider/model. Existing running workers keep
+the model resolved at launch; the next worker uses the changed assignment.
+Restart Main after changing `workflow_orchestrator`.
 
 ## 5. Start
 

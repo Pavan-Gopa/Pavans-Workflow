@@ -50,19 +50,24 @@ model-agnostic. Agent Hub shows the resolved model for every active run.
 
 ## Changing one role
 
-Edit only the corresponding mapping:
+Use OMP's native model selector instead of editing workflow files:
 
-```yaml
-modelRoles:
-  workflow_coder: openai-codex/gpt-5.6-luna:max
-  workflow_reviewer: google-antigravity/gemini-3.6-flash:high
-```
+1. Start OMP from the project root.
+2. Press **Alt+M** or run `/models`.
+3. Open the **Roles** view.
+4. Select the relevant `workflow_*` role.
+5. Choose an available provider/model and reasoning level.
 
-Use an exact `provider/model-id:reasoning` selector available from:
+Typing filters the available model catalog. `modelRoleStorage: project` makes
+OMP persist the assignment under `modelRoles` in `.omp/config.yml`.
+
+For a terminal listing or exact-name search:
 
 ```bash
 omp models
+omp models find <name>
 ```
 
-Restart or start the next worker after changing the mapping. Existing running
-workers keep the model they resolved at launch.
+Direct `.omp/config.yml` editing remains a fallback for scripted setup. Existing
+running workers keep the model they resolved at launch. The next worker uses
+the new mapping; changing `workflow_orchestrator` requires restarting Main.
