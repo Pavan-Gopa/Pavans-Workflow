@@ -33,6 +33,7 @@ check_command graphify
 check_path .omp/config.yml
 check_path .omp/AGENTS.md
 check_path .omp/commands/workflow.md
+check_path .omp/extensions/workflow-dashboard.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
 check_path AI_Workflow_Kit/script/workflow_models.sh

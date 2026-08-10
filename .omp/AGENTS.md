@@ -67,4 +67,7 @@ The existing `grilling/` skill is discovered through `.omp/config.yml`.
 
 ## Human control
 
-The Human may interrupt or redirect `Main` at any time. `Alt+A` opens Agent Hub to inspect, steer, revive, or kill the current worker. After any intervention, `Main` rereads repository and workflow files before continuing.
+The Human may interrupt or redirect `Main` at any time. `Alt+W` opens the
+read-only workflow/agent/model/quota dashboard. `Alt+A` opens Agent Hub to
+inspect, steer, revive, or kill the current worker. After any intervention,
+`Main` rereads repository and workflow files before continuing.

@@ -147,6 +147,7 @@ Useful controls:
 - `/workflow status` — reread file-backed state and continue.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
+- `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, and provider-quota panel.
 - `/pause` — pause Main and subagents at safe boundaries.
 
 ## Update

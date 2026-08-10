@@ -15,10 +15,12 @@ Run from the project root:
 
 Equivalent: launch `omp`, then run `/workflow onboard`.
 
-OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, and the
-`grilling` skill. On first launch, Main shows onboarding and validates all
-primary/backup model pairs before dispatching a worker. Press `Alt+M` to
-configure roles, then run `/workflow ready`. After onboarding, Main reads the
+OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, dashboard
+extension, and `grilling` skill. On first launch, Main shows onboarding and
+validates all primary/backup model pairs before dispatching a worker. Press
+`Alt+M` to configure roles, then run `/workflow ready`. Press `Alt+W` at any
+time to inspect live step progress, the active model, and provider quota;
+`Alt+A` opens the detailed Agent Hub. After onboarding, Main reads the
 file-backed workflow and asks for missing project context. Do not start a
 separate worker terminal or copy a kick prompt.
 

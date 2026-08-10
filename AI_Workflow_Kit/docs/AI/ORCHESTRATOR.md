@@ -163,6 +163,10 @@ workflow files before rerouting.
 transcript. The Human can steer or kill a worker there. After a kill or steer,
 Main verifies actual repository state before continuing.
 
+`Alt+W` opens the read-only workflow dashboard: current step and checklist,
+gate progress, active role/model/fallback status, and redacted provider quota.
+Use Agent Hub for transcripts, steering, and termination.
+
 ## Forbidden
 
 - Worker-to-worker routing or task transfer.

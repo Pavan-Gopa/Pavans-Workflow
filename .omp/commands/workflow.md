@@ -14,8 +14,9 @@ Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 - For `onboard`, `setup`, or an incomplete onboarding state, run
   `AI_Workflow_Kit/script/workflow_models.sh status` and show a concise welcome
   screen explaining Main, fresh workers, primary/backup model pairs, `Alt+M`
-  model selection, `Alt+A` supervision, file-backed state, and automatic
-  failover. Do not dispatch a worker yet.
+  model selection, `Alt+W` live workflow/model/quota dashboard, `Alt+A`
+  supervision, file-backed state, and automatic failover. Do not dispatch a
+  worker yet.
 - Use the interactive `ask` tool with these choices: **Configure model pairs**,
   **Use current pairs and start**, **Explain failover**, and **Pause here**.
 - If the Human chooses configuration, tell them to press `Alt+M`, open the

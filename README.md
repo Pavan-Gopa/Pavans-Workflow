@@ -17,8 +17,8 @@ so a quota wall or provider outage does not stop a long workflow:
 - a maximum-quality pair for the optional final security audit.
 
 You choose both models. The workflow owns role boundaries, fresh context,
-routing, file-backed state, automatic model failover, Graphify navigation, and
-human supervision.
+routing, file-backed state, automatic model failover, Graphify navigation, a
+live workflow dashboard, and human supervision.
 
 ## What it automates
 
@@ -108,6 +108,23 @@ Conversation history is not authoritative. Durable workflow state lives in:
 
 Only Main writes workflow state. Worker completion alone never advances a gate;
 Main verifies the real source and evidence first.
+
+### Live workflow dashboard
+
+Press **Alt+W** (or run `/workflow-dashboard`) inside OMP to open the
+project-level live panel. It reads the canonical `STATE.yaml` and current
+`STEPS.md` card, listens to OMP's task-agent progress events, and shows:
+
+- completed/remaining step counts and the current step checklist;
+- the active role, agent, resolved model, fallback status, intent, and tool;
+- implementation, review, QA, security, and blocker gates;
+- every role's primary/backup model pair;
+- redacted provider-reported quota and reset windows from `omp usage`.
+
+The panel is observational: it never writes workflow state. Use
+`Up`/`Down`/`PgUp`/`PgDn` to scroll, `r` to refresh provider usage, and
+`Alt+W`, `Esc`, or `q` to close it. Agent Hub remains the detailed transcript
+and intervention surface.
 
 ### Graphify-first navigation
 
@@ -293,6 +310,7 @@ Useful controls:
 |--------|---------|
 | Re-read state and continue | `/workflow status` |
 | Redirect Main | `/workflow <new instruction>` |
+| Open live workflow/model/quota panel | `Alt+W` or `/workflow-dashboard` |
 | Inspect/steer/kill workers | `Alt+A` |
 | Pause Main and workers safely | `/pause` |
 | Change role model assignments | `Alt+M` or `/models` |
@@ -307,6 +325,7 @@ Useful controls:
   config.yml                  role aliases and task lifecycle
   agents/                     five specialized worker definitions
   commands/workflow.md        orchestration entry point
+  extensions/workflow-dashboard.ts live workflow/model/quota panel
 grilling/                     discovery and decision skill
 AI_Workflow_Kit/
   docs/                       state, plans, role contracts, reports
