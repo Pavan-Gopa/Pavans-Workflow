@@ -1,0 +1,59 @@
+# Live orchestration state — Orchestrator owns this file.
+# Keep it simple. Project-agnostic template.
+
+project_prefix: proj
+current_step: S0
+step_description: >-
+  Session start: Orchestrator confirms workflow readiness, asks Human for
+  project context, then minimal plan or Architect.
+target_files: []
+completed_steps: []
+skipped_steps: []
+implementation:
+  status: pending
+  attempts: 0
+retry_guard:
+  max_attempts_without_progress: 3
+  repeated_failure_count: 0
+  last_failure_signature: null
+  blocker: null
+omp:
+  active_agent: null
+  active_role: null
+  last_result_artifact: null
+review:
+  status: pending
+  last_feedback_file: AI_Workflow_Kit/docs/AI/FEEDBACK.md
+  verdict: null
+  note: null
+  # default on unless Human explicitly skips
+  enabled: true
+qa:
+  status: pending
+  last_report: AI_Workflow_Kit/docs/AI/REPORT.md
+  suite: null
+  bugs_open: 0
+  note: null
+  # recommended on; Human may opt out
+  enabled: true
+security:
+  next_run: none
+  note: >-
+    Offer once near release when work is ready (optional). Top models only:
+    GLM 5.2 max, Soul max, or Opus 5 max. Not every step. Not Terra/Luna.
+next_actor: orchestrator
+track: BOOTSTRAP
+plan_files:
+  - PIPELINE.md
+  - AI_Workflow_Kit/docs/STEPS.md
+  - AI_Workflow_Kit/docs/DECISIONS.md
+  - AI_Workflow_Kit/docs/PROJECT_CONTEXT.md
+checkpoint:
+  last_pre_tag: null
+  last_post_tag: null
+  last_commit: null
+coder_brief: |
+  No product coding yet. After Human context: minimal plan and first step, or
+  Architect research if context is insufficient.
+notes: |
+  Fresh kit. Simple pipeline: ready → context → plan or Architect → code → review → test.

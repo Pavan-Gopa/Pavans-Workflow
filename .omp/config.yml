@@ -1,0 +1,27 @@
+modelRoleStorage: project
+
+modelRoles:
+  workflow_orchestrator: openai-codex/gpt-5.6-sol:medium
+  workflow_coder: openai-codex/gpt-5.6-luna:max
+  workflow_reviewer: google-antigravity/gemini-3.6-flash:high
+  workflow_tester: openai-codex/gpt-5.6-terra:max
+  workflow_architect: openai-codex/gpt-5.6-sol:xhigh
+  workflow_security: nvidia/z-ai/glm-5.2:max
+
+async:
+  enabled: true
+
+task:
+  batch: true
+  enableLsp: true
+  maxConcurrency: 1
+  maxRecursionDepth: 1
+  maxRuntimeMs: 1800000
+  softRequestBudget: 120
+  showResolvedModelBadge: true
+
+skills:
+  enabled: true
+  enableSkillCommands: true
+  customDirectories:
+    - .
