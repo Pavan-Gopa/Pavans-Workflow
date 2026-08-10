@@ -8,10 +8,18 @@ tools: ["read", "grep", "glob", "bash", "lsp", "web_search"]
 output:
   properties:
     status:
-      enum: [design_ready, needs_human_input, blocked]
+      enum: [advice_ready, design_ready, needs_human_input, blocked]
     summary:
       type: string
   optionalProperties:
+    advice:
+      type: string
+    main_risk:
+      type: string
+    strongest_alternative:
+      type: string
+    unresolved_uncertainty:
+      type: string
     questions:
       elements:
         type: string

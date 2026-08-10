@@ -14,10 +14,16 @@ target_files: []
 completed_steps: []
 skipped_steps: []
 implementation:
+  # pending | running | waiting_review | changes_requested | blocked | complete
   status: pending
   attempts: 0
+  # Increment only after evidence evaluates an implementation attempt.
+  # Runtime/provider interruption alone is not an implementation attempt.
 retry_guard:
   max_attempts_without_progress: 3
+  # Consecutive verified failures for the current approach/failure signature.
+  # First occurrence = 1; same approach + same failure increments; a new
+  # approach/evidence/material failure signature starts a new count at 1.
   repeated_failure_count: 0
   last_failure_signature: null
   blocker: null
@@ -35,6 +41,14 @@ omp:
     backup_agent: null
     human_instruction: null
     authorized_at: null
+  interruption:
+    # none | interrupted_no_changes | interrupted_partial | recovered_result | indeterminate
+    status: none
+    role: null
+    agent: null
+    changed_files: []
+    evidence: null
+    recorded_at: null
 review:
   status: pending
   last_feedback_file: AI_Workflow_Kit/docs/AI/FEEDBACK.md

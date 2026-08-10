@@ -23,9 +23,20 @@
 **Out of scope:**
 - …
 
-**Done when:**
-- [ ] …
-- [ ] tests/QA green, or explicitly skipped by Human with a recorded reason
+## Verification
+
+### Objective gates
+
+- [ ] `exact command` exits 0
+- [ ] required artifact or behavior is deterministically present
+
+### Judgment gates
+
+- [ ] implementation follows the accepted architecture and intended semantics
+- [ ] scope and public contracts remain bounded
+
+**Ready for review when:** implementation is complete in scope and required
+Objective gates are green.
 
 **Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
 (Tester qa_green | QA explicitly skipped by Human)
@@ -51,9 +62,15 @@
 **Out of scope:**
 - Large product implementation before plan exists
 
-**Done when:**
-- [ ] PROJECT_CONTEXT has real project info
-- [ ] Next step or Architect kick is clear
+## Verification
+
+### Objective gates
+
+- [ ] PROJECT_CONTEXT contains real project information
+
+### Judgment gates
+
+- [ ] next step or Architect path is clear
 
 **Stop-gate:** Human agrees with the plan path
 
@@ -72,9 +89,19 @@
 **Out of scope:**
 - 
 
-**Done when:**
-- [ ] 
+## Verification
+
+### Objective gates
+
+- [ ]
 - [ ] project tests green, or QA explicitly skipped by Human with a recorded reason
+
+### Judgment gates
+
+- [ ]
+
+**Ready for review when:** implementation is complete in scope and required
+Objective gates are green.
 
 **Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
 (Tester qa_green | QA explicitly skipped by Human)

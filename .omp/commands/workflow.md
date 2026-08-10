@@ -1,11 +1,40 @@
 ---
 description: Advance the file-backed multi-agent workflow
-argument-hint: [onboard|setup|ready|start|status|next|human instruction]
+argument-hint: [onboard|setup|ready|start|status|update|update check|next|human instruction]
 ---
 
 Act as the sole Orchestrator for this project. Treat `$ARGUMENTS` as the Human's latest instruction, not as workflow state.
 
 Read `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`, `TEAM_CONTRACT.md`, `MODELS.md`, `STATE.yaml`, `AI_Workflow_Kit/docs/STEPS.md`, `PROJECT_CONTEXT.md`, `DECISIONS.md`, and the feedback/report files relevant to the current gate. Inspect repository status and actual source/test evidence before deciding.
+
+## Explicit workflow update
+
+Handle `update` before onboarding or product routing. This is an explicit,
+Human-invoked operation; never poll upstream periodically.
+
+- For `update check` or `update`, create a temporary shallow clone of
+  `https://github.com/Pavan-Gopa/Pavans-Workflow.git` and compare its `main`
+  against the installed workflow framework.
+- Compare only framework surfaces: `.omp/AGENTS.md`, `.omp/agents/`,
+  `.omp/commands/`, `.omp/extensions/`, `grilling/`,
+  `AI_Workflow_Kit/script/`, role/contract templates under
+  `AI_Workflow_Kit/docs/AI/`, `PIPELINE.md`, and
+  `ORCHESTRATOR_FIRST_PROMPT.md`.
+- Never overwrite project-owned configuration or live memory:
+  `.omp/config.yml`, `PROJECT_CONTEXT.md`, `STATE.yaml`, `STEPS.md`,
+  `DECISIONS.md`, `FEEDBACK.md`, `REPORT.md`, `BUG_REPORT.md`,
+  `SECURITY_REPORT.md`, or `COVERAGE.md`.
+- `update check` reports the upstream commit and relevant differences, then
+  stops without edits.
+- `update` conservatively applies reviewed framework changes. Preserve local
+  customizations; if a framework file has a non-trivial local conflict, leave it
+  unchanged and report the exact conflict instead of replacing it blindly.
+- After applying, run `workflow_doctor.sh`, shell syntax checks, agent/command
+  discovery, and refresh Graphify. Report upstream commit, changed files,
+  preserved files, conflicts, and validation.
+
+After either update action, stop; do not continue into product routing in the
+same command.
 
 ## Onboarding
 
@@ -31,6 +60,16 @@ Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 - If onboarding is already complete, show a one-line readiness banner and
   continue. `setup` explicitly reopens the full onboarding screen.
 
+
+## Startup / resume reconciliation
+
+For `status`, and at every new Main startup/resume before routing, apply the
+reconciliation algorithm in `ORCHESTRATOR.md`. Use only real OMP surfaces:
+`hub jobs`, `hub list`, and available `agent://` / `history://` artifacts.
+Cross-check them with the authorized repository diff and result/test artifacts.
+Classify stale active state conservatively, preserve partial work, and never
+count runtime disappearance as implementation failure.
+
 ## Automatic workflow
 
 Advance the established workflow automatically inside this OMP session:
@@ -42,6 +81,12 @@ Advance the established workflow automatically inside this OMP session:
 - verify every structured worker result against the repository before recording it or transitioning;
 - write canonical feedback/reports/state yourself;
 - stop after three materially identical failed attempts and surface a blocker;
+- separate Objective Gates from Reviewer-owned Judgment Gates; Coder
+  `waiting_review` means objective-ready for independent judgment, not step-complete;
+- on a verified retry, persist attempt history in `FEEDBACK.md` and give the
+  fresh Coder only compact approach/result/evidence/rejection memory;
+- use `workflow-architect` with `Mode: advisory` only for an optional bounded
+  second opinion; keep `Mode: design` and `Mode: /grilling` behavior distinct;
 - on persistent worker model/provider failure, record
   `omp.model_failure.status: awaiting_human` and the exact evidence in
   `STATE.yaml`, set a visible blocker, and stop without incrementing product

@@ -39,16 +39,42 @@ On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer suc
 
 ## Orchestration loop
 
-1. Reconstruct the current step from files.
-2. Incorporate the Human's latest instruction, then reread affected source-of-truth files.
+1. Reconstruct the current step from files. At startup/resume reconcile any
+   `omp.active_agent` with `hub jobs`, `hub list`, available agent/history
+   artifacts, and the actual authorized repository diff. Preserve partial work;
+   runtime interruption alone increments no implementation/retry counter.
+2. Incorporate the Human's latest instruction, then reread affected
+   source-of-truth files.
 3. Select exactly one next role from the existing workflow.
-4. Spawn it with `task`, its project agent name, a fresh unique run name, and a self-contained assignment: goal, step, allowed paths, exclusions, acceptance criteria, verification commands, and source-of-truth paths. Never pass the Main conversation transcript.
-5. When its structured result arrives, inspect the actual diff/source/test output yourself. If Tester changed tests, inspect the test diff for weakened assertions and real product behavior; use a short targeted Reviewer pass for a substantial diff.
-6. Only after verification, write the canonical entry to `FEEDBACK.md`, `REPORT.md`, `BUG_REPORT.md`, or `SECURITY_REPORT.md`, update `STATE.yaml`, and route the next role.
+4. Spawn it with `task`, its project agent name, a fresh unique run name, and a
+   compact self-contained assignment: goal, step, allowed paths, exclusions,
+   Objective Gates, Reviewer-owned Judgment Gates, and source-of-truth paths.
+   On retry include only verified approach/result/evidence/rejection memory from
+   `FEEDBACK.md`; never pass worker transcripts or Main's conversation history.
+5. When its structured result arrives, inspect the actual diff/source/test
+   output. If Tester changed tests, inspect the test diff for weakened
+   assertions and real product behavior; use a short targeted Reviewer pass for
+   a substantial diff.
+6. Only after verification, write the canonical entry to `FEEDBACK.md`,
+   `REPORT.md`, `BUG_REPORT.md`, or `SECURITY_REPORT.md`, update `STATE.yaml`,
+   and route the next role.
 
 Default step flow remains `workflow-coder -> Main verification -> workflow-reviewer -> Main verification -> workflow-tester -> Main verification`. Reviewer is required unless the Human explicitly skips it. Tester is enabled unless the Human opts out. Record every skip and reason so the step gate remains satisfiable. Security is offered once near release and runs only after Human approval. Architect is used for unclear design, plan/code conflict, deep grilling, or implementation thrash.
 
-If the same gate fails three times without material progress, stop automatic retries. Record the blocker in `STATE.yaml` and ask the Human for direction or route once to `workflow-architect` when the workflow permits it.
+After a verified Coder handoff, persist `implementation.status: waiting_review`;
+reserve `complete` for a fully satisfied step Stop-gate.
+
+For bounded design uncertainty, Main may dispatch the existing
+`workflow-architect` with `Mode: advisory`. Advice is read-only and optional:
+no Grilling, Human interview, ADR, Architecture Package, persistence, or
+routing. `Mode: design` and `Mode: /grilling` retain their existing paths.
+
+If the same approach produces the same material failure three times without
+progress, stop automatic retries. A new approach, new evidence, or materially
+different failure is progress, not another identical failure. Main records the
+verified attempt memory in `FEEDBACK.md`, surfaces blockers in `STATE.yaml`, and
+asks the Human for direction or routes once to `workflow-architect` when the
+workflow permits it.
 
 Persistent model/provider failure is a pause, not a routing decision. Record it
 under `omp.model_failure` and `retry_guard.blocker` in `STATE.yaml`; do not
@@ -86,3 +112,8 @@ The Human may interrupt or redirect `Main` at any time. `Alt+W` opens the
 read-only workflow/agent/model/quota dashboard. `Alt+A` opens Agent Hub to
 inspect, steer, revive, or kill the current worker. After any intervention,
 `Main` rereads repository and workflow files before continuing.
+
+`/workflow update check` compares the installed framework with upstream without
+editing. `/workflow update` performs a conservative explicit update while
+preserving `.omp/config.yml` and all project/live workflow memory. There is no
+background polling, daemon, or scheduler.

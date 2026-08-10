@@ -46,6 +46,38 @@ repository status, actual source/diff, and test evidence.
 A worker yielding successfully proves only that its session ended. Main must
 verify its claims before recording a result or moving the workflow.
 
+## Startup / resume reconciliation
+
+Run this reconciliation at every new Main startup/resume and before
+`/workflow status` routes work:
+
+1. Read `STATE.yaml`, the active step, and relevant feedback/reports.
+2. If `omp.active_agent` is set, inspect OMP's real current-session surfaces:
+   `hub jobs` for owned async jobs and `hub list` for the agent registry. When
+   available, inspect the exact `agent://<id>` result or `history://<id>`
+   transcript. Do not infer liveness from file state alone.
+3. Inspect repository status, the diff limited to authorized target paths, and
+   existing test/result artifacts.
+4. Classify the run as `still_active`, `recovered_result`,
+   `interrupted_no_changes`, `interrupted_partial`, or `indeterminate`.
+5. Persist only the next-transition facts under `omp.interruption`; write
+   durable evidence to `FEEDBACK.md`. Clear stale `active_agent`/`active_role`
+   only after classification.
+
+`hub` job/registry state is process-local and retained jobs expire. If the
+worker cannot be proven live after a process restart, classify conservatively
+from artifacts and repository evidence; never pretend a liveness API returned
+more than it did. A recovered structured result is verified normally.
+Interrupted work with no changes may be retried fresh. A partial diff is
+preserved and described to the next fresh Coder as unverified
+`Existing interrupted work`. An indeterminate or inconsistent state blocks
+routing until Main can establish a safe continuation.
+
+Worker/runtime disappearance is not implementation failure. Do not increment
+`implementation.attempts` or `retry_guard.repeated_failure_count` without
+evidence that an implementation approach failed, and never advance a gate only
+because a worker disappeared.
+
 ## Worker lifecycle
 
 Dispatch workers through OMP `task`:
@@ -62,8 +94,9 @@ Each run:
 
 1. uses a fresh unique agent name;
 2. receives role instruction plus one self-contained task;
-3. receives source-of-truth paths, target/allowed paths, exclusions, acceptance
-   criteria, and verification commands;
+3. receives source-of-truth paths, target/allowed paths, exclusions, Objective
+   gates, Judgment gates, and compact verified retry/interruption context when
+   applicable;
 4. does not receive Main's conversation transcript;
 5. cannot spawn or route another worker;
 6. returns structured output to Main.
@@ -84,6 +117,12 @@ retry; spawn a fresh run so context does not accumulate.
 - Architect returns questions/checkpoint or a confirmed Architecture Package.
   Main alone persists the accepted plan or ADR.
 
+For a bounded second opinion, dispatch the same `workflow-architect` with
+`Mode: advisory`. This is optional and returns concise read-only advice; it does
+not start Grilling, ask the Human questions, produce an ADR or Architecture
+Package, persist files, or choose the next worker. `Mode: design` and
+`Mode: /grilling` retain the normal Architect paths.
+
 ### Per-step default
 
 ```text
@@ -103,7 +142,7 @@ Main → Coder → Main verify/write state
 
 | Result | Main action |
 |--------|-------------|
-| Coder `waiting_review` | Verify target-only diff and evidence; record feedback; rebuild Graphify; dispatch Reviewer |
+| Coder `waiting_review` | Verify target-only diff and evidence; set `implementation.status: waiting_review` (not `complete`); record feedback; rebuild Graphify; dispatch Reviewer |
 | Coder `blocked` | Record blocker; decide whether new context or Architect is needed |
 | Reviewer `approved` | Verify review scope/evidence; dispatch Tester or close the step if QA was explicitly skipped |
 | Reviewer `changes_requested` | Record issues; increment attempts; dispatch a fresh Coder fix |
@@ -111,13 +150,34 @@ Main → Coder → Main verify/write state
 | Tester `bugs` | Record bugs; increment attempts; dispatch a fresh Coder fix, then re-review and re-test |
 | Architect `needs_human_input` | Block state; relay only the returned material questions; then start a fresh Architect with the Human's exact answers and `grilling_checkpoint` |
 | Architect `design_ready` | Verify the Markdown package against project evidence and recorded Human confirmation; persist accepted plan/ADR |
+| Architect `advice_ready` | Verify cited repository evidence; use or reject the advice, record a decision only if consequential, and keep routing authority in Main |
 | Security `findings_open` | Write security report; route accepted fixes to Coder, then Reviewer/Tester |
 | Security `security_clean` | Record audit result and continue release flow |
 
-## Retry safeguard
+## Retry safeguard and verified memory
 
-`STATE.yaml` tracks attempts, repeated-failure count, last failure signature, and
-blocker. If one gate fails three times without material progress:
+`STATE.yaml` tracks control counters and the last verified failure signature.
+`FEEDBACK.md` stores durable attempt history. After Main verifies a failed gate
+against the worker result, actual diff/source, command output, and
+Reviewer/Tester evidence, it records:
+
+```text
+approach -> observed result -> verified reason it failed
+```
+
+The next fresh Coder receives only the task-relevant `Prior attempts` summary
+and a `Do not repeat without new evidence` list. Never pass a prior transcript,
+chain-of-thought, Main history, or a full report. A rejected approach may be
+reconsidered only when new evidence invalidates the earlier conclusion.
+
+Set `repeated_failure_count: 1` for the first verified failure of an
+approach/signature. Increment only when the same approach produces a materially
+same verified failure. A new approach, new evidence, or materially different
+failure is material progress: replace `last_failure_signature` and start the new
+failure state's count at `1`. Three red command runs are not automatically three
+identical failures.
+
+If one gate reaches `max_attempts_without_progress` without material progress:
 
 1. stop automatic retries;
 2. record the blocker and evidence;

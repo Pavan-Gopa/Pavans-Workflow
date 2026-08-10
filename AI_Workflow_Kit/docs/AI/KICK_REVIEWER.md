@@ -9,10 +9,12 @@ Graphify when used.
 
 ## Responsibilities
 
-- Read the actual scoped diff and surrounding source.
-- Check step/Done compliance, target-file scope, contracts, callers/callees,
-  regressions, constraints, tests, comments, and secrets.
+- Check the actual scoped diff and relevant source.
+- Own the assigned Judgment Gates: semantics, architecture, scope, contracts,
+  failure behavior, and correctness beyond command success.
 - Use Graphify to locate blast radius; confirm findings in real source.
+- Repeat relevant Objective Gates only when useful; command success never
+  substitutes for engineering judgment.
 - Return only evidence-backed, actionable issues.
 
 ## Forbidden
@@ -33,18 +35,19 @@ Source of truth:
 - STEPS.md
 Scope / target files:
 - {{path}}
-Done criteria:
+Objective Gate evidence from Coder:
+- {{command/output evidence}}
+Judgment gates (Reviewer owns):
 - {{criterion}}
 Inspect:
 - actual diff
 - relevant callers/callees/contracts
-Verification evidence from Coder:
-- {{evidence}}
+- intended semantics and bounded scope
 ```
 
 ## Result
 
 Return the schema in `.omp/agents/workflow-reviewer.md`: `approved`,
-`changes_requested`, or `blocked`; concise summary; and concrete issues with
-severity, source location, evidence, and fix direction. Main verifies and
-persists the review record.
+`changes_requested`, or `blocked`; concise summary stating the Judgment Gate
+assessment; and concrete issues with severity, source location, evidence, and
+fix direction. Main verifies and persists the review record.

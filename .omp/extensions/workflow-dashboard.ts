@@ -29,14 +29,18 @@ type WorkflowState = {
 	blocker: string;
 	activeAgent: string;
 	activeRole: string;
+	interruptionStatus: string;
 };
+
+type GateItem = { text: string; done: boolean };
 
 type StepCard = {
 	id: string;
 	title: string;
 	goal: string;
 	doItems: string[];
-	doneWhen: Array<{ text: string; done: boolean }>;
+	objectiveGates: GateItem[];
+	judgmentGates: GateItem[];
 };
 
 type RolePair = { role: string; primary: string; backup: string };
@@ -120,6 +124,19 @@ function sectionValue(source: string, section: string, key: string): string {
 	return cleanScalar(valueMatch?.[1]);
 }
 
+function nestedSectionValue(source: string, parent: string, section: string, key: string): string {
+	const parentMatch = source.match(
+		new RegExp(`^${parent}:\\s*\\n([\\s\\S]*?)(?=^[A-Za-z_][A-Za-z0-9_]*:|(?![\\s\\S]))`, "m"),
+	);
+	if (!parentMatch) return "-";
+	const nestedMatch = parentMatch[1].match(
+		new RegExp(`^\\s{2}${section}:\\s*\\n((?:\\s{4,}.*(?:\\n|$))*)`, "m"),
+	);
+	if (!nestedMatch) return "-";
+	const valueMatch = nestedMatch[1].match(new RegExp(`^\\s{4}${key}:\\s*(.+)$`, "m"));
+	return cleanScalar(valueMatch?.[1]);
+}
+
 function foldedValue(source: string, key: string): string {
 	const folded = source.match(new RegExp(`^${key}:\\s*>-?\\s*\\n((?:\\s{2,}.*(?:\\n|$))+)`, "m"));
 	if (folded) return folded[1].split("\n").map(line => line.trim()).filter(Boolean).join(" ");
@@ -152,16 +169,26 @@ function parseWorkflowState(source: string): WorkflowState {
 		blocker: sectionValue(source, "retry_guard", "blocker"),
 		activeAgent: sectionValue(source, "omp", "active_agent"),
 		activeRole: sectionValue(source, "omp", "active_role"),
+		interruptionStatus: nestedSectionValue(source, "omp", "interruption", "status"),
 	};
 }
 
 function parseBulletSection(body: string, heading: string): string[] {
-	const match = body.match(new RegExp(`\\*\\*${heading}:\\*\\*\\s*\\n([\\s\\S]*?)(?=\\n\\*\\*[A-Za-z][^\\n]*:\\*\\*|$)`, "i"));
+	const marker = `(?:\\*\\*${heading}:\\*\\*|#{3,}\\s+${heading})`;
+	const nextMarker = `(?=\\n(?:\\*\\*[A-Za-z][^\\n]*:\\*\\*|#{2,}\\s+[^\\n]+)|$)`;
+	const match = body.match(new RegExp(`${marker}\\s*\\n([\\s\\S]*?)${nextMarker}`, "i"));
 	if (!match) return [];
 	return match[1]
 		.split("\n")
 		.map(line => line.replace(/^\s*(?:[-*]|\d+\.)\s*/, "").trim())
 		.filter(Boolean);
+}
+
+function parseGateItems(body: string, heading: string): GateItem[] {
+	return parseBulletSection(body, heading).map(item => {
+		const box = item.match(/^\[([ xX])\]\s*(.*)$/);
+		return box ? { done: box[1].toLowerCase() === "x", text: box[2] } : { done: false, text: item };
+	});
 }
 
 function parseSteps(source: string): StepCard[] {
@@ -171,17 +198,16 @@ function parseSteps(source: string): StepCard[] {
 		const start = (match.index ?? 0) + match[0].length;
 		const end = matches[index + 1]?.index ?? visible.length;
 		const body = visible.slice(start, end);
-		const goal = cleanScalar(body.match(/\*\*Goal:\*\*\s*(.+)/)?.[1]);
-		const doneWhen = parseBulletSection(body, "Done when").map(item => {
-			const box = item.match(/^\[([ xX])\]\s*(.*)$/);
-			return box ? { done: box[1].toLowerCase() === "x", text: box[2] } : { done: false, text: item };
-		});
+		const legacyDone = parseGateItems(body, "Done when");
+		const objectiveGates = parseGateItems(body, "Objective gates");
+		const judgmentGates = parseGateItems(body, "Judgment gates");
 		return {
 			id: match[1],
 			title: match[2].replace(/^_\((.*)\)_$/, "$1"),
-			goal,
+			goal: cleanScalar(body.match(/\*\*Goal:\*\*\s*(.+)/)?.[1]),
 			doItems: parseBulletSection(body, "Do"),
-			doneWhen,
+			objectiveGates: objectiveGates.length ? objectiveGates : legacyDone,
+			judgmentGates,
 		};
 	});
 }
@@ -327,6 +353,9 @@ function buildBody(data: DashboardData, width: number): Line[] {
 	lines.push({ text: `Stage: ${workflowPhase(state, worker)}` });
 	lines.push({ text: `Gates: implementation=${state.implementationStatus}  review=${state.reviewVerdict !== "-" ? state.reviewVerdict : state.reviewStatus}  qa=${state.qaStatus}  security=${state.securityNextRun}` });
 	for (const line of wrap(state.stepDescription, width, "  ")) lines.push({ text: line, tone: "muted" });
+	if (state.interruptionStatus !== "-" && state.interruptionStatus !== "none") {
+		lines.push({ text: `Recovery: ${state.interruptionStatus}`, tone: "muted" });
+	}
 	lines.push({ text: "" });
 
 	lines.push({ text: "ACTIVE MODEL", tone: "accent" });
@@ -359,9 +388,15 @@ function buildBody(data: DashboardData, width: number): Line[] {
 	} else {
 		lines.push({ text: "No Do items recorded for this step.", tone: "muted" });
 	}
-	if (currentCard?.doneWhen.length) {
-		lines.push({ text: "Acceptance:" });
-		for (const item of currentCard.doneWhen) {
+	if (currentCard?.objectiveGates.length) {
+		lines.push({ text: "Objective gates:" });
+		for (const item of currentCard.objectiveGates) {
+			for (const line of wrap(item.text, width, `  [${item.done ? "x" : " "}] `)) lines.push({ text: line });
+		}
+	}
+	if (currentCard?.judgmentGates.length) {
+		lines.push({ text: "Judgment gates:" });
+		for (const item of currentCard.judgmentGates) {
 			for (const line of wrap(item.text, width, `  [${item.done ? "x" : " "}] `)) lines.push({ text: line });
 		}
 	}

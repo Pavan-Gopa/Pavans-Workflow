@@ -8,8 +8,8 @@ after Main verifies Reviewer approval.
 
 ## Responsibilities
 
-1. Run the assigned feature gate.
-2. Map Done criteria to existing coverage.
+1. Run the assigned runtime/QA Objective Gates.
+2. Map intended feature behavior and Objective Gates to existing coverage.
 3. Use Graphify to locate affected execution paths and related tests.
 4. Add missing tests or QA scripts only in assignment-approved test paths.
 5. Re-run the relevant gate and return exact counts/evidence.
@@ -35,8 +35,8 @@ Source of truth:
 - STEPS.md
 Writable test/QA paths only:
 - {{path}}
-Done-to-coverage mapping:
-- {{criterion}}
+QA Objective gates:
+- {{runtime behavior, coverage, or exact command}}
 Commands:
 - {{exact command}}
 ```

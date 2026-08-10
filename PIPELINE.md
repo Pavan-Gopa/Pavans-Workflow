@@ -40,21 +40,23 @@ The Orchestrator saves a short version into `AI_Workflow_Kit/docs/PROJECT_CONTEX
 
 ---
 
-## Phase 2 — Plan or Architect
+## Phase 2 — Plan, advice, or Architect
 
 | Situation | What the Orchestrator does |
 |-----------|----------------------------|
 | **Enough context** to act safely | Writes a **minimal plan** (few steps in `STEPS.md` / `STATE.yaml`) and starts the first coding step. |
-| **Not enough** for a real plan | Offers to plan **with you**, usually via a separate **Architect** session. |
+| **One bounded design uncertainty** | Optionally asks the existing Architect for a fresh read-only `Mode: advisory` second opinion. No Grilling, ADR, or Architecture Package. |
+| **Not enough** for a real plan | Uses `Mode: design` or deep `/grilling` through a separate **Architect** session. |
 
-### Architect (when planning is hard)
+### Architect modes
 
-Main dispatches `workflow-architect` as a fresh OMP task agent. For deep
-discovery it autoloads the `grilling` skill. Headless iterations return exact
-material questions and a checkpoint; Main transparently relays exact Human
-answers into the next fresh Architect. Only after explicit confirmation does the
-Architect return an Architecture Package. It never implements or persists
-plans; Main verifies and writes accepted plan/ADR changes.
+Main dispatches `workflow-architect` as a fresh OMP task agent. Advisory mode
+returns concise advice and stops. For deep discovery, `/grilling` autoloads the
+skill: headless iterations return exact material questions and a checkpoint;
+Main transparently relays exact Human answers into the next fresh Architect.
+Only after explicit confirmation does the Architect return an Architecture
+Package. It never implements or persists plans; Main verifies and writes
+accepted plan/ADR changes.
 
 ---
 
@@ -62,11 +64,14 @@ plans; Main verifies and writes accepted plan/ADR changes.
 
 ```text
 Human ↔ Main Orchestrator only
-  → fresh workflow-coder → Main verifies source/diff/evidence
-  → fresh workflow-reviewer → Main verifies findings
-  → fresh workflow-tester → Main verifies tests/reports
+  → fresh workflow-coder runs assigned Objective Gates
+  → Main verifies source/diff/evidence
+  → fresh workflow-reviewer evaluates Judgment Gates
+  → Main verifies findings
+  → fresh workflow-tester runs runtime/QA Objective Gates
+  → Main verifies tests/reports
   → green → Main updates state and opens the next step
-  → red → Main records findings and starts a fresh Coder fix run
+  → red → Main records verified attempt memory and starts a fresh Coder fix run
 ```
 
 | Gate | Default | Human choice |
@@ -78,17 +83,24 @@ Human ↔ Main Orchestrator only
 Workers never invent the pipeline, write workflow-state files, invoke another
 worker, or commit. Main is the only workflow-state owner.
 
+Fresh retries receive compact verified facts from `FEEDBACK.md`: attempted
+approach, observed result, evidence, and rejection reason. They never receive a
+prior worker transcript. At startup or `/workflow status`, Main reconciles
+file-backed active-agent state with real `hub` status, artifacts, and the
+authorized diff. Interrupted partial work is preserved; runtime disappearance
+alone is not an implementation failure.
+
 ---
 
 ## Roles in one line
 
 | Role | Job |
 |------|-----|
-| **Orchestrator** | Reads state, verifies results, and routes compact self-contained assignments through model aliases |
-| **Coder** | Implements the current step only |
-| **Reviewer** | Approves or requests changes |
-| **Tester** | Runs gate, finds coverage gaps, adds tests (no product fixes) |
-| **Architect** | Research + plan / ADR when design is unclear |
+| **Orchestrator** | Reconciles state, verifies results, and routes compact self-contained assignments |
+| **Coder** | Implements current scope and runs assigned Objective Gates |
+| **Reviewer** | Owns independent Judgment Gates; approves or requests changes |
+| **Tester** | Runs runtime/QA Objective Gates and fills real coverage gaps |
+| **Architect** | Optional bounded advice, normal design, or deep Grilling |
 | **Security** | Optional final vuln audit when project is ready |
 
 ---
@@ -141,5 +153,6 @@ AI_Workflow_Kit/
 4. Workers receive task-specific context, never Main's conversation history.
 5. `GRAPHIFY -> FIND; SOURCE -> VERIFY`.
 6. Main verifies actual repository and test evidence before every transition.
-7. Stop materially identical retry loops after three failed attempts.
-8. English docs. Speak to the Human in their language.
+7. Stop only materially identical failures of the same approach after three
+   attempts; preserve compact verified retry memory.
+8. Reconcile stale runtime state before routing.

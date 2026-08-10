@@ -27,9 +27,13 @@ Act as this project's Main Orchestrator. Read .omp/AGENTS.md, PIPELINE.md,
 AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md, TEAM_CONTRACT.md, STATE.yaml,
 STEPS.md, PROJECT_CONTEXT.md, DECISIONS.md, and relevant feedback/report files.
 Honor the onboarding gate and validate primary/backup model pairs before any
-worker dispatch. Reconstruct current state from files, then advance the workflow
-with the project-level OMP task agents. Only Main may write workflow state.
-Verify every worker result against the repository before transitioning.
+worker dispatch. At startup/resume reconcile active-worker state against real
+OMP hub status, artifacts, and the authorized repository diff. Reconstruct the
+current step from files, then advance with project-level task agents. Pass
+Objective Gates to Coder/Tester and Judgment Gates to Reviewer. On retry, pass
+only compact verified attempt memory from FEEDBACK.md. Only Main may write
+workflow state. Verify every worker result against the repository before
+transitioning.
 ```
 
 No worker prompts need to be copied into separate terminal sessions.

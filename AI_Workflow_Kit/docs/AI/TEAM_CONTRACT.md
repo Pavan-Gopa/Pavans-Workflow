@@ -63,10 +63,27 @@ Main's conversation history. Every retry is a new task-agent session.
 | **Tester** | **Recommended on** | Orchestrator should include Tester unless Human opts out. |
 | **Security** | **Offer once** near release | Optional. Expensive top models. Not every step. |
 
+### Verification gates
+
+This section is the canonical gate contract. Step cards separate:
+
+- **Objective gates** — deterministic evidence such as command exit codes,
+  test/build/typecheck results, or artifact existence. Coder runs the assigned
+  objective gates; Tester owns runtime/QA objective gates. Reviewer may repeat
+  relevant commands.
+- **Judgment gates** — engineering evaluation of semantics, accepted
+  architecture, scope, public contracts, failure behavior, and trust
+  boundaries. Reviewer is the primary evaluator; Coder never marks these green.
+
+`waiting_review` means the scoped implementation and required Coder objective
+gates are ready for independent judgment, not that the step is proven correct.
+Only Main combines verified objective evidence, Reviewer judgment, and enabled
+QA results to transition the step.
+
 ### Tester (when enabled)
 
-1. Run the project feature gate.
-2. Gap-hunt against step Done criteria and current source.
+1. Run the assigned runtime/QA Objective Gates.
+2. Gap-hunt intended feature behavior and coverage against current source.
 3. Add tests only in assignment-approved test/QA paths.
 4. Return structured counts, commands, new tests, and failures to Main.
 5. Main inspects every Tester-authored test diff for weakened assertions,
@@ -104,7 +121,8 @@ Do not send bugs to another worker directly. Do not put live secrets in output.
 7. Graphify first when current; verify in real source.
 8. Fresh worker context for every role run and retry.
 9. Main verifies repository/test evidence before every transition.
-10. Stop three materially identical failed attempts and surface the blocker.
+10. Stop three materially identical failures of the same approach and surface
+    the blocker; changed approaches/evidence/failure states are progress.
 11. Three failed Coder runs never authorize Main to write product code; stop,
     route to Architect when appropriate, or request Human direction.
 
@@ -128,3 +146,8 @@ No secrets in comments. No novel on every getter.
 Workers return the structured schema defined by their `.omp/agents/*.md` file.
 They do not write `FEEDBACK.md`, route the next role, or ask the Human to copy a
 prompt. Main validates the result and persists the canonical workflow record.
+
+On a retry, Main adds only verified attempt memory: approach, observed result,
+evidence, and why it was rejected. Worker transcripts and reasoning are never
+handoff context. The durable record lives in `FEEDBACK.md`; the assignment
+carries only the compact task-relevant subset.

@@ -150,7 +150,9 @@ omp --model @workflow_orchestrator
 
 Useful controls:
 
-- `/workflow status` — reread file-backed state and continue.
+- `/workflow status` — reconcile runtime/repository state, then continue.
+- `/workflow update check` — compare the installed framework with upstream.
+- `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
 - `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, and provider-quota panel.
@@ -159,4 +161,16 @@ Useful controls:
 
 ## Update
 
-Pull a new template version into a temporary clone and ask an OMP agent to compare/merge it. Do not blindly overwrite `.omp/config.yml` or live workflow state in a project already using the workflow.
+From Main, run:
+
+```text
+/workflow update check
+/workflow update
+```
+
+The first command compares against the latest `main` from Pavan’s Workflow and
+does not edit. The second explicitly applies reviewed framework changes while
+preserving `.omp/config.yml`, project context, live `STATE.yaml`, step cards,
+decisions, feedback, and reports. Local framework conflicts are left unchanged
+and reported. The workflow never polls upstream in the background and installs
+no daemon or scheduler.

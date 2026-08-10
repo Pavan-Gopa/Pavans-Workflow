@@ -51,8 +51,10 @@ Main → Coder → Main verification
 ```
 
 If a gate fails, Main records verified evidence and starts a **new** Coder
-session. After three materially identical failures, automatic retries stop and
-the workflow surfaces a blocker or routes once to Architect.
+session with compact retry memory: approach, observed result, evidence, and why
+it was rejected. Only materially identical failures of the same approach count
+toward the three-attempt stop; a new approach, new evidence, or different
+failure is progress.
 
 ## Core properties
 
@@ -101,10 +103,13 @@ only:
 1. its stable role contract;
 2. the current assignment;
 3. source-of-truth file paths;
-4. allowed paths and acceptance criteria;
+4. allowed paths, Objective Gates, and Reviewer-owned Judgment Gates;
 5. access to the live repository and Graphify.
 
 It does not inherit Main's conversation history or another worker's transcript.
+
+On retry, it may also receive a compact verified summary from `FEEDBACK.md`.
+It never receives the prior Coder transcript, chain-of-thought, or Main history.
 
 ### Files are memory
 
@@ -126,9 +131,9 @@ Press **Alt+W** (or run `/workflow-dashboard`) inside OMP to open the
 project-level live panel. It reads the canonical `STATE.yaml` and current
 `STEPS.md` card, listens to OMP's task-agent progress events, and shows:
 
-- completed/remaining step counts and the current step checklist;
+- completed/remaining step counts plus separate Objective and Judgment Gates;
 - the active role, agent, resolved model, manual-backup status, intent, and tool;
-- implementation, review, QA, security, and blocker gates;
+- implementation, review, QA, security, and blocker state;
 - every role's primary/backup model pair;
 - redacted provider-reported quota and reset windows from `omp usage`.
 
@@ -164,6 +169,22 @@ OMP Agent Hub keeps the process observable:
 - restart a role with fresh context.
 
 The workflow automates mechanical routing; it does not remove human control.
+
+### Recovery after interruption
+
+At every startup/resume and `/workflow status`, Main reconciles
+`STATE.yaml` with OMP's actual `hub jobs` / `hub list` state, available worker
+artifacts, and the authorized repository diff. Stale worker state is cleared
+only after classification. A missing runtime never advances a gate and does not
+increment implementation/retry counters. Partial Coder work is preserved and
+described to the next fresh Coder.
+
+### Lightweight Architect advice
+
+For one bounded design uncertainty, Main may dispatch the existing
+`workflow-architect` with `Mode: advisory`. It returns a recommendation, main
+risk, strongest alternative, and unresolved uncertainty—without Grilling,
+Human questions, an ADR, an Architecture Package, persistence, or routing.
 
 ### Grilling
 
@@ -324,7 +345,9 @@ Useful controls:
 
 | Action | Control |
 |--------|---------|
-| Re-read state and continue | `/workflow status` |
+| Re-read, reconcile state, and continue | `/workflow status` |
+| Check upstream workflow updates | `/workflow update check` |
+| Conservatively update workflow framework | `/workflow update` |
 | Redirect Main | `/workflow <new instruction>` |
 | Open live workflow/model/quota panel | `Alt+W` or `/workflow-dashboard` |
 | Inspect/steer/kill workers | `Alt+A` |
@@ -355,6 +378,15 @@ PIPELINE.md                   concise process overview
 INSTALL.md                    full installation guide
 install.sh                    safe template installer
 ```
+
+## Update the workflow
+
+Run `/workflow update check` to compare the installed framework with upstream
+without edits. Run `/workflow update` to apply a reviewed, conservative update.
+The command preserves `.omp/config.yml`, project context, `STATE.yaml`, step
+cards, decisions, feedback, and reports; conflicting framework customizations
+are reported rather than overwritten. Updates are explicit—there is no
+background polling, daemon, or scheduler.
 
 ## Extend it
 

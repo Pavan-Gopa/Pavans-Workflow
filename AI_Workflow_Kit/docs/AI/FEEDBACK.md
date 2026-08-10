@@ -14,7 +14,7 @@
 | Step | |
 | Actor | coder \| reviewer \| tester \| security \| architect |
 | Timestamp | |
-| RESULT | waiting_review \| approved \| changes_requested \| qa_green \| bugs \| security_clean \| findings_open \| design_ready |
+| RESULT | waiting_review \| approved \| changes_requested \| qa_green \| bugs \| security_clean \| findings_open \| advice_ready \| design_ready \| runtime_interrupted \| recovered_result |
 
 ### Summary
 
@@ -29,6 +29,22 @@
 ### Blocking / remaining
 
 - …
+
+### Verified attempt memory (retry only)
+
+- Approach:
+- Observed result:
+- Verified evidence:
+- Why rejected:
+- Do not repeat without new evidence:
+
+### Runtime reconciliation (when applicable)
+
+- Classification: `still_active` | `recovered_result` | `interrupted_no_changes` | `interrupted_partial` | `indeterminate`
+- Runtime evidence:
+- Repository evidence:
+- Recovered changed files:
+- Unverified remainder:
 
 ### Review section (Reviewer only)
 
