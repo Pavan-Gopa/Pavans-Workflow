@@ -227,8 +227,19 @@ bash AI_Workflow_Kit/script/workflow_metrics.sh selftest
 `/workflow metrics` is read-only and returns the aggregated report without
 changing `STATE.yaml` or routing product work. Reset deletes only the event file
 and its companion metrics-start metadata; it does not touch workflow documents.
-Alt+W reads the same JSON aggregation with a 15-second cache and shows only a
-compact summary.
+Alt+W reads the same JSON aggregation with a 15-second cache and renders the
+canonical per-step and team summaries. The dashboard also has a separate,
+in-memory `THIS OMP SESSION` token counter. It is not a canonical workflow
+metric and is never written to this event store.
+
+Main usage comes from persisted/live OMP assistant messages; worker usage comes
+from OMP task progress. Both use OMP's displayed-consumption formula:
+`input + output + cacheWrite`; cumulative worker progress is converted to
+deltas so refreshes do not double-count. `cacheRead` is intentionally excluded
+because repeated cached context would make a misleading work-done total.
+Counters reset when the live Main session changes, group by the exact resolved
+provider/model, include Main and every worker role, and are presented without
+scores, rankings, cost estimates, or external telemetry.
 
 ## Reliability
 

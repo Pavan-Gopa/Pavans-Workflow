@@ -86,7 +86,7 @@ Next:
   2. Follow the first-run onboarding screen.
   3. Press Alt+M to assign a primary and backup model to every workflow role.
   4. Press Alt+A to supervise active workers.
-  5. Press Alt+W to inspect workflow progress, local metrics, active models, and provider quota.
+  5. Press Alt+W to inspect the live plan, current work, statistics, and current-session model tokens.
 
 OMP loads the project agents, /workflow command, live dashboard, passive metrics helper, and grilling skill automatically.
 MESSAGE

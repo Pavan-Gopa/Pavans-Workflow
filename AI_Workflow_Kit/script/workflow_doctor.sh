@@ -53,6 +53,8 @@ check_path .omp/config.yml
 check_path .omp/AGENTS.md
 check_path .omp/commands/workflow.md
 check_path .omp/extensions/workflow-dashboard.ts
+check_path .omp/lib/workflow-dashboard-core.ts
+check_path .omp/tests/workflow-dashboard.selftest.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
 check_path AI_Workflow_Kit/docs/AI/METRICS.md
@@ -102,6 +104,17 @@ if bash AI_Workflow_Kit/script/workflow_metrics.sh selftest >/dev/null; then
 else
   printf 'FAIL workflow metrics deterministic selftest\n' >&2
   failures=$((failures + 1))
+fi
+
+if command -v node >/dev/null 2>&1; then
+  if node .omp/tests/workflow-dashboard.selftest.ts >/dev/null; then
+    printf 'OK   workflow dashboard deterministic selftest\n'
+  else
+    printf 'FAIL workflow dashboard deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+else
+  printf 'WARN command: node unavailable; dashboard selftest skipped (OMP runtime still validated on launch)\n'
 fi
 
 if (( failures > 0 )); then

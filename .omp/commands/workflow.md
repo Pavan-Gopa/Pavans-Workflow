@@ -61,7 +61,7 @@ Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
 - For `onboard`, `setup`, or an incomplete onboarding state, run
   `bash AI_Workflow_Kit/script/workflow_models.sh status` and show a concise
   welcome screen explaining Main, fresh workers, primary/backup model pairs,
-  `Alt+M` model selection, `Alt+W` live workflow/model/metrics/quota dashboard, `Alt+A`
+  `Alt+M` model selection, the `Alt+W` live task board, separate `Alt+A` worker
   supervision, file-backed state, and Human-authorized backup retry. Do not
   dispatch a worker yet.
 - Use the interactive `ask` tool with these choices: **Configure model pairs**,

@@ -138,6 +138,16 @@ Main → Coder → Main verify/write state
   gate and reason in `STATE.yaml`.
 - Security is offered once near release; never forced.
 
+### Step checklist ownership
+
+Every executable `**Do:**` item in `STEPS.md` is a Markdown checkbox and records
+Main-verified semantic completion, not a worker's claim. Before dispatch, set
+`STATE.yaml.current_work_item` to the exact unchecked `Do` text when the
+assignment maps cleanly to one item. After inspecting actual source and
+evidence, Main alone marks it `[x]` and clears `current_work_item`. If a later
+Reviewer or Tester finding invalidates that work, Main changes it back to `[ ]`
+before dispatching the fix. Workers never edit `STEPS.md` or this field.
+
 ### Result transitions
 
 | Result | Main action |
@@ -304,10 +314,11 @@ workflow files before rerouting.
 transcript. The Human can steer or kill a worker there. After a kill or steer,
 Main verifies actual repository state before continuing.
 
-`Alt+W` opens the read-only workflow dashboard: current step and checklist,
-gate progress, active role/model/manual-backup status, passive local workflow
-metrics, and redacted provider quota.
-Use Agent Hub for transcripts, steering, and termination.
+`Alt+W` opens the read-only live `PLAN | CURRENT | STATISTICS` task board:
+plan position, selected/current step, Main-verified TODOs, gates, blockers,
+current actor/model/runtime, next action, canonical passive metrics, and
+in-memory current-session token totals by model. Use the separate Agent Hub for
+transcripts, steering, and termination.
 
 ## Forbidden
 

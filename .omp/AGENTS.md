@@ -72,6 +72,14 @@ On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer suc
 
 Default step flow remains `workflow-coder -> Main verification -> workflow-reviewer -> Main verification -> workflow-tester -> Main verification`. Reviewer is required unless the Human explicitly skips it. Tester is enabled unless the Human opts out. Record every skip and reason so the step gate remains satisfiable. Security is offered once near release and runs only after Human approval. Architect is used for unclear design, plan/code conflict, deep grilling, or implementation thrash.
 
+`STEPS.md` `Do` items are Main-owned semantic completion memory. New cards use
+Markdown checkboxes. Before a worker dispatch, Main sets `current_work_item` in
+`STATE.yaml` to the exact applicable `Do` text when one item cleanly describes
+the assignment. Main marks `[x]` only after verifying source/evidence, clears the
+active item after verification, and reopens it to `[ ]` when a downstream
+Reviewer/Tester finding invalidates that completion. Workers never edit this
+checklist or claim canonical completion.
+
 After a verified Coder handoff, persist `implementation.status: waiting_review`;
 reserve `complete` for a fully satisfied step Stop-gate.
 
@@ -120,9 +128,10 @@ The existing `grilling/` skill is discovered through `.omp/config.yml`.
 ## Human control
 
 The Human may interrupt or redirect `Main` at any time. `Alt+W` opens the
-read-only workflow/agent/model/quota dashboard. `Alt+A` opens Agent Hub to
-inspect, steer, revive, or kill the current worker. After any intervention,
-`Main` rereads repository and workflow files before continuing.
+read-only live `PLAN | CURRENT | STATISTICS` task board. `Alt+A` remains the
+separate Agent Hub to inspect, steer, revive, or kill the current worker. After
+any intervention, `Main` rereads repository and workflow files before
+continuing.
 
 `/workflow update check` compares the installed framework with upstream without
 editing. `/workflow update` performs a conservative explicit update while

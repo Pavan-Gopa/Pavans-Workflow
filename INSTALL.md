@@ -155,7 +155,7 @@ Useful controls:
 - `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
-- `Alt+W` (or `/workflow-dashboard`) — open the live step, role, model, local-metrics, and provider-quota panel.
+- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board.
 - `/workflow metrics` — show the passive local workflow report.
 - `/workflow metrics rate good|overkill|underchecked [step]` — add an optional Human rating.
 - `/workflow metrics reset` — delete only local telemetry and start fresh.

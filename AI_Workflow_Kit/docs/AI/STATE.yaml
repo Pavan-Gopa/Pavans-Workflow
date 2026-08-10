@@ -7,6 +7,8 @@ onboarding:
   model_pairs_confirmed: false
   completed_at: null
 current_step: S0
+# Exact STEPS.md Do text while one item is actively assigned; Main owns/clears it.
+current_work_item: null
 step_description: >-
   Session start: Orchestrator confirms workflow readiness, asks Human for
   project context, then minimal plan or Architect.

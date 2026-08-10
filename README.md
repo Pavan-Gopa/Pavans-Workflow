@@ -128,19 +128,22 @@ Main verifies the real source and evidence first.
 ### Live workflow dashboard
 
 Press **Alt+W** (or run `/workflow-dashboard`) inside OMP to open the
-project-level live panel. It reads the canonical `STATE.yaml` and current
-`STEPS.md` card, listens to OMP's task-agent progress events, and shows:
+read-only live task board. On a wide terminal it renders `PLAN | CURRENT STEP |
+STATISTICS`; medium and narrow terminals reflow the same information without
+changing the workflow. It reads canonical `STATE.yaml` and `STEPS.md`, listens
+to OMP task-agent progress, and shows:
 
-- completed/remaining step counts plus separate Objective and Judgment Gates;
-- the active role, agent, resolved model, manual-backup status, intent, and tool;
-- implementation, review, QA, security, and blocker state;
-- every role's primary/backup model pair;
-- redacted provider-reported quota and reset windows from `omp usage`.
+- the real plan order, completed/remaining counts, selected step, and verified
+  `Do` checklist;
+- current actor/model/runtime, status, next action, gates, and blockers;
+- per-step and team statistics from the canonical passive metrics helper;
+- current-session token consumption by every model used by Main and workers.
 
-The panel is observational: it never writes workflow state. Use
-`Up`/`Down`/`PgUp`/`PgDn` to scroll, `r` to refresh provider usage, and
-`Alt+W`, `Esc`, or `q` to close it. Agent Hub remains the detailed transcript
-and intervention surface.
+The panel never writes workflow state. `Up`/`Down` select a step, `c` returns to
+the live step, `PgUp`/`PgDn` scroll only center-column details, and `r` refreshes
+files and metrics. Use `Alt+W`, `Esc`, or `q` to close it. Keep the three native
+surfaces distinct: `Alt+W` is this task board, `Alt+A` is Agent Hub for
+transcripts/steering/termination, and `Alt+M` is the model-role selector.
 
 ### Graphify-first navigation
 
@@ -349,7 +352,7 @@ Useful controls:
 | Check upstream workflow updates | `/workflow update check` |
 | Conservatively update workflow framework | `/workflow update` |
 | Redirect Main | `/workflow <new instruction>` |
-| Open live workflow/model/metrics/quota panel | `Alt+W` or `/workflow-dashboard` |
+| Open live `PLAN | CURRENT | STATISTICS` task board | `Alt+W` or `/workflow-dashboard` |
 | View passive local workflow metrics | `/workflow metrics` |
 | Rate the latest completed step | `/workflow metrics rate good`, `overkill`, or `underchecked` |
 | Delete local telemetry only | `/workflow metrics reset` |
@@ -368,7 +371,9 @@ Useful controls:
   config.yml                  role aliases and task lifecycle
   agents/                     five roles + five manual backup execution variants
   commands/workflow.md        orchestration entry point
-  extensions/workflow-dashboard.ts live workflow/model/metrics/quota panel
+  extensions/workflow-dashboard.ts live read-only task board
+  lib/workflow-dashboard-core.ts   pure parser/view/render/token aggregation
+  tests/workflow-dashboard.selftest.ts deterministic dashboard selftest
 grilling/                     discovery and decision skill
 AI_Workflow_Kit/
   docs/                       state, plans, role contracts, reports

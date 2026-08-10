@@ -127,6 +127,8 @@ Do not send bugs to another worker directly. Do not put live secrets in output.
     the blocker; changed approaches/evidence/failure states are progress.
 12. Three failed Coder runs never authorize Main to write product code; stop,
     route to Architect when appropriate, or request Human direction.
+13. Main alone checks or reopens `STEPS.md` `Do` boxes after source/evidence
+    verification; workers never mutate canonical checklist state.
 
 ---
 

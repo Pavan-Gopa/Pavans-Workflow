@@ -464,9 +464,11 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
     }
 
     model_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
-    product_review_by_candidate = {
-        str(event.get("candidate_id")): event for event in product_reviews if event.get("candidate_id")
-    }
+    product_review_by_candidate: dict[str, dict[str, Any]] = {}
+    for event in product_reviews:
+        candidate_id = event.get("candidate_id")
+        if candidate_id:
+            product_review_by_candidate.setdefault(str(candidate_id), event)
     for run_id, started in starts_by_run.items():
         provider = started.get("provider")
         model = started.get("model")
@@ -522,6 +524,142 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
         "median_step_duration_ms": median_or_none(step_durations),
         "median_worker_duration_ms": median_or_none(worker_durations),
     }
+
+    starts_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    results_by_role: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for event in starts_by_run.values():
+        starts_by_role[str(event.get("role", "unknown"))].append(event)
+    for event in by_type["worker_result"]:
+        results_by_role[str(event.get("role", "unknown"))].append(event)
+
+    coder_candidate_ids = {
+        str(event.get("candidate_id") or event.get("run_id"))
+        for event in starts_by_role["coder"]
+        if event.get("candidate_id") or event.get("run_id")
+    }
+    coder_first_reviews = [
+        review for candidate, review in product_review_by_candidate.items() if candidate in coder_candidate_ids
+    ]
+    role_stats: dict[str, dict[str, Any]] = {}
+    for role in sorted(ROLES):
+        starts = starts_by_role[role]
+        results = results_by_role[role]
+        if not starts and not results:
+            continue
+        result_counts = Counter(str(event.get("result")) for event in results if event.get("result"))
+        stats: dict[str, Any] = {
+            "runs": len(starts),
+            "verified_results": len(results),
+            "results": dict(sorted(result_counts.items())),
+            "median_duration_ms": median_or_none(worker_durations_by_role.get(role, [])),
+        }
+        if role == "coder":
+            stats["first_review_approval"] = ratio(
+                sum(1 for event in coder_first_reviews if event.get("result") == "approved"),
+                len(coder_first_reviews),
+            )
+        elif role == "reviewer":
+            stats["product_rejection"] = summary["reviewer_rejection"]
+        elif role == "tester":
+            stats["qa_escape"] = summary["qa_escape"]
+        elif role == "architect":
+            stats["modes"] = dict(
+                sorted(Counter(str(event.get("mode")) for event in starts if event.get("mode")).items())
+            )
+        role_stats[role] = stats
+
+    step_ids = sorted(
+        {
+            str(event["step"])
+            for event in events
+            if event.get("step") is not None
+        }
+    )
+    step_stats: dict[str, dict[str, Any]] = {}
+    for step in step_ids:
+        step_events = [event for event in events if str(event.get("step")) == step]
+        started_events = [event for event in step_events if event.get("event") == "step_started"]
+        completed_events = [event for event in step_events if event.get("event") == "step_completed"]
+        started_event = started_events[0] if started_events else None
+        completed_event = completed_events[-1] if completed_events else None
+        start_ts = parse_ts(started_event.get("ts")) if started_event else None
+        end_ts = parse_ts(completed_event.get("ts")) if completed_event else None
+        step_duration_ms = (
+            int((end_ts - start_ts).total_seconds() * 1000)
+            if start_ts is not None and end_ts is not None and end_ts >= start_ts
+            else None
+        )
+
+        step_reviews = [
+            event
+            for event in step_events
+            if event.get("event") == "worker_result"
+            and event.get("role") == "reviewer"
+            and event.get("review_kind") == "product"
+        ]
+        step_qa = [
+            event
+            for event in step_events
+            if event.get("event") == "worker_result" and event.get("role") == "tester"
+        ]
+        step_architect_starts = [
+            event
+            for event in step_events
+            if event.get("event") == "worker_started" and event.get("role") == "architect"
+        ]
+        model_counts = Counter(
+            (str(event.get("role")), str(event.get("provider")), str(event.get("model")))
+            for event in step_events
+            if event.get("event") == "worker_started"
+            and event.get("role")
+            and event.get("provider")
+            and event.get("model")
+        )
+        step_stats[step] = {
+            "status": "completed" if completed_event else ("in_progress" if started_event else "observed"),
+            "started_at": started_event.get("ts") if started_event else None,
+            "completed_at": completed_event.get("ts") if completed_event else None,
+            "duration_ms": step_duration_ms,
+            "coder_attempts": len(coder_runs_by_step.get(step, set())),
+            "product_reviews": {
+                "runs": len(step_reviews),
+                "approved": sum(1 for event in step_reviews if event.get("result") == "approved"),
+                "changes_requested": sum(
+                    1 for event in step_reviews if event.get("result") == "changes_requested"
+                ),
+            },
+            "qa_runs": {
+                "runs": len(step_qa),
+                "qa_green": sum(1 for event in step_qa if event.get("result") == "qa_green"),
+                "bugs": sum(1 for event in step_qa if event.get("result") == "bugs"),
+            },
+            "architect_modes": dict(
+                sorted(
+                    Counter(
+                        str(event.get("mode")) for event in step_architect_starts if event.get("mode")
+                    ).items()
+                )
+            ),
+            "failure_count": sum(1 for event in step_events if event.get("event") == "failure"),
+            "runtime_interruptions": sum(
+                1 for event in step_events if event.get("event") == "runtime_interruption"
+            ),
+            "gate_skips": dict(
+                sorted(
+                    Counter(
+                        str(event.get("gate"))
+                        for event in step_events
+                        if event.get("event") == "gate_skipped" and event.get("gate")
+                    ).items()
+                )
+            ),
+            "human_rating": latest_rating_by_step.get(step),
+            "models": [
+                {"role": role, "provider": provider, "model": model, "runs": runs}
+                for (role, provider, model), runs in sorted(model_counts.items())
+            ],
+        }
+
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
@@ -529,9 +667,8 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
         "summary": summary,
         "failure_categories": dict(sorted(failure_categories.items())),
         "detected_by": dict(sorted(detected_by.items())),
-        "median_worker_duration_ms_by_role": {
-            role: median_or_none(values) for role, values in sorted(worker_durations_by_role.items())
-        },
+        "role_stats": role_stats,
+        "step_stats": step_stats,
         "human_ratings": dict(sorted(ratings.items())),
         "model_samples": model_samples,
     }
@@ -846,6 +983,19 @@ def command_selftest(_args: argparse.Namespace) -> int:
         assert_equal("J targeted review excluded", summary["reviewer_rejection"]["count"], 1)
         cases.append("J targeted test-diff review excluded")
 
+        assert_equal("M Coder runs", report["role_stats"]["coder"]["runs"], 8)
+        assert_equal("M Coder verified results", report["role_stats"]["coder"]["verified_results"], 7)
+        assert_equal("M Coder first review", report["role_stats"]["coder"]["first_review_approval"], ratio(5, 6))
+        assert_equal("M Reviewer product rejection", report["role_stats"]["reviewer"]["product_rejection"], ratio(1, 6))
+        cases.append("M canonical per-role statistics")
+
+        assert_equal("N S3 coder attempts", report["step_stats"]["S3"]["coder_attempts"], 2)
+        assert_equal("N S3 reviews", report["step_stats"]["S3"]["product_reviews"]["runs"], 2)
+        assert_equal("N S3 QA bugs", report["step_stats"]["S3"]["qa_runs"]["bugs"], 1)
+        assert_equal("N S3 failures", report["step_stats"]["S3"]["failure_count"], 1)
+        assert_equal("N S4 QA skip", report["step_stats"]["S4"]["gate_skips"]["qa"], 1)
+        cases.append("N canonical per-step statistics")
+
         duplicate = dict(fixture[0])
         duplicate["ts"] = iso_at(59, 30)
         duplicate_status, _ = append_event(events_path, duplicate)
@@ -879,7 +1029,7 @@ def command_selftest(_args: argparse.Namespace) -> int:
             raise AssertionError("L malformed line did not produce a warning")
         cases.append("L malformed trailing JSONL recovered")
 
-        print(f"workflow metrics selftest: PASS ({len(cases)}/12)")
+        print(f"workflow metrics selftest: PASS ({len(cases)}/14)")
         for case in cases:
             print(f"  PASS {case}")
         print("\nSynthetic five-step report:\n")

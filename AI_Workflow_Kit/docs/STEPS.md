@@ -17,8 +17,8 @@
 - path/b  
 
 **Do:**
-1. …
-2. …
+- [ ] first semantically verifiable work item
+- [ ] next semantically verifiable work item
 
 **Out of scope:**
 - …
@@ -54,10 +54,10 @@ Objective gates are green.
 - `AI_Workflow_Kit/docs/STEPS.md`
 
 **Do:**
-1. Orchestrator confirms: ready to work with this process.
-2. Human provides project context.
-3. Enough context → minimal plan (S1+). Thin context → Architect research + plan.
-4. Confirm gates: review on by default; Tester recommended.
+- [ ] Orchestrator confirms: ready to work with this process.
+- [ ] Human provides project context.
+- [ ] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
+- [ ] Confirm gates: review on by default; Tester recommended.
 
 **Out of scope:**
 - Large product implementation before plan exists
@@ -84,7 +84,7 @@ Objective gates are green.
 - 
 
 **Do:**
-1. 
+- [ ] first semantically verifiable work item
 
 **Out of scope:**
 - 

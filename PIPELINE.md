@@ -19,8 +19,9 @@ OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, dashboard
 extension, and `grilling` skill. On first launch, Main shows onboarding and
 validates all primary/backup model pairs before dispatching a worker. Press
 `Alt+M` to configure roles, then run `/workflow ready`. Press `Alt+W` at any
-time to inspect live step progress, the active model, passive local metrics, and
-provider quota; `Alt+A` opens the detailed Agent Hub. After onboarding, Main reads the
+time to inspect plan position, the current actor and next action, verified TODO
+progress, gates, blockers, passive metrics, and current-session model tokens;
+`Alt+A` opens the separate detailed Agent Hub. After onboarding, Main reads the
 file-backed workflow and asks for missing project context. Do not start a
 separate worker terminal or copy a kick prompt.
 
