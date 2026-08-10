@@ -72,7 +72,7 @@ security:
   next_run: none
   note: >-
     Offer once near release when work is ready (optional). Top models only:
-    GLM 5.2 max, Soul max, or Opus 5 max. Not every step. Not Terra/Luna.
+    GLM 5.2 max, Sol max, or Opus 5 max. Not every step. Not Terra/Luna.
 next_actor: orchestrator
 track: BOOTSTRAP
 plan_files:

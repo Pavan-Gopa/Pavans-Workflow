@@ -31,12 +31,12 @@ Higher wins on conflict. Plan vs code conflict → **Architect** before large Co
 
 | Role | Default |
 |------|---------|
-| Orchestrator | **Grok 4.5 · Max / High** · or **GPT 5.6 Soul · Medium** |
+| Orchestrator | **Grok 4.5 · Max / High** · or **GPT 5.6 Sol · Medium** |
 | Coder | Luna / DeepSeek Flash / Gemini Flash · Max–High |
 | Reviewer | Luna / Gemini · **no DeepSeek** |
 | Tester | Terra · Max / Extra High |
-| Architect | Soul High–Extra High or Terra Max · **not Ultra** |
-| Security | **GLM 5.2 · max** · Soul max · Opus 5 max (final offer only) |
+| Architect | Sol High–Extra High or Terra Max · **not Ultra** |
+| Security | **GLM 5.2 · max** · Sol max · Opus 5 max (final offer only) |
 
 Full table: `MODELS.md`.
 

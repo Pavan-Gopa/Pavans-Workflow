@@ -60,7 +60,7 @@ These must be **max quality**. Cheap flash models are the wrong tool for a final
 | Priority | Model | Reasoning | Notes |
 |----------|-------|-----------|-------|
 | **Primary** | **GLM 5.2** | **Maximum** | Strong default for vulnerability hunting |
-| Strong alt | **GPT 5.6 Soul** | **Maximum** | Excellent; **expensive** |
+| Strong alt | **GPT 5.6 Sol** | **Maximum** | Excellent; **expensive** |
 | Strong alt | **Opus 5** (or current top Opus) | **Maximum** | Also capable; **expensive** |
 
 **Always warn Human before the kick:**

@@ -94,7 +94,7 @@ Objective gates are green.
 ### Objective gates
 
 - [ ]
-- [ ] project tests green, or QA explicitly skipped by Human with a recorded reason
+- [ ] project tests green
 
 ### Judgment gates
 

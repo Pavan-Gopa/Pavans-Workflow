@@ -174,6 +174,7 @@ export type DashboardViewModel = {
 	selectedStep?: StepCard;
 	selectedStepId: string;
 	selectedIndex: number;
+	currentIndex: number;
 	relation: StepRelation;
 	completedInPlan: number;
 	remainingInPlan: number;
@@ -608,6 +609,7 @@ export function deriveDashboardViewModel(
 		selectedStep,
 		selectedStepId: selectedId,
 		selectedIndex,
+		currentIndex,
 		relation,
 		completedInPlan,
 		remainingInPlan: Math.max(0, data.steps.length - completedInPlan),
@@ -756,16 +758,17 @@ function findExactModelSample(report: MetricsReport | undefined, role: string, r
 
 function planStatusMarker(view: DashboardViewModel, step: StepCard): string {
 	const selected = step.id === view.selectedStepId ? "*" : " ";
-	const current = step.id === view.data.state.currentStep ? ">" : " ";
+	const isCurrent = step.id === view.data.state.currentStep;
+	const current = isCurrent ? ">" : " ";
 	const completed = view.data.state.completedSteps.includes(step.id);
-	const state = completed ? "✓" : current ? "●" : "○";
+	const state = completed ? "✓" : isCurrent ? "●" : "○";
 	return `${selected}${current} ${state}`;
 }
 
 function buildPlanLines(view: DashboardViewModel, height: number): TextLine[] {
 	const lines: TextLine[] = [
 		{ text: "PLAN", tone: "accent" },
-		{ text: `Step ${view.selectedIndex >= 0 ? view.selectedIndex + 1 : "-"} / ${view.data.steps.length}` },
+		{ text: `Current ${view.currentIndex >= 0 ? view.currentIndex + 1 : "-"} / ${view.data.steps.length}` },
 		{ text: `${view.completedInPlan} complete · ${view.remainingInPlan} remaining`, tone: "muted" },
 	];
 	if (view.completedOutsidePlan.length > 0) {
@@ -1045,27 +1048,25 @@ function buildStatisticsLines(view: DashboardViewModel, width: number, compact =
 	const lines: TextLine[] = [{ text: "STATISTICS", tone: "accent" }];
 	const report = view.data.metrics;
 	const selectedStats = report?.step_stats?.[view.selectedStepId];
-	if (report?.summary) {
-		lines.push(...stepStatsLines(view, selectedStats, width, compact), { text: "" });
-	} else if (view.relation === "planned") {
-		lines.push(...stepStatsLines(view, undefined, width, compact), { text: "" });
-	}
-	lines.push(...sessionUsageLines(view.data.sessionUsage));
 	if (view.data.metricsError || !report?.summary) {
+		if (view.relation === "planned") lines.push(...stepStatsLines(view, undefined, width, compact), { text: "" });
 		lines.push(
-			{ text: "" },
 			{ text: `[WARN] Canonical metrics unavailable`, tone: "warning" },
 			{ text: "Workflow execution is unaffected.", tone: "muted" },
+			{ text: "" },
+			...sessionUsageLines(view.data.sessionUsage),
 		);
 		return lines;
 	}
-	lines.push({ text: "" }, ...teamHealthLines(report));
+	lines.push(...teamHealthLines(report));
 	const roleLines = roleStatsLines(view, report);
 	if (roleLines.length > 0) lines.push({ text: "" }, ...roleLines);
 	const modelLines = currentModelLines(view, report);
 	if (modelLines.length > 0) lines.push({ text: "" }, ...modelLines);
+	lines.push({ text: "" }, ...stepStatsLines(view, selectedStats, width, compact));
 	const failures = failureLines(report);
 	if (failures.length > 0) lines.push({ text: "" }, ...failures);
+	lines.push({ text: "" }, ...sessionUsageLines(view.data.sessionUsage));
 	return lines;
 }
 

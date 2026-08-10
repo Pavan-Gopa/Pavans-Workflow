@@ -143,7 +143,8 @@ class WorkflowDashboard implements Component {
 	private detailScroll = 0;
 	private maxDetailScroll = 0;
 	private timer?: Timer;
-	private refreshing = false;
+	private localRefreshing = false;
+	private metricsRefreshing = false;
 	private closed = false;
 
 	constructor(
@@ -154,8 +155,8 @@ class WorkflowDashboard implements Component {
 		private readonly keybindings: KeybindingsLike,
 		private readonly done: (value: undefined) => void,
 	) {
-		this.timer = ctx.setInterval(() => void this.refresh(false), LIVE_REFRESH_MS);
-		void this.refresh(true);
+		this.timer = ctx.setInterval(() => this.refresh(false), LIVE_REFRESH_MS);
+		this.refresh(true);
 	}
 
 	private syncSelection(): void {
@@ -177,17 +178,42 @@ class WorkflowDashboard implements Component {
 		this.requestRender();
 	}
 
-	private async refresh(forceMetrics: boolean): Promise<void> {
-		if (this.refreshing || this.closed) return;
-		this.refreshing = true;
+	private publishMetrics(): void {
+		if (!this.data || this.closed) return;
+		this.data = {
+			...this.data,
+			metrics: metricsCache.data,
+			metricsError: metricsCache.error,
+			sessionUsage: sessionUsage.snapshot(),
+		};
+		this.requestRender();
+	}
+
+	private async refreshLocal(): Promise<void> {
+		if (this.localRefreshing || this.closed) return;
+		this.localRefreshing = true;
 		try {
 			const files = await readDashboardFiles(this.ctx.cwd);
-			this.publish(files);
-			await refreshMetrics(this.pi, this.ctx.cwd, forceMetrics);
 			if (!this.closed) this.publish(files);
 		} finally {
-			this.refreshing = false;
+			this.localRefreshing = false;
 		}
+	}
+
+	private async refreshMetricsData(force: boolean): Promise<void> {
+		if (this.metricsRefreshing || this.closed) return;
+		this.metricsRefreshing = true;
+		try {
+			await refreshMetrics(this.pi, this.ctx.cwd, force);
+			this.publishMetrics();
+		} finally {
+			this.metricsRefreshing = false;
+		}
+	}
+
+	private refresh(forceMetrics: boolean): void {
+		void this.refreshLocal();
+		void this.refreshMetricsData(forceMetrics);
 	}
 
 	private close(): void {
@@ -225,7 +251,7 @@ class WorkflowDashboard implements Component {
 			return;
 		}
 		if (matchesKey(data, "r")) {
-			void this.refresh(true);
+			this.refresh(true);
 			return;
 		}
 		if (matchesKey(data, "c")) {

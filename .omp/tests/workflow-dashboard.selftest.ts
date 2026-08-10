@@ -172,7 +172,7 @@ const metrics: MetricsReport = {
 		},
 	},
 	failure_categories: { missed_requirement: 8, incorrect_implementation: 5 },
-	detected_by: { reviewer: 12, tester: 5, orchestrator: 3 },
+	detected_by: { reviewer: 12, tester: 5, main: 3 },
 	model_samples: [
 		{
 			role: "coder",
@@ -315,6 +315,7 @@ const runtime: RuntimeSnapshot = {
 const currentView = deriveDashboardViewModel(data, runtime);
 assert.equal(currentView.relation, "current");
 assert.equal(currentView.status, "Coder running");
+assert.equal(currentView.currentIndex, 2);
 assert.match(currentView.nextAction, /Wait for Coder result/);
 
 for (const [width, expectedLayout] of [[160, "wide"], [120, "medium"], [80, "narrow"]] as const) {
@@ -322,8 +323,8 @@ for (const [width, expectedLayout] of [[160, "wide"], [120, "medium"], [80, "nar
 	assert.equal(rendered.layout, expectedLayout);
 	for (const line of rendered.lines) assert.equal(displayWidth(line.text), width, `${expectedLayout}: ${line.text}`);
 	const text = rendered.lines.map(line => line.text).join("\n");
-	assert.match(text, /THIS OMP SESSION/);
-	assert.match(text, /410 tok/);
+	if (width === 160) assert.match(text, /THIS OMP SESSION/);
+	else assert.doesNotMatch(text, /THIS OMP SESSION/);
 	assert.doesNotMatch(text, /PROVIDER QUOTA|MODEL PAIRS/);
 }
 
@@ -341,6 +342,7 @@ assert.match(completedText, /RESULT · Completed Stop-gate/);
 assert.match(completedText, new RegExp("openai-codex/gpt-5\\.6-luna"));
 assert.doesNotMatch(completedText, /ACTIVE · Coder/);
 assert.match(completedText, /Legacy Do list/);
+assert.match(completedText, /Current 3 \/ 5/);
 
 const futureView = deriveDashboardViewModel(data, { ...runtime, worker: undefined }, "release-2");
 assert.equal(futureView.relation, "planned");
@@ -447,10 +449,23 @@ const fifteenData: DashboardData = { ...data, state: fifteenState, steps: fiftee
 const fifteenView = deriveDashboardViewModel(fifteenData, runtime);
 const fifteenRendered = renderDashboard(fifteenView, 160, 34);
 const fifteenText = fifteenRendered.lines.map(line => line.text).join("\n");
-assert.match(fifteenText, /Step 8 \/ 15/);
+assert.match(fifteenText, /Current 8 \/ 15/);
 assert.match(fifteenText, /7 complete · 8 remaining/);
 assert.match(fifteenText, /TODO · 3 \/ 6 verified/);
 assert.match(fifteenText, /● Build the responsive live task board/);
+
+const selectedFourteenth = deriveDashboardViewModel(fifteenData, runtime, "WP-14");
+const selectedFourteenthText = renderDashboard(selectedFourteenth, 160, 34).lines.map(line => line.text).join("\n");
+assert.match(selectedFourteenthText, /Current 8 \/ 15/);
+assert.doesNotMatch(selectedFourteenthText, /Current 14 \/ 15/);
+assert.match(selectedFourteenthText, /\*  ○ WP-14/);
+
+const constrainedStatistics = renderDashboard(fifteenView, 160, 26).lines.map(line => line.text).join("\n");
+assert.match(constrainedStatistics, /TEAM HEALTH/);
+assert.match(constrainedStatistics, /CURRENT ROLE · CODER/);
+assert.match(constrainedStatistics, /CURRENT MODEL · GPT 5.6 Luna/);
+assert.match(constrainedStatistics, /STEP STATISTICS/);
+assert.doesNotMatch(constrainedStatistics, /THIS OMP SESSION/);
 
 const shortPlan = renderDashboard(fifteenView, 160, 12);
 assert.match(shortPlan.lines.map(line => line.text).join("\n"), /↑ \d+ earlier/);

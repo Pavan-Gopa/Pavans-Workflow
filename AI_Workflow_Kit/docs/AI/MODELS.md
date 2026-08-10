@@ -9,16 +9,16 @@
 
 | Role | Recommended model(s) | Reasoning | Notes |
 |------|----------------------|-----------|-------|
-| **Orchestrator** | **Grok 4.5** · or **GPT 5.6 Soul** | Grok: **Max / High** · Soul: **Medium** | Two solid hub picks: Grok 4.5 (Max/High) for orchestration with a real brain; Soul Medium at one level for a lighter, efficient hub. |
+| **Orchestrator** | **Grok 4.5** · or **GPT 5.6 Sol** | Grok: **Max / High** · Sol: **Medium** | Two solid hub picks: Grok 4.5 (Max/High) for orchestration with a real brain; Sol Medium at one level for a lighter, efficient hub. |
 | **Coder** | GPT 5.6 **Luna** · DeepSeek V4 **Flash** · Gemini 3.6 **Flash** | Luna/DeepSeek **Max** · Gemini **High** | Implementation volume. |
 | **Reviewer** | Luna · Gemini 3.6 Flash | **Max** / **High** | **No DeepSeek** for review. Prefer a different family than Coder. |
 | **Tester** | GPT 5.6 **Terra** | **Max** or **Extra High** | Careful gap-hunt; not a cheap flash pass. |
-| **Architect** | Soul · or Terra | Soul **High / Extra High** · Terra **Max** | Research + plan. **Avoid Ultra.** |
-| **Security** | **GLM 5.2** · or **GPT 5.6 Soul** · or **Opus 5** | **Maximum** on all | **End of project only** (offer, not force). Top models only — expensive one-time deep pass. **Not** Terra/Luna flash. |
+| **Architect** | Sol · or Terra | Sol **High / Extra High** · Terra **Max** | Research + plan. **Avoid Ultra.** |
+| **Security** | **GLM 5.2** · or **GPT 5.6 Sol** · or **Opus 5** | **Maximum** on all | **End of project only** (offer, not force). Top models only — expensive one-time deep pass. **Not** Terra/Luna flash. |
 
 If product renames tiers, map by intent: **strong hub** · **fast code** · **careful review** · **careful tests** · **thoughtful design** · **max security at release** — never “Ultra for every tiny step.”
 
-Naming: **GPT 5.6 Soul** is the product/display name used in this guide; the
+Naming: **GPT 5.6 Sol** is the product/display name used in this guide and its
 current OMP catalog selector is `openai-codex/gpt-5.6-sol`.
 
 ## OMP role aliases
@@ -46,8 +46,8 @@ actually running.
 |--------------|--------|
 | Ultra / max-everything for a one-line UI tweak | Luna Max (Coder) |
 | Same model for Coder and Reviewer | Different family when possible |
-| Ultra Architect “just in case” | Soul Extra High or Terra Max |
-| Security on Terra / Luna flash | **GLM 5.2 · max** (or Soul max / Opus 5 max) |
+| Ultra Architect “just in case” | Sol Extra High or Terra Max |
+| Security on Terra / Luna flash | **GLM 5.2 · max** (or Sol max / Opus 5 max) |
 | Security every coding step | Offer **once** near release |
 | Skipping model tips on kicks | Always print model + reasoning |
 
