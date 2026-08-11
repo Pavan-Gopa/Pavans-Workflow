@@ -106,6 +106,10 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 Use the explicit `bash` form shown above. It remains valid if a GitHub API
 download or AI-assisted file copy dropped the script's executable bit.
 
+The launcher explicitly pins OMP to the installed project root. Project role
+aliases and extensions are loaded from that exact directory; OMP does not walk
+up parent directories looking for `.omp/`.
+
 Main opens onboarding before the first worker starts. Choose **Configure model
 pairs**, press **Alt+M**, and open the model selector's **Roles** view.
 
@@ -141,12 +145,18 @@ omp models find <name>
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Or launch OMP directly:
+To launch OMP directly, first change to the installed project root:
 
 ```bash
-omp --model @workflow_orchestrator
+cd /absolute/path/to/your/project
+omp --cwd "$PWD" --model @workflow_orchestrator
 /workflow onboard
 ```
+
+If **Alt+M** contains only OMP's built-in roles and **Alt+W** does nothing,
+close that process and use `omp_workflow.sh`. The session was started from the
+wrong directory and therefore loaded neither `.omp/config.yml` nor
+`.omp/extensions/`.
 
 Useful controls:
 

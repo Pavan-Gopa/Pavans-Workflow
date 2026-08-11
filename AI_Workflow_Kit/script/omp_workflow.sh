@@ -12,7 +12,12 @@ if ! command -v omp >/dev/null 2>&1; then
   exit 1
 fi
 
-cd "$PROJECT_ROOT"
+for required in ".omp/config.yml" ".omp/extensions/workflow-dashboard.ts"; do
+  if [[ ! -f "$PROJECT_ROOT/$required" ]]; then
+    echo "ERROR: workflow runtime file is missing: $PROJECT_ROOT/$required" >&2
+    exit 1
+  fi
+done
 
 INSTRUCTION="${*:-onboard}"
-omp --model "$OMP_MODEL" "/workflow $INSTRUCTION"
+exec omp --cwd "$PROJECT_ROOT" --model "$OMP_MODEL" "/workflow $INSTRUCTION"

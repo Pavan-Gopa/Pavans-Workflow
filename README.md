@@ -295,6 +295,10 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 The explicit `bash` form also works when an API download or AI-assisted update
 drops Unix executable permissions from the script.
 
+The launcher pins OMP's active working directory to the project root. This is
+required because project model roles and extensions are resolved from the exact
+active directory; OMP does not search parent directories for `.omp/`.
+
 On first launch, Main shows an onboarding screen before dispatching any worker.
 It explains the pipeline, displays all primary/backup assignments, and offers
 configuration, current defaults, manual-failover details, or pause.
@@ -337,12 +341,19 @@ family for Reviewer than Coder.
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Or launch OMP normally, then start onboarding:
+To launch OMP directly, first change to the project root:
 
 ```bash
-omp --model @workflow_orchestrator
+cd /absolute/path/to/your/project
+omp --cwd "$PWD" --model @workflow_orchestrator
 /workflow onboard
 ```
+
+If **Alt+M** shows only OMP's built-in roles and **Alt+W** does nothing, close
+that OMP process and relaunch it with `omp_workflow.sh`. Both symptoms mean the
+session was started outside the project root, so `.omp/config.yml` and
+`.omp/extensions/` were not loaded. An already running session must be
+restarted after correcting its working directory.
 
 Useful controls:
 
