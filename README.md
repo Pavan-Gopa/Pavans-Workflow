@@ -253,10 +253,11 @@ repository's existing files and Git history. Clone the workflow to a temporary
 directory, inspect conflicts, and use its install.sh only when it will not
 overwrite existing project configuration. If workflow paths already exist,
 merge conservatively instead of replacing them. Ensure Graphify is installed
-from the official `graphifyy` package, build the initial graph, and verify that
-OMP discovers the project agents, `/workflow` command, and `grilling` skill.
-Then show me the available models from `omp models` and ask me to choose the
-model mapping for each workflow role before starting product work.
+from the official PyPI package `graphifyy` (double `y`; it provides the
+`graphify` CLI command), build the initial graph, and verify that OMP discovers
+the project agents, `/workflow` command, and `grilling` skill. Then show me the
+available models from `omp models` and ask me to choose the model mapping for
+each workflow role before starting product work.
 ```
 
 The agent downloads, installs, checks conflicts, verifies discovery, and leaves
