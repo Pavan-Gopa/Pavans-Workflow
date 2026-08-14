@@ -54,10 +54,10 @@ Objective gates are green.
 - `AI_Workflow_Kit/docs/STEPS.md`
 
 **Do:**
-- [ ] Orchestrator confirms: ready to work with this process.
-- [ ] Human provides project context.
-- [ ] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
-- [ ] Confirm gates: review on by default; Tester recommended.
+- [x] Orchestrator confirms: ready to work with this process.
+- [x] Human provides project context.
+- [x] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
+- [x] Confirm gates: review on by default; Tester recommended.
 
 **Out of scope:**
 - Large product implementation before plan exists
@@ -66,45 +66,48 @@ Objective gates are green.
 
 ### Objective gates
 
-- [ ] PROJECT_CONTEXT contains real project information
+- [x] PROJECT_CONTEXT contains real project information
 
 ### Judgment gates
 
-- [ ] next step or Architect path is clear
+- [x] next step or Architect path is clear
 
 **Stop-gate:** Human agrees with the plan path
 
 ---
 
-## S1 — _(title)_
+## S1 — Repair Dust provider login
 
-**Goal:** _(fill)_  
-**Depends on:** S0  
+**Goal:** Replace the brittle hard-coded Dust connection with a validated,
+persisted workspace/region credential while retaining legacy raw-key support.
+**Depends on:** S0
 **Target files (sketch):**
-- 
+- `/Users/pavan/.omp/agent/extensions/dust-provider.ts`
 
 **Do:**
-- [ ] first semantically verifiable work item
+- [x] Repair Dust login across workspace IDs and API regions.
 
 **Out of scope:**
-- 
+- Changing Dust agents or workspace permissions
+- Storing or printing the Human's API key
 
 ## Verification
 
 ### Objective gates
 
-- [ ]
-- [ ] project tests green
+- [x] Mock login succeeds after a default-workspace `404` and corrected workspace input
+- [x] `omp models find dust --json` discovers the fixture agent
+- [x] `omp --model dust/mock-agent -p` returns the fixture conversation response
 
 ### Judgment gates
 
-- [ ]
+- [x] Authentication failures preserve `401`/`403` semantics and explain exhausted `404` probes
+- [x] Credential migration is bounded to the Dust provider and legacy raw keys remain usable
 
 **Ready for review when:** implementation is complete in scope and required
 Objective gates are green.
 
-**Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
-(Tester qa_green | QA explicitly skipped by Human)
+**Stop-gate:** Reviewer APPROVED + Tester qa_green
 
 ---
 

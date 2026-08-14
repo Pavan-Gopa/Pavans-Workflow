@@ -7,37 +7,33 @@
 
 | | |
 |--|--|
-| **Product** | _(title)_ |
-| **One-liner** | _(what it is)_ |
-| **Platform** | _(e.g. macOS 14+, web, Linux CLI, …)_ |
-| **Stack** | _(languages, frameworks, package manager)_ |
-| **Current train / version** | _(optional)_ |
-| **Project prefix** (git tags) | `proj` _(change to a short slug)_ |
-| **Master plan file** | _(path, or “STEPS.md only”)_ |
+| **Product** | OMP Dust provider extension |
+| **One-liner** | Expose Dust workspace agents as selectable OMP models. |
+| **Platform** | macOS CLI |
+| **Stack** | TypeScript OMP extension + Dust HTTP API |
+| **Current train / version** | Login reliability repair |
+| **Project prefix** (git tags) | `omp-dust` |
+| **Master plan file** | `AI_Workflow_Kit/docs/STEPS.md` |
 
 ## Architecture (one-liner)
 
-_(e.g. UI → domain services → storage / engines → workers)_
+OMP provider registry → credential storage → Dust agent discovery/conversation API → OMP event stream.
 
 ## Repo map
 
 ```text
+~/.omp/agent/extensions/
+└── dust-provider.ts          # Global provider adapter
+
 <PROJECT_ROOT>/
-├── AI_Workflow_Kit/          # this orchestration kit
-├── …                         # your sources, tests, scripts
-└── graphify-out/             # optional knowledge graph output
+├── AI_Workflow_Kit/          # Orchestration state and reports
+├── .omp/                     # Workflow roles and project configuration
+└── graphify-out/             # Knowledge graph
 ```
 
-Fill a real tree when you know it:
-
-```text
-# e.g.
-# src/
-# tests/
-# script/
-```
-
-**Git layout:** nested repo root / monorepo subfolder _(pick one and note the stage path for checkpoints)_.
+**Git layout:** workflow repository in the current project root; the global
+extension is user configuration outside the repository and must never contain
+the API key.
 
 ## OMP workflow
 
@@ -53,31 +49,32 @@ instructions.
 
 ## Build / test commands
 
-Always `cd` into the project root first:
+Always run from the project root:
 
 ```bash
 cd "<PROJECT_ROOT>"
 
-# Primary tests
-# e.g. swift test | npm test | cargo test | pytest
+# Provider/model discovery
+omp models find dust --json
 
-# Dev run (if any)
-#
-
-# Surface / contract QA (if any)
-# e.g. ./script/qa/run_all.sh
+# Non-interactive provider smoke (with a configured credential)
+omp --no-session --approval-mode yolo --model dust/<agent-id> -p "Reply with OK."
 ```
+
+Login and region-fallback verification uses a local HTTP fixture; no live API
+key is printed or committed.
 
 ## Key constraints
 
 | Allowed | Forbidden |
 |---------|-----------|
-| _(e.g. native runtimes)_ | _(e.g. secrets in git, forbidden deps)_ |
+| OMP credential vault, Dust US/EU APIs, local mock server | API keys in source, logs, workflow docs, or test fixtures |
 
 Additional hard rules for this product:
 
-- …
-- …
+- Keep legacy raw Dust credentials readable during clean cutover.
+- A failed regional probe must not silently fall through on `401` or `403`.
+- Persist the validated workspace ID and API region with the opaque credential.
 
 ## Workflow docs priority
 
