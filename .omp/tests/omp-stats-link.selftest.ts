@@ -53,7 +53,7 @@ const futureSecureDashboardResponse = new Response("{}", {
 		"x-omp-stats-hostname": "127.0.0.1",
 	},
 });
-assert.equal(isReusableStatsDashboardResponse(futureSecureDashboardResponse, "127.0.0.1"), true);
+assert.equal(isReusableStatsDashboardResponse(futureSecureDashboardResponse, "127.0.0.1"), false);
 const insecureDashboardResponse = new Response("{}", {
 	status: 200,
 	headers: {
