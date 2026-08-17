@@ -95,8 +95,8 @@ Each run:
 1. uses a fresh unique agent name;
 2. receives role instruction plus one self-contained task;
 3. receives source-of-truth paths, target/allowed paths, exclusions, Objective
-   gates, Judgment gates, and compact verified retry/interruption context when
-   applicable;
+   gates, Judgment gates, the assigned `current_work_item_id` when one applies,
+   and compact verified retry/interruption context when applicable;
 4. does not receive Main's conversation transcript;
 5. cannot spawn or route another worker;
 6. returns structured output to Main.
@@ -140,13 +140,21 @@ Main → Coder → Main verify/write state
 
 ### Step checklist ownership
 
-Every executable `**Do:**` item in `STEPS.md` is a Markdown checkbox and records
-Main-verified semantic completion, not a worker's claim. Before dispatch, set
-`STATE.yaml.current_work_item` to the exact unchecked `Do` text when the
-assignment maps cleanly to one item. After inspecting actual source and
-evidence, Main alone marks it `[x]` and clears `current_work_item`. If a later
-Reviewer or Tester finding invalidates that work, Main changes it back to `[ ]`
-before dispatching the fix. Workers never edit `STEPS.md` or this field.
+Every executable `**Do:**` item in `STEPS.md` is a Markdown checkbox carrying a
+stable ID `<step>.D<n>` (Objective gates `<step>.O<n>`, Judgment gates
+`<step>.J<n>`). IDs are unique across the file and never change once assigned;
+they record Main-verified semantic completion, not a worker's claim. The native
+OMP Todo is a separate runtime subtask list: completing a Todo item never
+checks a `STEPS.md` box.
+
+Before dispatch, Main selects the applicable `D` item and writes both
+`STATE.yaml.current_work_item_id` (the stable ID) and
+`STATE.yaml.current_work_item` (current display text). The assignment carries
+the ID. After inspecting actual source and evidence, Main alone marks that ID
+`[x]` and clears both fields. If a later Reviewer or Tester finding invalidates
+that work, Main reopens the same ID to `[ ]` before dispatching the fix.
+Workers never edit `STEPS.md` or these fields. Legacy cards without IDs fall
+back to exact-text linkage; run `workflow_migrate.sh apply` to add IDs.
 
 ### Result transitions
 

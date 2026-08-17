@@ -1,26 +1,28 @@
 # Live orchestration state — Orchestrator owns this file.
 # Keep it simple. Project-agnostic template.
 
-project_prefix: omp-dust
+schema_version: 2
+project_prefix: proj
 onboarding:
-  status: complete
-  model_pairs_confirmed: true
-  completed_at: "2026-08-11T12:07:00Z"
-current_step: S1
-# Exact STEPS.md Do text while one item is actively assigned; Main owns/clears it.
+  status: pending
+  mode: quick
+  model_pairs_confirmed: false
+  completed_at: null
+current_step: S0
+# Stable checklist ID (<step>.D<n>) of the actively assigned Do item; Main owns/clears it.
+current_work_item_id: null
+# Human-readable display text for that item; readability + legacy text fallback.
 current_work_item: null
 step_description: >-
-  Repair the global Dust provider's login path so workspace and US/EU region
-  are validated and persisted instead of relying on brittle hard-coded values.
-target_files:
-  - /Users/pavan/.omp/agent/extensions/dust-provider.ts
-completed_steps:
-  - S1
+  Session start: Orchestrator confirms workflow readiness, asks Human for
+  project context, then minimal plan or Architect.
+target_files: []
+completed_steps: []
 skipped_steps: []
 implementation:
   # pending | running | waiting_review | changes_requested | blocked | complete
-  status: complete
-  attempts: 1
+  status: pending
+  attempts: 0
   # Increment only after evidence evaluates an implementation attempt.
   # Runtime/provider interruption alone is not an implementation attempt.
 retry_guard:
@@ -34,7 +36,7 @@ retry_guard:
 omp:
   active_agent: null
   active_role: null
-  last_result_artifact: agent://DustLoginQA1
+  last_result_artifact: null
   model_failure:
     # none | awaiting_human | backup_authorized
     status: none
@@ -54,19 +56,19 @@ omp:
     evidence: null
     recorded_at: null
 review:
-  status: approved
+  status: pending
   last_feedback_file: AI_Workflow_Kit/docs/AI/FEEDBACK.md
-  verdict: APPROVED
-  note: Judgment Gates satisfied; Main verified the 404-only resolver at lines 282-300.
+  verdict: null
+  note: null
   # default on unless Human explicitly skips
   enabled: true
   # use status: skipped only after an explicit Human opt-out; record why in note
 qa:
-  status: qa_green
+  status: pending
   last_report: AI_Workflow_Kit/docs/AI/REPORT.md
-  suite: Dust provider login and routing smoke
+  suite: null
   bugs_open: 0
-  note: 5 passed, 0 failed; encoded, legacy, 401, and exhausted-404 paths verified.
+  note: null
   # recommended on; Human may opt out
   enabled: true
   # use status: skipped only after an explicit Human opt-out; record why in note
@@ -76,8 +78,9 @@ security:
     Offer once near release when work is ready (optional). Top models only:
     GLM 5.2 max, Sol max, or Opus 5 max. Not every step. Not Terra/Luna.
 next_actor: orchestrator
-track: BUGFIX
+track: BOOTSTRAP
 plan_files:
+  - PIPELINE.md
   - AI_Workflow_Kit/docs/STEPS.md
   - AI_Workflow_Kit/docs/DECISIONS.md
   - AI_Workflow_Kit/docs/PROJECT_CONTEXT.md
@@ -86,9 +89,7 @@ checkpoint:
   last_post_tag: null
   last_commit: null
 coder_brief: |
-  Repair Dust provider credential persistence and workspace/region discovery.
-  Preserve raw-key compatibility and never expose live credentials.
+  No product coding yet. After Human context: minimal plan and first step, or
+  Architect research if context is insufficient.
 notes: |
-  Observed failure: /login dust validates the key against one hard-coded
-  workspace/base URL and surfaces Dust API 404. Official Dust OpenAPI exposes
-  both https://dust.tt and https://eu.dust.tt; 404 means workspace not found.
+  Fresh kit. Simple pipeline: ready → context → plan or Architect → code → review → test.

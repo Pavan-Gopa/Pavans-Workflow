@@ -133,17 +133,57 @@ STATISTICS`; medium and narrow terminals reflow the same information without
 changing the workflow. It reads canonical `STATE.yaml` and `STEPS.md`, listens
 to OMP task-agent progress, and shows:
 
-- the real plan order, completed/remaining counts, selected step, and verified
-  `Do` checklist;
-- current actor/model/runtime, status, next action, gates, and blockers;
+- the real plan order, completed/remaining counts, selected step, and the
+  Main-verified `STEP CHECKLIST` (carrying stable IDs `<step>.D<n>`);
+- the native OMP session `RUN TODO` alongside the step checklist, with linkage
+  between runtime subtasks and step items (press `t` to cycle `Both` / `Step` / `Run` views);
+- current actor/model/runtime, active work item ID, status, next action, gates, and blockers;
 - per-step and team statistics from the canonical passive metrics helper;
 - current-session token consumption by every model used by Main and workers.
 
 The panel never writes workflow state. `Up`/`Down` select a step, `c` returns to
-the live step, `PgUp`/`PgDn` scroll only center-column details, and `r` refreshes
-files and metrics. Use `Alt+W`, `Esc`, or `q` to close it. Keep the three native
-surfaces distinct: `Alt+W` is this task board, `Alt+A` is Agent Hub for
+the live step, `t` switches the Todo view, `PgUp`/`PgDn` scroll details, `r`
+refreshes files and metrics, and `o` opens OMP Stats in the browser. Use
+`Alt+W`, `Esc`, or `q` to close it. Keep the three native surfaces distinct:
+`Alt+W` is this task board, `Alt+A` is Agent Hub for
 transcripts/steering/termination, and `Alt+M` is the model-role selector.
+
+### Schema migration (v2)
+
+Existing projects with legacy checklists can be upgraded to schema v2 without
+reordering cards or flipping checkbox states:
+
+```bash
+bash AI_Workflow_Kit/script/workflow_migrate.sh check   # read-only diagnostics
+bash AI_Workflow_Kit/script/workflow_migrate.sh apply   # add stable IDs + schema_version: 2
+```
+
+### OMP Stats observability panel
+
+Every interactive workflow session automatically starts (or reuses) the local
+[OMP Stats](https://github.com/can1357/oh-my-pi) usage dashboard at
+`http://127.0.0.1:3847`. The server binds the loopback interface only and is
+never exposed on `0.0.0.0`.
+
+- Right after session start, a notification and a persistent widget below the
+  editor show the state (`idle`, `starting`, `ready`, `sync warning`,
+  `unavailable`) and the bare URL on its own line, so terminals can turn it
+  into a click-to-open link.
+- The **Alt+W** dashboard renders the same URL in its bottom footer; press `o`
+  inside the panel to open it in the system browser.
+- `/workflow-stats` checks the server, retries the launch when needed, requests
+  a sync, and opens the URL in the browser.
+- Session files are synced through the official `/api/sync` endpoint after
+  startup, after each Main turn, after every subagent completion/failure/stop,
+  and on manual refresh (`r` in the dashboard or `/workflow-stats`). Repeated
+  requests are coalesced into one in-flight sync plus at most one queued sync.
+- The launcher tries the quiet standalone `omp-stats` CLI first and falls back
+  to the main `omp stats` CLI. An already-running trusted Stats server is
+  reused and never stopped on session shutdown; only a server spawned by the
+  workflow session itself is stopped. A port held by an untrusted process
+  (missing OMP Stats headers or unsafe CORS) is refused, not reused.
+- Stats failures never block or break the workflow; the widget simply reports
+  the state.
 
 ### Graphify-first navigation
 

@@ -127,8 +127,10 @@ Do not send bugs to another worker directly. Do not put live secrets in output.
     the blocker; changed approaches/evidence/failure states are progress.
 12. Three failed Coder runs never authorize Main to write product code; stop,
     route to Architect when appropriate, or request Human direction.
-13. Main alone checks or reopens `STEPS.md` `Do` boxes after source/evidence
-    verification; workers never mutate canonical checklist state.
+13. Main alone checks or reopens `STEPS.md` checklist boxes (by stable ID
+    `<step>.D<n>` / `.O<n>` / `.J<n>`) after source/evidence verification;
+    workers never mutate canonical checklist state. The native OMP Todo is a
+    runtime subtask list only — a completed Todo never checks a `STEPS.md` box.
 
 ---
 
@@ -147,11 +149,14 @@ No secrets in comments. No novel on every getter.
 
 ## Worker handoff
 
-Workers return the structured schema defined by their `.omp/agents/*.md` file.
-They do not write `FEEDBACK.md`, route the next role, or ask the Human to copy a
-prompt. Main validates the result and persists the canonical workflow record.
+Workers return the structured schema defined by their `.omp/agents/*.md` file,
+including the stable work-item/gate IDs they touched
+(`work_item_ids`, `objective_gate_ids`, `judgment_gate_ids`) so Main can verify,
+check, or reopen exactly the affected items. They do not write `FEEDBACK.md`,
+route the next role, or ask the Human to copy a prompt. Main validates the
+result and persists the canonical workflow record.
 
 On a retry, Main adds only verified attempt memory: approach, observed result,
 evidence, and why it was rejected. Worker transcripts and reasoning are never
 handoff context. The durable record lives in `FEEDBACK.md`; the assignment
-carries only the compact task-relevant subset.
+carries only the compact task-relevant subset, including the affected IDs.

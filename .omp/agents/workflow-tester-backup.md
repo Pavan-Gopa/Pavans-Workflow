@@ -16,6 +16,9 @@ output:
       elements:
         type: string
   optionalProperties:
+    objective_gate_ids:
+      elements:
+        type: string
     failures:
       elements:
         properties:
@@ -25,6 +28,9 @@ output:
             type: string
           suspect_file:
             type: string
+          affected_ids:
+            elements:
+              type: string
     blockers:
       type: string
 ---
