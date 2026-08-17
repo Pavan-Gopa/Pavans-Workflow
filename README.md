@@ -133,17 +133,30 @@ STATISTICS`; medium and narrow terminals reflow the same information without
 changing the workflow. It reads canonical `STATE.yaml` and `STEPS.md`, listens
 to OMP task-agent progress, and shows:
 
-- the real plan order, completed/remaining counts, selected step, and verified
-  `Do` checklist;
-- current actor/model/runtime, status, next action, gates, and blockers;
+- the real plan order, completed/remaining counts, selected step, and the
+  Main-verified `STEP CHECKLIST` (carrying stable IDs `<step>.D<n>`);
+- the native OMP session `RUN TODO` alongside the step checklist, with linkage
+  between runtime subtasks and step items (press `t` to cycle `Both` / `Step` / `Run` views);
+- current actor/model/runtime, active work item ID, status, next action, gates, and blockers;
 - per-step and team statistics from the canonical passive metrics helper;
 - current-session token consumption by every model used by Main and workers.
 
 The panel never writes workflow state. `Up`/`Down` select a step, `c` returns to
-the live step, `PgUp`/`PgDn` scroll only center-column details, and `r` refreshes
-files and metrics. Use `Alt+W`, `Esc`, or `q` to close it. Keep the three native
-surfaces distinct: `Alt+W` is this task board, `Alt+A` is Agent Hub for
+the live step, `t` switches the Todo view, `PgUp`/`PgDn` scroll details, `r`
+refreshes files and metrics, and `o` opens OMP Stats in the browser. Use
+`Alt+W`, `Esc`, or `q` to close it. Keep the three native surfaces distinct:
+`Alt+W` is this task board, `Alt+A` is Agent Hub for
 transcripts/steering/termination, and `Alt+M` is the model-role selector.
+
+### Schema migration (v2)
+
+Existing projects with legacy checklists can be upgraded to schema v2 without
+reordering cards or flipping checkbox states:
+
+```bash
+bash AI_Workflow_Kit/script/workflow_migrate.sh check   # read-only diagnostics
+bash AI_Workflow_Kit/script/workflow_migrate.sh apply   # add stable IDs + schema_version: 2
+```
 
 ### OMP Stats observability panel
 

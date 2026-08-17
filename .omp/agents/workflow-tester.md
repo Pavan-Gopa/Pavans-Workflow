@@ -16,6 +16,9 @@ output:
       elements:
         type: string
   optionalProperties:
+    objective_gate_ids:
+      elements:
+        type: string
     failures:
       elements:
         properties:
@@ -25,6 +28,9 @@ output:
             type: string
           suspect_file:
             type: string
+          affected_ids:
+            elements:
+              type: string
     blockers:
       type: string
 ---
@@ -77,6 +83,11 @@ status: qa_green | bugs | blocked
 pass_count: <integer>
 fail_count: <integer>
 new_tests: [<paths of files added>]
-failures: [{test_name, error_excerpt, suspect_file}, ...]   # omit when qa_green
+objective_gate_ids: [stable IDs like S3.O1 of gates verified]
+failures: [{test_name, error_excerpt, suspect_file, affected_ids}, ...]   # omit when qa_green
 blockers: "<exact obstacle if blocked; omit when not blocked>"
 ```
+
+Each failure's `affected_ids` lists the stable checklist IDs
+(`<step>.D<n>` / `.O<n>`) the bug invalidates, so Main can reopen exactly those
+items.

@@ -165,7 +165,8 @@ Useful controls:
 - `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
-- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board. Press `o` inside it to open OMP Stats in the browser.
+- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board (press `t` to toggle between `STEP CHECKLIST` and `RUN TODO` views; press `o` to open OMP Stats in the browser).
+- `bash AI_Workflow_Kit/script/workflow_migrate.sh check|apply` — validate or apply schema v2 with stable checklist IDs.
 - `/workflow metrics` — show the passive local workflow report.
 - `/workflow metrics rate good|overkill|underchecked [step]` — add an optional Human rating.
 - `/workflow metrics reset` — delete only local telemetry and start fresh.

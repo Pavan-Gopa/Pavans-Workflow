@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { Component, TUI } from "@oh-my-pi/pi-tui";
 import { Key, matchesKey } from "@oh-my-pi/pi-tui";
@@ -14,8 +14,13 @@ import {
 	type RuntimeSnapshot,
 	type StepCard,
 	type TextLine,
+	type TodoViewMode,
 	type WorkerSnapshot,
 } from "../lib/workflow-dashboard-core.ts";
+import { checkWorkflowConsistency } from "../lib/workflow-consistency.ts";
+import { evaluateModelSetup } from "../lib/workflow-model-readiness.ts";
+import { deriveRoutingExplanation } from "../lib/workflow-routing.ts";
+import { linkRuntimeTodo, readRuntimeTodo } from "../lib/workflow-runtime-todo.ts";
 import { getStatsRuntime } from "../lib/workflow-stats-runtime.ts";
 
 const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
@@ -42,10 +47,11 @@ type WorkerProgress = WorkerSnapshot & {
 type DashboardFiles = {
 	state: WorkflowState;
 	steps: StepCard[];
+	stateMtime?: number;
+	stepsMtime?: number;
 	stateError?: string;
 	stepsError?: string;
 };
-
 const liveWorkers = new Map<string, WorkerProgress>();
 const sessionUsage = new SessionUsageTracker();
 let mainActivity = "Ready for instruction";
@@ -100,20 +106,23 @@ function rebuildMainUsage(ctx: ExtensionContext): void {
 }
 
 async function readDashboardFiles(cwd: string): Promise<DashboardFiles> {
-	const [stateResult, stepsResult] = await Promise.allSettled([
+	const [stateResult, stepsResult, stateStat, stepsStat] = await Promise.allSettled([
 		readFile(`${cwd}/${STATE_PATH}`, "utf8"),
 		readFile(`${cwd}/${STEPS_PATH}`, "utf8"),
+		stat(`${cwd}/${STATE_PATH}`),
+		stat(`${cwd}/${STEPS_PATH}`),
 	]);
 	const stateSource = stateResult.status === "fulfilled" ? stateResult.value : "";
 	const stepsSource = stepsResult.status === "fulfilled" ? stepsResult.value : "";
 	return {
 		state: parseWorkflowState(stateSource),
 		steps: parseSteps(stepsSource),
+		stateMtime: stateStat.status === "fulfilled" ? stateStat.value.mtimeMs : undefined,
+		stepsMtime: stepsStat.status === "fulfilled" ? stepsStat.value.mtimeMs : undefined,
 		stateError: stateResult.status === "rejected" ? errorMessage(stateResult.reason) : undefined,
 		stepsError: stepsResult.status === "rejected" ? errorMessage(stepsResult.reason) : undefined,
 	};
 }
-
 async function refreshMetrics(pi: ExtensionAPI, cwd: string, force = false): Promise<void> {
 	if (!force && Date.now() - metricsCache.fetchedAt < METRICS_REFRESH_MS) return;
 	metricsCache = { ...metricsCache, fetchedAt: Date.now() };
@@ -148,6 +157,9 @@ class WorkflowDashboard implements Component {
 	private metricsRefreshing = false;
 	private closed = false;
 	private unsubscribeStats?: () => void;
+	private todoMode?: TodoViewMode;
+	private lastLayout: "wide" | "medium" | "narrow" = "wide";
+	private showHelp = false;
 
 	constructor(
 		private readonly pi: ExtensionAPI,
@@ -268,6 +280,17 @@ class WorkflowDashboard implements Component {
 			});
 			return;
 		}
+		if (matchesKey(data, "t")) {
+			const effective = this.todoMode ?? (this.lastLayout === "wide" ? "both" : "step");
+			this.todoMode = effective === "both" ? "step" : effective === "step" ? "run" : "both";
+			this.requestRender();
+			return;
+		}
+		if (matchesKey(data, "?")) {
+			this.showHelp = !this.showHelp;
+			this.requestRender();
+			return;
+		}
 		if (matchesKey(data, "c")) {
 			if (this.data?.steps.some(step => step.id === this.data?.state.currentStep)) {
 				this.selectedStepId = this.data.state.currentStep;
@@ -284,6 +307,16 @@ class WorkflowDashboard implements Component {
 		this.requestRender();
 	}
 
+	// Compare STATE.yaml omp.active_agent with live worker progress records.
+	private hubConsistency(): boolean | undefined {
+		const active = this.data?.state.activeAgent;
+		if (!active || active === "-") return undefined;
+		const live = [...liveWorkers.values()].some(
+			worker => (worker.status === "running" || worker.status === "pending") && worker.agent === active,
+		);
+		return live;
+	}
+
 	render(width: number): readonly string[] {
 		const panelWidth = Math.max(20, width);
 		const bodyHeight = Math.max(8, this.tui.terminal.rows - 9);
@@ -297,12 +330,35 @@ class WorkflowDashboard implements Component {
 				{ text: border, tone: "accent" },
 			];
 		} else {
-			const liveData = { ...this.data, sessionUsage: sessionUsage.snapshot() };
-			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId);
+			const runtimeTodo = readRuntimeTodo(this.ctx.sessionManager.getBranch());
+			const liveData: DashboardData = {
+				...this.data,
+				sessionUsage: sessionUsage.snapshot(),
+				runtimeTodo,
+				runtimeTodoLink: linkRuntimeTodo(runtimeTodo, this.data.steps, this.data.state.currentStep !== "-" ? this.data.state.currentStep : undefined),
+				consistency: checkWorkflowConsistency({
+					state: this.data.state,
+					steps: this.data.steps,
+					runtimeTodo,
+					hubActiveAgentConsistent: this.hubConsistency(),
+				}),
+				freshness: {
+					stateMtime: this.data.stateMtime,
+					stepsMtime: this.data.stepsMtime,
+					metricsFetchedAt: metricsCache.fetchedAt,
+					now: Date.now(),
+				},
+			};
+			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId, this.todoMode);
 			const result = renderDashboard(view, panelWidth, bodyHeight, this.detailScroll, getStatsRuntime(this.ctx.cwd).footerInfo());
+			this.lastLayout = result.layout;
 			this.maxDetailScroll = result.maxDetailScroll;
 			this.detailScroll = Math.min(this.detailScroll, this.maxDetailScroll);
 			rendered = result.lines;
+			if (this.showHelp) {
+				const help = "HELP: ↑/↓ step · c current · t view (Both/Step/Run) · r refresh · o OMP Stats · PgUp/PgDn scroll · ? toggle help";
+				rendered.splice(2, 0, { text: `|${help.slice(0, panelWidth - 2).padEnd(panelWidth - 2)}|`, tone: "accent" });
+			}
 		}
 		return rendered.map(line => {
 			if (line.tone === "warning") return this.theme.fg("warning", line.text);
@@ -431,5 +487,24 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 	pi.registerShortcut(Key.alt("w"), {
 		description: "Open Pavan's live workflow dashboard",
 		handler: async ctx => showDashboard(pi, ctx),
+	});
+
+	pi.registerCommand("workflow-why", {
+		description: "Explain why the workflow selected the current step and next actor",
+		handler: async (_args, ctx) => {
+			const files = await readDashboardFiles(ctx.cwd);
+			const runtime = runtimeSnapshot(ctx);
+			const routing = deriveRoutingExplanation(files.state, runtime);
+			const text = [
+				`Current step: ${files.state.currentStep}`,
+				`Current status: ${files.state.implementationStatus}`,
+				`Next actor: ${routing.actorLabel ?? routing.actor ?? "Main"}`,
+				"",
+				`Action: ${routing.action}`,
+				`Reason: ${routing.reason} (${routing.reasonCode})`,
+				...(routing.prerequisites?.length ? ["Prerequisites:", ...routing.prerequisites.map(p => `  - ${p}`)] : []),
+			].join("\n");
+			ctx.ui.notify(text, "info");
+		},
 	});
 }

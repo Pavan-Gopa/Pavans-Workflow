@@ -29,11 +29,12 @@ STEPS.md, PROJECT_CONTEXT.md, DECISIONS.md, and relevant feedback/report files.
 Honor the onboarding gate and validate primary/backup model pairs before any
 worker dispatch. At startup/resume reconcile active-worker state against real
 OMP hub status, artifacts, and the authorized repository diff. Reconstruct the
-current step from files, then advance with project-level task agents. Pass
-Objective Gates to Coder/Tester and Judgment Gates to Reviewer. On retry, pass
-only compact verified attempt memory from FEEDBACK.md. Only Main may write
-workflow state. Verify every worker result against the repository before
-transitioning.
+current step from files, then advance with project-level task agents. Assign
+work by stable checklist ID (<step>.D<n>) and distinguish the Main-verified
+Step Checklist from native runtime Todo items. Pass Objective Gates to
+Coder/Tester and Judgment Gates to Reviewer. On retry, pass only compact
+verified attempt memory from FEEDBACK.md. Only Main may write workflow state.
+Verify every worker result against the repository before transitioning.
 ```
 
 No worker prompts need to be copied into separate terminal sessions.

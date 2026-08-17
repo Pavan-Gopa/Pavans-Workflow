@@ -22,6 +22,9 @@ output:
             type: string
           required_change:
             type: string
+          affected_ids:
+            elements:
+              type: string
     blockers:
       type: string
 ---

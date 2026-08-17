@@ -7,6 +7,12 @@
 
 ## How to write a card
 
+Every checklist item carries a stable ID: `<step>.<D|O|J><n>` — `D` for `Do`
+work items, `O` for Objective gates, `J` for Judgment gates. IDs are unique
+across the whole file and never change once assigned; `STATE.yaml` links the
+active item by `current_work_item_id`, not by text. Run
+`bash AI_Workflow_Kit/script/workflow_migrate.sh check` to verify.
+
 ```markdown
 ## S1 — Short title
 
@@ -17,8 +23,8 @@
 - path/b  
 
 **Do:**
-- [ ] first semantically verifiable work item
-- [ ] next semantically verifiable work item
+- [ ] [S1.D1] first semantically verifiable work item
+- [ ] [S1.D2] next semantically verifiable work item
 
 **Out of scope:**
 - …
@@ -27,13 +33,13 @@
 
 ### Objective gates
 
-- [ ] `exact command` exits 0
-- [ ] required artifact or behavior is deterministically present
+- [ ] [S1.O1] `exact command` exits 0
+- [ ] [S1.O2] required artifact or behavior is deterministically present
 
 ### Judgment gates
 
-- [ ] implementation follows the accepted architecture and intended semantics
-- [ ] scope and public contracts remain bounded
+- [ ] [S1.J1] implementation follows the accepted architecture and intended semantics
+- [ ] [S1.J2] scope and public contracts remain bounded
 
 **Ready for review when:** implementation is complete in scope and required
 Objective gates are green.
@@ -54,10 +60,10 @@ Objective gates are green.
 - `AI_Workflow_Kit/docs/STEPS.md`
 
 **Do:**
-- [ ] Orchestrator confirms: ready to work with this process.
-- [ ] Human provides project context.
-- [ ] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
-- [ ] Confirm gates: review on by default; Tester recommended.
+- [ ] [S0.D1] Orchestrator confirms: ready to work with this process.
+- [ ] [S0.D2] Human provides project context.
+- [ ] [S0.D3] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
+- [ ] [S0.D4] Confirm gates: review on by default; Tester recommended.
 
 **Out of scope:**
 - Large product implementation before plan exists
@@ -66,11 +72,11 @@ Objective gates are green.
 
 ### Objective gates
 
-- [ ] PROJECT_CONTEXT contains real project information
+- [ ] [S0.O1] PROJECT_CONTEXT contains real project information
 
 ### Judgment gates
 
-- [ ] next step or Architect path is clear
+- [ ] [S0.J1] next step or Architect path is clear
 
 **Stop-gate:** Human agrees with the plan path
 

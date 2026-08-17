@@ -1,3 +1,8 @@
+import type { ConsistencyFinding } from "./workflow-consistency.ts";
+import type { ModelSetupSummary } from "./workflow-model-readiness.ts";
+import { deriveRoutingExplanation, type RoutingExplanation } from "./workflow-routing.ts";
+import type { RuntimeTodoLink, RuntimeTodoSnapshot } from "./workflow-runtime-todo.ts";
+
 export type Tone = "normal" | "accent" | "muted" | "warning";
 
 export type TextLine = {
@@ -6,9 +11,19 @@ export type TextLine = {
 };
 
 export type ChecklistItem = {
+	id?: string;
 	text: string;
 	done: boolean;
 	canonical: boolean;
+};
+
+export type StepRisk = "low" | "normal" | "high";
+export type PipelineProfile = "quick" | "standard" | "critical";
+
+export type StepBudget = {
+	timeMinutes?: number;
+	tokens?: number;
+	costUsd?: number;
 };
 
 export type StepCard = {
@@ -16,27 +31,35 @@ export type StepCard = {
 	title: string;
 	goal: string;
 	dependsOn: string;
+	risk: StepRisk;
+	pipelineProfile: PipelineProfile;
+	budget?: StepBudget;
 	todos: ChecklistItem[];
 	objectiveGates: ChecklistItem[];
 	judgmentGates: ChecklistItem[];
 };
 
 export type WorkflowState = {
+	schemaVersion: number;
 	currentStep: string;
+	currentWorkItemId: string;
 	currentWorkItem: string;
 	stepDescription: string;
 	track: string;
 	nextActor: string;
 	completedSteps: string[];
 	onboardingStatus: string;
+	onboardingMode: string;
 	implementationStatus: string;
 	implementationAttempts: number;
 	reviewStatus: string;
 	reviewVerdict: string;
 	reviewEnabled: boolean;
-	qaStatus: string;
-	qaEnabled: boolean;
 	securityNextRun: string;
+	pipelineProfile: PipelineProfile;
+	pipelineAuthorizedBy: string;
+	pipelineAuthorizedAt: string;
+	pipelineNote: string;
 	blocker: string;
 	repeatedFailureCount: number;
 	activeAgent: string;
@@ -125,6 +148,15 @@ export type MetricsReport = {
 	detected_by?: Record<string, number>;
 	human_ratings?: Record<string, number>;
 	model_samples?: ModelSample[];
+	recent_transitions?: WorkflowTransition[];
+};
+
+export type WorkflowTransition = {
+	at: string;
+	step?: string;
+	actor: string;
+	kind: string;
+	summary: string;
 };
 
 export type SessionModelUsage = {
@@ -147,6 +179,21 @@ export type WorkerSnapshot = {
 	durationMs?: number;
 	resolvedModel?: string;
 	resolvedModelIsFallback?: boolean;
+	task?: string;
+	assignment?: string;
+	lastIntent?: string;
+	currentTool?: string;
+	toolCount?: number;
+	requests?: number;
+	tokens?: number;
+	updatedAt?: number;
+};
+
+export type DataFreshness = {
+	stateMtime?: number;
+	stepsMtime?: number;
+	metricsFetchedAt?: number;
+	now?: number;
 };
 
 export type RuntimeSnapshot = {
@@ -161,9 +208,11 @@ export type DashboardData = {
 	steps: StepCard[];
 	metrics?: MetricsReport;
 	metricsError?: string;
-	stateError?: string;
-	stepsError?: string;
-	sessionUsage: SessionUsage;
+	runtimeTodo?: RuntimeTodoSnapshot;
+	runtimeTodoLink?: RuntimeTodoLink;
+	consistency?: ConsistencyFinding[];
+	modelSetup?: ModelSetupSummary;
+	freshness?: DataFreshness;
 };
 
 export type StepRelation = "current" | "completed" | "planned" | "missing";
@@ -182,8 +231,64 @@ export type DashboardViewModel = {
 	currentRole?: string;
 	status: string;
 	nextAction: string;
+	whyNext: string;
+	routing: RoutingExplanation;
 	waitingForHuman: boolean;
+	todoMode?: TodoViewMode;
 };
+
+export const DEFAULT_STALL_THRESHOLD_MS = 180_000;
+export const LONG_RUNNING_STALL_THRESHOLD_MS = 600_000;
+export const LONG_RUNNING_TOOLS = new Set(["bash", "eval", "task", "read"]);
+
+export function isWorkerStalled(
+	worker: WorkerSnapshot | undefined,
+	now = Date.now(),
+): { stalled: boolean; idleMs: number } {
+	if (!worker || (worker.status !== "running" && worker.status !== "pending")) {
+		return { stalled: false, idleMs: 0 };
+	}
+	const lastActivity = worker.updatedAt ?? worker.startedAt;
+	const idleMs = Math.max(0, now - lastActivity);
+	const isLong = worker.currentTool ? LONG_RUNNING_TOOLS.has(worker.currentTool) : false;
+	const threshold = isLong ? LONG_RUNNING_STALL_THRESHOLD_MS : DEFAULT_STALL_THRESHOLD_MS;
+	return { stalled: idleMs >= threshold, idleMs };
+}
+
+export function formatAge(mtime?: number, now = Date.now()): string {
+	if (!mtime || mtime <= 0) return "n/a";
+	const elapsed = Math.max(0, now - mtime);
+	const s = Math.floor(elapsed / 1000);
+	if (s < 60) return `${s}s`;
+	const m = Math.floor(s / 60);
+	if (m < 60) return `${m}m`;
+	return `${Math.floor(m / 60)}h`;
+}
+
+export function freshnessLines(freshness?: DataFreshness, isRuntimeActive = false): TextLine[] {
+	if (!freshness) return [];
+	const now = freshness.now ?? Date.now();
+	const stateAge = formatAge(freshness.stateMtime, now);
+	const stepsAge = formatAge(freshness.stepsMtime, now);
+	const metricsAge = formatAge(freshness.metricsFetchedAt, now);
+	const runtimeLabel = isRuntimeActive ? "live" : "idle";
+	const lines: TextLine[] = [
+		{ text: `DATA · STATE ${stateAge} · STEPS ${stepsAge} · METRICS ${metricsAge} · RUNTIME ${runtimeLabel}`, tone: "muted" },
+	];
+	if (isRuntimeActive && freshness.stateMtime && now - freshness.stateMtime > 60_000) {
+		lines.push({ text: "WARN · STATE appears stale relative to runtime activity", tone: "warning" });
+	}
+	return lines;
+}
+
+export function recentTransitionLines(transitions?: WorkflowTransition[]): TextLine[] {
+	if (!transitions || transitions.length === 0) return [];
+	const lines: TextLine[] = [{ text: "RECENT TRANSITIONS", tone: "accent" }];
+	for (const t of transitions.slice(-3)) {
+		lines.push({ text: `${t.at} ${roleLabel(t.actor)} ${t.summary}`, tone: "muted" });
+	}
+	return lines;
+}
 
 export type RenderResult = {
 	lines: TextLine[];
@@ -195,6 +300,30 @@ export type StatsFooterInfo = {
 	url?: string;
 	status: string;
 };
+
+export type TodoViewMode = "both" | "step" | "run";
+
+
+// Canonical stable work-item/gate ID: <step>.<D|O|J><n>, e.g. S3.D2.
+export const WORK_ITEM_ID_PATTERN = /^[A-Za-z0-9._/-]+\.(?:D|O|J)[1-9][0-9]*$/;
+
+export function isValidWorkItemId(value: string): boolean {
+	return WORK_ITEM_ID_PATTERN.test(value);
+}
+
+// Extract a leading `[S3.D2]`-style stable ID from checklist text.
+export function extractWorkItemId(text: string): { id?: string; text: string } {
+	const match = text.match(/^\[([^\]\s]+)\]\s*(.*)$/);
+	if (!match) return { text };
+	const candidate = match[1];
+	if (!isValidWorkItemId(candidate)) return { text };
+	return { id: candidate, text: match[2].trim() };
+}
+
+// Conservative normalized-text fallback for legacy cards without IDs.
+export function normalizeWorkItemText(value: string): string {
+	return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
 
 const SPECIALIZED_ROLES = new Set(["coder", "reviewer", "tester", "architect", "security"]);
 const THINKING_SUFFIX = /:(?:none|minimal|low|medium|high|xhigh|max)$/i;
@@ -405,14 +534,18 @@ function listValue(source: string, key: string): string[] {
 }
 
 export function parseWorkflowState(source: string): WorkflowState {
+	const schemaVersion = Number(topValue(source, "schema_version"));
 	return {
+		schemaVersion: Number.isFinite(schemaVersion) && schemaVersion > 0 ? schemaVersion : 1,
 		currentStep: topValue(source, "current_step"),
+		currentWorkItemId: topValue(source, "current_work_item_id"),
 		currentWorkItem: topValue(source, "current_work_item"),
 		stepDescription: foldedValue(source, "step_description"),
 		track: topValue(source, "track"),
 		nextActor: topValue(source, "next_actor"),
 		completedSteps: listValue(source, "completed_steps"),
 		onboardingStatus: sectionValue(source, "onboarding", "status"),
+		onboardingMode: sectionValue(source, "onboarding", "mode"),
 		implementationStatus: sectionValue(source, "implementation", "status"),
 		implementationAttempts: sectionNumber(source, "implementation", "attempts"),
 		reviewStatus: sectionValue(source, "review", "status"),
@@ -421,6 +554,10 @@ export function parseWorkflowState(source: string): WorkflowState {
 		qaStatus: sectionValue(source, "qa", "status"),
 		qaEnabled: sectionBoolean(source, "qa", "enabled", true),
 		securityNextRun: sectionValue(source, "security", "next_run"),
+		pipelineProfile: sectionValue(source, "pipeline", "profile") !== "-" ? (sectionValue(source, "pipeline", "profile") as PipelineProfile) : "standard",
+		pipelineAuthorizedBy: sectionValue(source, "pipeline", "authorized_by"),
+		pipelineAuthorizedAt: sectionValue(source, "pipeline", "authorized_at"),
+		pipelineNote: sectionValue(source, "pipeline", "note"),
 		blocker: sectionValue(source, "retry_guard", "blocker"),
 		repeatedFailureCount: sectionNumber(source, "retry_guard", "repeated_failure_count"),
 		activeAgent: sectionValue(source, "omp", "active_agent"),
@@ -441,6 +578,30 @@ function fieldValue(body: string, name: string): string {
 	return cleanScalar(match?.[1]);
 }
 
+
+function parseRisk(body: string): StepRisk {
+	const match = body.match(/\*\*Risk:\*\*\s*(low|normal|high)/i);
+	return (match?.[1]?.toLowerCase() as StepRisk) || "normal";
+}
+
+function parsePipelineProfile(body: string): PipelineProfile {
+	const match = body.match(/\*\*Pipeline(?:\s+profile)?:\*\*\s*(quick|standard|critical)/i);
+	return (match?.[1]?.toLowerCase() as PipelineProfile) || "standard";
+}
+
+function parseStepBudget(body: string): StepBudget | undefined {
+	const match = body.match(/\*\*Budget:\*\*\s*([^\n]+)/i);
+	if (!match) return undefined;
+	const text = match[1];
+	const budget: StepBudget = {};
+	const timeMatch = text.match(/time=(\d+)m?/i);
+	if (timeMatch) budget.timeMinutes = Number(timeMatch[1]);
+	const tokensMatch = text.match(/tokens=(\d+)/i);
+	if (tokensMatch) budget.tokens = Number(tokensMatch[1]);
+	const costMatch = text.match(/cost_usd=(\d+(?:\.\d+)?)/i);
+	if (costMatch) budget.costUsd = Number(costMatch[1]);
+	return Object.keys(budget).length > 0 ? budget : undefined;
+}
 function sectionLines(body: string, heading: string): string[] {
 	const marker = `(?:\\*\\*${escapeRegExp(heading)}:\\*\\*|#{3,}\\s+${escapeRegExp(heading)}\\s*)`;
 	const nextMarker = `(?=\\n(?:\\*\\*[A-Za-z][^\\n]*:\\*\\*|#{2,}\\s+[^\\n]+)|$)`;
@@ -454,12 +615,14 @@ function parseChecklistSection(body: string, heading: string): ChecklistItem[] {
 		if (!rawLine.trim()) continue;
 		const item = rawLine.match(/^\s*(?:[-*]|\d+[.)])\s+(?:\[([ xX])\]\s*)?(.*\S)\s*$/);
 		if (item) {
-			items.push({ done: item[1]?.toLowerCase() === "x", canonical: item[1] !== undefined, text: item[2].trim() });
+			const parsed = extractWorkItemId(item[2].trim());
+			items.push({ id: parsed.id, done: item[1]?.toLowerCase() === "x", canonical: item[1] !== undefined, text: parsed.text });
 			continue;
 		}
 		const checkbox = rawLine.match(/^\s*\[([ xX])\]\s*(.*\S)\s*$/);
 		if (checkbox) {
-			items.push({ done: checkbox[1].toLowerCase() === "x", canonical: true, text: checkbox[2].trim() });
+			const parsed = extractWorkItemId(checkbox[2].trim());
+			items.push({ id: parsed.id, done: checkbox[1].toLowerCase() === "x", canonical: true, text: parsed.text });
 			continue;
 		}
 		if (items.length > 0) items[items.length - 1].text += ` ${rawLine.trim()}`;
@@ -494,6 +657,9 @@ export function parseSteps(source: string): StepCard[] {
 			title: normalizedTitle(match[2]),
 			goal: fieldValue(body, "Goal"),
 			dependsOn: fieldValue(body, "Depends on"),
+			risk: parseRisk(body),
+			pipelineProfile: parsePipelineProfile(body),
+			budget: parseStepBudget(body),
 			todos: parseChecklistSection(body, "Do"),
 			objectiveGates: objective.length > 0 ? objective : legacyDone,
 			judgmentGates: parseChecklistSection(body, "Judgment gates"),
@@ -554,43 +720,14 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 }
 
 function deriveNextAction(state: WorkflowState, runtime: RuntimeSnapshot): string {
-	if (state.blocker !== "-") {
-		if (normalizeRole(state.nextActor) === "architect") return "Main requests Architect escalation";
-		return state.nextActor === "human" ? "Human resolves the recorded blocker" : "Main verifies and resolves the blocker";
-	}
-	if (state.onboardingStatus !== "complete") return "Human completes onboarding and model selection";
-	if (state.modelFailureStatus === "awaiting_human") {
-		const role = roleLabel(state.modelFailureRole);
-		return state.modelFailureInstruction !== "-"
-			? state.modelFailureInstruction
-			: `Human authorizes ${role} backup or changes the model`;
-	}
-	if (state.nextActor === "human") return "Human input required before routing continues";
-	if (runtime.worker && (runtime.worker.status === "running" || runtime.worker.status === "pending")) {
-		return `Wait for ${roleLabel(runtime.worker.agent)} result, then Main verifies it`;
-	}
-	if (state.reviewVerdict === "changes_requested" || state.reviewStatus === "changes_requested") {
-		return "Main reopens affected TODO, then dispatches a fresh Coder";
-	}
-	if (state.qaStatus === "bugs") return "Main records the bug and dispatches a fresh Coder";
-	if (state.implementationStatus === "waiting_review" && state.reviewEnabled) {
-		return "Main verifies Coder evidence, then dispatches Reviewer";
-	}
-	if (state.reviewVerdict === "approved" && state.qaEnabled && state.qaStatus !== "qa_green") {
-		return "Main verifies review, then dispatches Tester";
-	}
-	if (state.reviewVerdict === "approved" && (state.qaStatus === "qa_green" || !state.qaEnabled)) {
-		return "Main closes the Stop-gate and opens the next step";
-	}
-	const role = normalizeRole(state.nextActor);
-	if (role && SPECIALIZED_ROLES.has(role)) return `Main dispatches a fresh ${roleLabel(role)}`;
-	return "Main verifies evidence and selects the next transition";
+	return deriveRoutingExplanation(state, runtime).action;
 }
 
 export function deriveDashboardViewModel(
 	data: DashboardData,
 	runtime: RuntimeSnapshot,
 	selectedStepId?: string,
+	todoMode?: TodoViewMode,
 ): DashboardViewModel {
 	const state = data.state;
 	const currentIndex = data.steps.findIndex(step => step.id === state.currentStep);
@@ -608,6 +745,7 @@ export function deriveDashboardViewModel(
 	const workerRole = normalizeRole(runtime.worker?.agent);
 	const currentRole = workerRole && SPECIALIZED_ROLES.has(workerRole) ? workerRole : undefined;
 	const status = currentStatus(state, runtime);
+	const routing = deriveRoutingExplanation(state, runtime);
 	return {
 		data,
 		runtime,
@@ -621,8 +759,11 @@ export function deriveDashboardViewModel(
 		completedOutsidePlan: state.completedSteps.filter(step => !planIds.has(step)),
 		currentRole,
 		status: status.status,
-		nextAction: deriveNextAction(state, runtime),
+		nextAction: routing.action,
+		whyNext: routing.reason,
+		routing,
 		waitingForHuman: status.waitingForHuman,
+		todoMode,
 	};
 }
 
@@ -800,22 +941,130 @@ function buildPlanLines(view: DashboardViewModel, height: number): TextLine[] {
 	return lines;
 }
 
-function todoLines(step: StepCard, currentWorkItem: string, width: number, warnWhenEmpty: boolean): TextLine[] {
+// Resolve the active checklist item: stable ID first, then a conservative
+// normalized-text fallback for legacy cards. Ambiguous matches yield nothing.
+export function resolveActiveTodo(step: StepCard, state: WorkflowState): ChecklistItem | undefined {
+	if (state.currentWorkItemId !== "-") {
+		return step.todos.find(item => item.id === state.currentWorkItemId);
+	}
+	if (state.currentWorkItem === "-") return undefined;
+	const needle = normalizeWorkItemText(state.currentWorkItem);
+	if (!needle) return undefined;
+	const exact = step.todos.filter(item => normalizeWorkItemText(item.text) === needle);
+	if (exact.length === 1) return exact[0];
+	if (exact.length > 1) return undefined;
+	const substr = step.todos.filter(item => {
+		const hay = normalizeWorkItemText(item.text);
+		return hay.includes(needle) || needle.includes(hay);
+	});
+	if (substr.length !== 1) return undefined;
+	const hay = normalizeWorkItemText(substr[0].text);
+	const common = hay.includes(needle) ? needle.length : hay.length;
+	return common >= 8 ? substr[0] : undefined;
+}
+
+function stepChecklistLines(step: StepCard, state: WorkflowState, width: number, isCurrent: boolean): TextLine[] {
 	const lines: TextLine[] = [];
 	const done = step.todos.filter(item => item.done).length;
-	lines.push({ text: `TODO · ${done} / ${step.todos.length} verified`, tone: "accent" });
+	lines.push({ text: `STEP CHECKLIST · STEPS.md · ${done}/${step.todos.length} verified`, tone: "accent" });
+	if (width >= 46) lines.push({ text: "Main-verified acceptance items", tone: "muted" });
 	if (step.todos.some(item => !item.canonical)) {
 		lines.push({ text: "[WARN] Legacy Do list · convert to checkboxes", tone: "warning" });
 	}
+	if (isCurrent && step.todos.length > 0 && step.todos.every(item => !item.id)) {
+		lines.push({ text: "[WARN] Legacy checklist without stable IDs", tone: "warning" });
+	}
 	if (step.todos.length === 0) {
-		if (warnWhenEmpty) lines.push({ text: "[WARN] No TODO checklist parsed from STEPS.md", tone: "warning" });
+		if (isCurrent) lines.push({ text: "[WARN] No step checklist parsed from STEPS.md", tone: "warning" });
 		return lines;
 	}
+	const active = isCurrent ? resolveActiveTodo(step, state) : undefined;
 	for (const item of step.todos) {
-		const active = currentWorkItem !== "-" && item.text.trim() === currentWorkItem.trim();
-		const marker = item.done ? "✓" : active ? "●" : "○";
-		const tone: Tone = active ? "accent" : item.done ? "muted" : "normal";
-		addWrapped(lines, item.text, width, `${marker} `, tone);
+		const isActive = active === item;
+		const marker = item.done ? "✓" : isActive ? "●" : "○";
+		const tone: Tone = isActive ? "accent" : item.done ? "muted" : "normal";
+		const label = item.id ? `[${item.id}] ${item.text}` : item.text;
+		addWrapped(lines, label, width, `${marker} `, tone);
+	}
+	return lines;
+}
+
+const RUNTIME_TODO_MARKERS: Record<string, string> = {
+	completed: "✓",
+	in_progress: "●",
+	pending: "○",
+	blocked: "!",
+	abandoned: "-",
+};
+
+function runtimeTodoTone(status: string): Tone {
+	if (status === "in_progress") return "accent";
+	if (status === "blocked") return "warning";
+	if (status === "completed" || status === "abandoned") return "muted";
+	return "normal";
+}
+
+// Strip a leading stable-ID token from runtime task text for display.
+function displayTaskText(content: string): string {
+	const match = content.match(/^\[([^\]\s]+)\]\s*(.*)$/);
+	return match && isValidWorkItemId(match[1]) && match[2] ? match[2] : content;
+}
+
+export function runtimeTodoLines(
+	snapshot: RuntimeTodoSnapshot | undefined,
+	width: number,
+	options: { liveStepId?: string; viewingLive: boolean; compact?: boolean },
+): TextLine[] {
+	const lines: TextLine[] = [];
+	if (!snapshot?.available) {
+		lines.push({ text: "RUN TODO · OMP SESSION", tone: "accent" });
+		lines.push({ text: "Runtime Todo unavailable", tone: "muted" });
+		return lines;
+	}
+	const tasks = snapshot.phases.flatMap(phase => phase.tasks);
+	const done = tasks.filter(task => task.status === "completed" || task.status === "abandoned").length;
+	const scope = options.viewingLive ? "OMP SESSION" : `LIVE ${options.liveStepId ?? ""}`.trim();
+	lines.push({ text: `RUN TODO · ${scope} · ${done}/${tasks.length}`, tone: "accent" });
+	if (!options.viewingLive) {
+		lines.push({ text: "runtime subtasks of the live step, not this view", tone: "muted" });
+	}
+	if (tasks.length === 0) {
+		lines.push({ text: "No runtime tasks recorded", tone: "muted" });
+		return lines;
+	}
+	const activePhase =
+		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "in_progress")) ??
+		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "pending" || task.status === "blocked"));
+	if (activePhase && snapshot.phases.length > 1) lines.push({ text: `Phase · ${activePhase.name}`, tone: "muted" });
+	const budget = options.compact ? 4 : 8;
+	const shown: Array<{ content: string; status: string; blocker?: string }> = [];
+	const lastCompleted = [...tasks].reverse().find(task => task.status === "completed");
+	if (lastCompleted) shown.push(lastCompleted);
+	for (const task of tasks) if (task.status === "in_progress") shown.push(task);
+	for (const task of tasks) if (task.status === "blocked") shown.push(task);
+	for (const task of tasks) {
+		if (shown.length >= budget) break;
+		if (task.status === "pending") shown.push(task);
+	}
+	for (const task of shown) {
+		const marker = RUNTIME_TODO_MARKERS[task.status] ?? "○";
+		addWrapped(lines, displayTaskText(task.content), width, `${marker} `, runtimeTodoTone(task.status));
+		if (task.blocker) addWrapped(lines, task.blocker, width, "  blocked: ", "warning");
+	}
+	const hidden = tasks.length - shown.length;
+	if (hidden > 0) lines.push({ text: `${hidden} more task${hidden === 1 ? "" : "s"} hidden`, tone: "muted" });
+	return lines;
+}
+
+export function runtimeTodoLinkLines(link: RuntimeTodoLink | undefined): TextLine[] {
+	if (!link) return [];
+	const lines: TextLine[] = [];
+	lines.push({
+		text: `LINK · ${link.matched} matched · ${link.runOnly} run-only · ${link.stepOnly} step-only`,
+		tone: "muted",
+	});
+	for (const invalid of link.invalid) {
+		lines.push({ text: `[WARN] Runtime Todo references unknown item ${invalid}`, tone: "warning" });
 	}
 	return lines;
 }
@@ -877,13 +1126,43 @@ function checklistGateLines(step: StepCard): TextLine[] {
 	return lines;
 }
 
-function buildCenterContent(view: DashboardViewModel, width: number): { pinned: TextLine[]; scrollable: TextLine[] } {
+function activeWorkItemLine(state: WorkflowState, width: number): TextLine[] {
+	const lines: TextLine[] = [];
+	if (state.currentWorkItemId !== "-") {
+		const text = state.currentWorkItem !== "-" ? state.currentWorkItem : "";
+		addWrapped(lines, text ? `${state.currentWorkItemId} · ${text}` : state.currentWorkItemId, width, "ITEM · ", "accent");
+	} else if (state.currentWorkItem !== "-") {
+		addWrapped(lines, state.currentWorkItem, width, "ITEM · ", "accent");
+	}
+	return lines;
+}
+
+function consistencyLines(findings: ConsistencyFinding[] | undefined): TextLine[] {
+	if (!findings) return [];
+	if (findings.length === 0) return [{ text: "STATE CONSISTENCY · OK", tone: "muted" }];
+	const lines: TextLine[] = [{ text: "WARN · STATE DRIFT", tone: "warning" }];
+	for (const finding of findings.slice(0, 3)) {
+		lines.push({ text: finding.message, tone: finding.severity === "fail" ? "warning" : "muted" });
+	}
+	if (findings.length > 3) lines.push({ text: `${findings.length - 3} more finding${findings.length - 3 === 1 ? "" : "s"}`, tone: "muted" });
+	return lines;
+}
+
+function buildCenterContent(
+	view: DashboardViewModel,
+	width: number,
+	mode: TodoViewMode,
+	compactRuntime: boolean,
+): { pinned: TextLine[]; scrollable: TextLine[] } {
 	const pinned: TextLine[] = [];
 	const scrollable: TextLine[] = [];
 	const state = view.data.state;
 	const step = view.selectedStep;
 	const heading = view.relation === "current" ? "CURRENT STEP" : "SELECTED STEP";
 	pinned.push({ text: heading, tone: "accent" });
+	if (view.relation !== "current" && step && state.currentStep !== "-") {
+		pinned.push({ text: `VIEWING ${step.id} · LIVE WORKFLOW IS ${state.currentStep} · press c to return`, tone: "warning" });
+	}
 	if (!step) {
 		pinned.push({ text: `${view.selectedStepId} · not found in STEPS.md`, tone: "warning" });
 		if (view.data.stateError) pinned.push({ text: `[WARN] STATE.yaml: ${view.data.stateError}`, tone: "warning" });
@@ -892,6 +1171,9 @@ function buildCenterContent(view: DashboardViewModel, width: number): { pinned: 
 		return { pinned, scrollable };
 	}
 	pinned.push({ text: `${step.id} — ${step.title}`, tone: "accent" });
+	if (step.pipelineProfile !== "standard" || step.risk !== "normal") {
+		pinned.push({ text: `PROFILE · ${step.pipelineProfile} · RISK · ${step.risk}`, tone: "muted" });
+	}
 	if (view.relation === "completed") {
 		pinned.push({ text: "STATUS · Completed", tone: "muted" });
 	} else if (view.relation === "planned") {
@@ -899,29 +1181,67 @@ function buildCenterContent(view: DashboardViewModel, width: number): { pinned: 
 	} else {
 		if (state.blocker !== "-") addWrapped(pinned, state.blocker, width, "[WARN] BLOCKED · ", "warning");
 		pinned.push({ text: `STATUS · ${view.status}`, tone: view.waitingForHuman ? "warning" : "normal" });
-		if (view.waitingForHuman) addWrapped(pinned, view.nextAction, width, "NEXT ACTION · ", "warning");
+		pinned.push(...activeWorkItemLine(state, width));
+		if (view.waitingForHuman) {
+			addWrapped(pinned, view.nextAction, width, "NEXT ACTION · ", "warning");
+			if (view.whyNext) addWrapped(pinned, view.whyNext, width, "WHY · ", "muted");
+		}
 		const worker = view.runtime.worker;
-		if (worker && (worker.status === "running" || worker.status === "pending")) {
+		const isWorkerActive = Boolean(worker && (worker.status === "running" || worker.status === "pending"));
+		if (worker && isWorkerActive) {
 			const elapsed = Math.max(worker.durationMs ?? 0, Date.now() - worker.startedAt);
 			const model = worker.resolvedModel ? friendlyModelName(worker.resolvedModel) : "resolving model";
 			const backup = worker.resolvedModelIsFallback || isBackupAgent(worker.agent) ? " · BACKUP" : "";
 			pinned.push({ text: `ACTIVE · ${roleLabel(worker.agent)} · ${model} · ${formatDuration(elapsed)}${backup}`, tone: "accent" });
-			if (state.currentWorkItem !== "-") addWrapped(pinned, state.currentWorkItem, width, "Working on: ");
+			if (worker.currentTool) pinned.push({ text: `TOOL · ${worker.currentTool}` });
+			if (worker.lastIntent) addWrapped(pinned, worker.lastIntent, width, "INTENT · ");
+			if (worker.requests !== undefined || worker.tokens !== undefined) {
+				const reqText = worker.requests !== undefined ? `${worker.requests} req` : "";
+				const tokText = worker.tokens !== undefined ? formatTokens(worker.tokens) : "";
+				const usageText = [reqText, tokText].filter(Boolean).join(" · ");
+				if (usageText) pinned.push({ text: `USAGE · ${usageText}`, tone: "muted" });
+			}
+			if (worker.updatedAt) {
+				pinned.push({ text: `LAST ACTIVITY · ${formatAge(worker.updatedAt)} ago`, tone: "muted" });
+			}
+			const stall = isWorkerStalled(worker);
+			if (stall.stalled) {
+				pinned.push({ text: `WARN · POSSIBLY STALLED · no progress event for ${formatDuration(stall.idleMs)}`, tone: "warning" });
+			}
 		} else {
 			const model = view.runtime.mainModel ? friendlyModelName(view.runtime.mainModel) : "model unresolved";
 			pinned.push({ text: `MAIN · ${model} · ${view.runtime.mainStatus}` });
 			addWrapped(pinned, view.runtime.mainActivity, width, "Now: ", "muted");
 		}
+		pinned.push(...consistencyLines(view.data.consistency));
+		pinned.push(...freshnessLines(view.data.freshness, isWorkerActive || view.runtime.mainStatus === "working"));
 	}
 	if (step.goal !== "-") addWrapped(scrollable, step.goal, width, "Goal: ", "muted");
 	if (step.dependsOn !== "-" && view.relation === "planned") addWrapped(scrollable, step.dependsOn, width, "Depends on: ", "muted");
 	if (scrollable.length > 0) scrollable.push({ text: "" });
-	scrollable.push(...todoLines(step, view.relation === "current" ? state.currentWorkItem : "-", width, view.relation === "current"));
-	if (view.relation === "current") {
+	const isCurrent = view.relation === "current";
+	const showStep = mode !== "run";
+	const showRun = mode !== "step" || (compactRuntime && isCurrent);
+	if (showStep) {
+		scrollable.push(...stepChecklistLines(step, state, width, isCurrent));
+	}
+	if (showRun) {
+		if (scrollable.length > 0) scrollable.push({ text: "" });
+		scrollable.push(
+			...runtimeTodoLines(view.data.runtimeTodo, width, {
+				liveStepId: state.currentStep !== "-" ? state.currentStep : undefined,
+				viewingLive: isCurrent,
+				compact: compactRuntime || !isCurrent,
+			}),
+		);
+		if (isCurrent) scrollable.push(...runtimeTodoLinkLines(view.data.runtimeTodoLink));
+	}
+	if (isCurrent) {
 		scrollable.push({ text: "" }, ...currentGateLines(state));
 		if (!view.waitingForHuman) {
 			scrollable.push({ text: "" });
 			addWrapped(scrollable, view.nextAction, width, "NEXT · ", "accent");
+			if (view.whyNext) addWrapped(scrollable, view.whyNext, width, "WHY · ", "muted");
 		}
 	} else {
 		const gateLines = checklistGateLines(step);
@@ -930,7 +1250,6 @@ function buildCenterContent(view: DashboardViewModel, width: number): { pinned: 
 	}
 	return { pinned, scrollable };
 }
-
 function sessionUsageLines(usage: SessionUsage): TextLine[] {
 	const lines: TextLine[] = [{ text: "THIS OMP SESSION · MAIN + WORKERS", tone: "accent" }];
 	if (usage.models.length === 0) {
@@ -944,10 +1263,50 @@ function sessionUsageLines(usage: SessionUsage): TextLine[] {
 	return lines;
 }
 
+export function formatSampleLabel(runs: number): string {
+	if (runs <= 4) return "low sample";
+	if (runs <= 19) return "developing sample";
+	return "established sample";
+}
+
+export function budgetLines(budget: StepBudget | undefined, stats: StepStats | undefined): TextLine[] {
+	if (!budget) return [];
+	const lines: TextLine[] = [{ text: "BUDGET", tone: "accent" }];
+	if (budget.timeMinutes !== undefined) {
+		const elapsedM = stats?.duration_ms ? Math.floor(stats.duration_ms / 60_000) : 0;
+		lines.push({ text: `Time · ${elapsedM}m / ${budget.timeMinutes}m` });
+		if (elapsedM > budget.timeMinutes) {
+			lines.push({ text: `WARN · Step time budget exceeded by ${elapsedM - budget.timeMinutes}m`, tone: "warning" });
+		}
+	}
+	if (budget.tokens !== undefined) {
+		lines.push({ text: `Tokens · 0 / ${formatTokens(budget.tokens)}` });
+	}
+	lines.push({ text: "Cost · unavailable (OMP Stats exposes no exact step attribution)", tone: "muted" });
+	return lines;
+}
+
+export function humanRatingRecommendations(ratings?: Record<string, number>): TextLine[] {
+	if (!ratings) return [];
+	const lines: TextLine[] = [];
+	const overkill = ratings.overkill ?? 0;
+	const underchecked = ratings.underchecked ?? 0;
+	if (overkill >= 3) {
+		lines.push({ text: "Recommendation: Consider Quick profile for low-risk/docs work", tone: "muted" });
+	}
+	if (underchecked >= 2) {
+		lines.push({ text: "Recommendation: Keep Tester enabled and Judgment Gates thorough", tone: "muted" });
+	}
+	return lines;
+}
+
 function stepStatsLines(view: DashboardViewModel, stats: StepStats | undefined, width: number, compact: boolean): TextLine[] {
 	const lines: TextLine[] = [{ text: "STEP STATISTICS", tone: "accent" }];
 	if (!stats) {
 		lines.push({ text: view.relation === "planned" ? "Planned · no execution data yet" : "No telemetry for this step yet", tone: "muted" });
+		if (view.selectedStep?.budget) {
+			lines.push(...budgetLines(view.selectedStep.budget, stats));
+		}
 		return lines;
 	}
 	lines.push({ text: `${stats.status.replace("_", " ")} · duration ${formatDuration(stats.duration_ms)}` });
@@ -968,6 +1327,9 @@ function stepStatsLines(view: DashboardViewModel, stats: StepStats | undefined, 
 		lines.push({ text: `Failures ${stats.failure_count} · Interruptions ${stats.runtime_interruptions}`, tone: stats.failure_count > 0 ? "warning" : "normal" });
 	}
 	if (stats.human_rating) lines.push({ text: `Human rating · ${stats.human_rating}`, tone: "muted" });
+	if (view.selectedStep?.budget) {
+		lines.push(...budgetLines(view.selectedStep.budget, stats));
+	}
 	if (stats.models.length > 0) {
 		lines.push({ text: "AGENTS USED", tone: "accent" });
 		for (const model of stats.models) {
@@ -1029,7 +1391,8 @@ function currentModelLines(view: DashboardViewModel, report: MetricsReport): Tex
 	const sample = findExactModelSample(report, view.currentRole, view.runtime.worker.resolvedModel);
 	if (!sample) return [];
 	const lines: TextLine[] = [{ text: `CURRENT MODEL · ${friendlyModelName(view.runtime.worker.resolvedModel)}`, tone: "accent" }];
-	lines.push({ text: `Runs ${sample.runs}${sample.sample_warning ? ` · ${sample.sample_warning}` : ""} · Median ${formatDuration(sample.median_duration_ms)}` });
+	const sampleLabel = sample.sample_warning ?? formatSampleLabel(sample.runs);
+	lines.push({ text: `Runs ${sample.runs} · ${sampleLabel} · Median ${formatDuration(sample.median_duration_ms)}` });
 	if (view.currentRole === "coder" && sample.first_review_approval && sample.first_review_approval.total > 0) {
 		lines.push({ text: `First-review approval · ${formatRatio(sample.first_review_approval)}` });
 	}
@@ -1049,8 +1412,31 @@ function failureLines(report: MetricsReport): TextLine[] {
 	return lines;
 }
 
+export function modelSetupLines(setup: ModelSetupSummary | undefined, nextActor?: string): TextLine[] {
+	if (!setup) return [];
+	const lines: TextLine[] = [{ text: "MODEL SETUP", tone: "accent" }];
+	lines.push({ text: `Main · ${setup.mainReady ? "ready" : "not configured"}`, tone: setup.mainReady ? "normal" : "warning" });
+	lines.push({ text: `Execution · ${setup.executionReady ? "ready" : "pending Coder"}` });
+	const qualityStatus = setup.qualityReady
+		? (setup.sharedWithMainCount > 0 ? "shared with Main" : "ready")
+		: "pending Reviewer/Tester";
+	lines.push({ text: `Quality · ${qualityStatus}` });
+	const optionalReady = (setup.roles.architect?.primaryOk ? 1 : 0) + (setup.roles.security?.primaryOk ? 1 : 0);
+	lines.push({ text: `Optional roles · ${optionalReady}/2 configured` });
+	lines.push({ text: `Backups · ${setup.configuredBackupsCount}/${setup.totalRoles}` });
+	if (setup.sharedWithMainCount > 1) {
+		lines.push({ text: `INFO · ${setup.sharedWithMainCount} primary roles currently share Main`, tone: "muted" });
+	}
+	const roleKey = normalizeRole(nextActor);
+	if (roleKey && setup.roles[roleKey] && !setup.roles[roleKey].primaryOk) {
+		lines.push({ text: `WARN · ${roleLabel(roleKey)} model is not configured`, tone: "warning" });
+	}
+	lines.push({ text: "Alt+M → Roles", tone: "muted" });
+	return lines;
+}
+
 function buildStatisticsLines(view: DashboardViewModel, width: number, compact = false): TextLine[] {
-	const lines: TextLine[] = [{ text: "STATISTICS", tone: "accent" }];
+	const lines: TextLine[] = [{ text: "WORKFLOW HEALTH", tone: "accent" }];
 	const report = view.data.metrics;
 	const selectedStats = report?.step_stats?.[view.selectedStepId];
 	if (view.data.metricsError || !report?.summary) {
@@ -1071,6 +1457,10 @@ function buildStatisticsLines(view: DashboardViewModel, width: number, compact =
 	lines.push({ text: "" }, ...stepStatsLines(view, selectedStats, width, compact));
 	const failures = failureLines(report);
 	if (failures.length > 0) lines.push({ text: "" }, ...failures);
+	const transitions = recentTransitionLines(report.recent_transitions);
+	if (transitions.length > 0) lines.push({ text: "" }, ...transitions);
+	const setup = modelSetupLines(view.data.modelSetup, view.data.state.nextActor);
+	if (setup.length > 0) lines.push({ text: "" }, ...setup);
 	lines.push({ text: "" }, ...sessionUsageLines(view.data.sessionUsage));
 	return lines;
 }
@@ -1123,20 +1513,20 @@ function windowCenter(
 	return { lines: clip([...pinned, ...visible], height), maxScroll };
 }
 
-function wideBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function wideBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const available = width - 4;
 	const planWidth = Math.max(24, Math.floor(available * 0.26));
 	const centerWidth = Math.max(42, Math.floor(available * 0.44));
 	const statsWidth = available - planWidth - centerWidth;
 	const widths = [planWidth, centerWidth, statsWidth];
 	const plan = clip(buildPlanLines(view, height), height);
-	const center = windowCenter(buildCenterContent(view, centerWidth), height, detailScroll);
+	const center = windowCenter(buildCenterContent(view, centerWidth, mode, false), height, detailScroll);
 	const stats = clip(buildStatisticsLines(view, statsWidth), height);
 	const lines = Array.from({ length: height }, (_, index) => columnRow([plan[index], center.lines[index], stats[index]], widths));
 	return { lines, maxScroll: center.maxScroll };
 }
 
-function mediumBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function mediumBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const topHeight = Math.max(6, Math.floor((height - 1) * 0.64));
 	const statsHeight = Math.max(0, height - topHeight - 1);
 	const available = width - 3;
@@ -1144,14 +1534,14 @@ function mediumBody(view: DashboardViewModel, width: number, height: number, det
 	const centerWidth = available - planWidth;
 	const widths = [planWidth, centerWidth];
 	const plan = clip(buildPlanLines(view, topHeight), topHeight);
-	const center = windowCenter(buildCenterContent(view, centerWidth), topHeight, detailScroll);
+	const center = windowCenter(buildCenterContent(view, centerWidth, mode, mode === "step"), topHeight, detailScroll);
 	const lines = Array.from({ length: topHeight }, (_, index) => columnRow([plan[index], center.lines[index]], widths));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
 }
 
-function narrowBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function narrowBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const available = Math.max(6, height - 2);
 	let currentHeight = Math.max(4, Math.floor(available * 0.42));
 	let planHeight = Math.max(2, Math.floor(available * 0.18));
@@ -1161,13 +1551,17 @@ function narrowBody(view: DashboardViewModel, width: number, height: number, det
 		currentHeight = Math.max(4, currentHeight - needed);
 		statsHeight = available - currentHeight - planHeight;
 	}
-	const center = windowCenter(buildCenterContent(view, width - 2), currentHeight, detailScroll);
+	const center = windowCenter(buildCenterContent(view, width - 2, mode, mode === "step"), currentHeight, detailScroll);
 	const lines = center.lines.map(line => fullRow(line, width));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildPlanLines(view, planHeight), planHeight)) lines.push(fullRow(line, width));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
+}
+
+export function defaultTodoMode(layout: "wide" | "medium" | "narrow"): TodoViewMode {
+	return layout === "wide" ? "both" : "step";
 }
 
 export function renderDashboard(
@@ -1180,13 +1574,14 @@ export function renderDashboard(
 	const panelWidth = Math.max(20, width);
 	const height = Math.max(8, bodyHeight);
 	const layout: RenderResult["layout"] = panelWidth >= 140 ? "wide" : panelWidth >= 100 ? "medium" : "narrow";
+	const mode = view.todoMode ?? defaultTodoMode(layout);
 	const body = layout === "wide"
-		? wideBody(view, panelWidth, height, detailScroll)
+		? wideBody(view, panelWidth, height, detailScroll, mode)
 		: layout === "medium"
-			? mediumBody(view, panelWidth, height, detailScroll)
-			: narrowBody(view, panelWidth, height, detailScroll);
+			? mediumBody(view, panelWidth, height, detailScroll, mode)
+			: narrowBody(view, panelWidth, height, detailScroll, mode);
 	const title = `PAVAN'S WORKFLOW · LIVE · ${view.data.state.track !== "-" ? view.data.state.track : "file-backed"}`;
-	const footer = `↑/↓ step · c current · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
+	const footer = `↑/↓ step · c current · t todo view · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
 	return {
 		layout,
 		maxDetailScroll: body.maxScroll,
