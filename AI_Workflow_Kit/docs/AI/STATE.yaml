@@ -5,6 +5,7 @@ schema_version: 2
 project_prefix: proj
 onboarding:
   status: pending
+  mode: quick
   model_pairs_confirmed: false
   completed_at: null
 current_step: S0

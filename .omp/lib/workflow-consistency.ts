@@ -43,7 +43,8 @@ const IMPLEMENTATION_STATUSES = new Set([
 const REVIEW_STATUSES = new Set(["pending", "in_progress", "approved", "changes_requested", "blocked", "skipped"]);
 const QA_STATUSES = new Set(["pending", "in_progress", "qa_green", "bugs", "blocked", "skipped"]);
 const MODEL_FAILURE_STATUSES = new Set(["none", "awaiting_human", "backup_authorized"]);
-
+const PIPELINE_PROFILES = new Set(["quick", "standard", "critical"]);
+const RISK_LEVELS = new Set(["low", "normal", "high"]);
 export function allChecklistItems(step: StepCard): ChecklistItem[] {
 	return [...step.todos, ...step.objectiveGates, ...step.judgmentGates];
 }
@@ -188,6 +189,13 @@ export function checkWorkflowConsistency(input: ConsistencyInput): ConsistencyFi
 			code: "enum_invalid",
 			severity: "warn",
 			message: `unknown qa.status "${state.qaStatus}"`,
+		});
+	}
+	if (state.pipelineProfile && state.pipelineProfile !== "-" && !PIPELINE_PROFILES.has(state.pipelineProfile)) {
+		findings.push({
+			code: "enum_invalid",
+			severity: "warn",
+			message: `unknown pipeline.profile "${state.pipelineProfile}"`,
 		});
 	}
 	if (state.modelFailureStatus !== "-" && !MODEL_FAILURE_STATUSES.has(state.modelFailureStatus)) {

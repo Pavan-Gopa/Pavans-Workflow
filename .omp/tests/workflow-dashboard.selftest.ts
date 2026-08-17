@@ -331,7 +331,7 @@ for (const [width, expectedLayout] of [[160, "wide"], [120, "medium"], [80, "nar
 }
 
 const wideText = renderDashboard(currentView, 160, 34).lines.map(line => line.text).join("\n");
-assert.match(wideText, /PLAN\s+\|CURRENT STEP\s+\|STATISTICS/);
+assert.match(wideText, /PLAN\s+\|CURRENT STEP\s+\|WORKFLOW HEALTH/);
 assert.match(wideText, /Remove provider quota code/);
 assert.match(wideText, /CURRENT ROLE · CODER/);
 assert.match(wideText, /CURRENT MODEL · GPT 5.6 Luna/);
@@ -741,6 +741,143 @@ const stepsBefore = JSON.stringify(idSteps);
 renderDashboard(deriveDashboardViewModel(idData, idRuntime), 160, 40);
 assert.equal(JSON.stringify(idSteps), stepsBefore);
 
+
+// ---------------------------------------------------------------------------
+// PR3: live worker details, stall warning, freshness, Why Next, transitions
+// ---------------------------------------------------------------------------
+
+// 1. Live worker details: tool, intent, requests, tokens, last activity
+const detailedRuntime: RuntimeSnapshot = {
+	worker: {
+		id: "coder-live",
+		agent: "workflow-coder",
+		status: "running",
+		startedAt: Date.now() - 45_000,
+		updatedAt: Date.now() - 4_000,
+		resolvedModel: "openai-codex/gpt-5.6-luna:max",
+		currentTool: "edit",
+		lastIntent: "Updating typed error result",
+		requests: 7,
+		tokens: 28_400,
+	},
+	mainStatus: "working",
+	mainActivity: "Supervising the active worker",
+};
+const detailedData: DashboardData = {
+	...idData,
+	freshness: {
+		stateMtime: Date.now() - 1_000,
+		stepsMtime: Date.now() - 1_000,
+		metricsFetchedAt: Date.now() - 12_000,
+		now: Date.now(),
+	},
+};
+const detailedView = deriveDashboardViewModel(detailedData, detailedRuntime);
+const detailedText = renderDashboard(detailedView, 160, 44).lines.map(line => line.text).join("\n");
+assert.match(detailedText, /TOOL · edit/);
+assert.match(detailedText, /INTENT · Updating typed error result/);
+assert.match(detailedText, /USAGE · 7 req · 28,400 tok/);
+assert.match(detailedText, /LAST ACTIVITY · 4s ago/);
+assert.match(detailedText, /DATA · STATE 1s · STEPS 1s · METRICS 12s · RUNTIME live/);
+assert.match(detailedText, /WHY · Worker session 'coder-live'/);
+
+// 2. Stall warning triggered on idle regular tool (> 180s)
+const stalledRuntime: RuntimeSnapshot = {
+	worker: {
+		id: "coder-stalled",
+		agent: "workflow-coder",
+		status: "running",
+		startedAt: Date.now() - 300_000,
+		updatedAt: Date.now() - 200_000,
+		resolvedModel: "openai-codex/gpt-5.6-luna:max",
+		currentTool: "edit",
+	},
+	mainStatus: "working",
+	mainActivity: "Supervising the active worker",
+};
+const stalledText = renderDashboard(deriveDashboardViewModel(idData, stalledRuntime), 160, 40).lines.map(line => line.text).join("\n");
+assert.match(stalledText, /WARN · POSSIBLY STALLED · no progress event for 3m 20s/);
+
+// 3. Long running tool (bash/eval/task) does not stall under 600s threshold
+const longRunningRuntime: RuntimeSnapshot = {
+	worker: {
+		id: "coder-bash",
+		agent: "workflow-coder",
+		status: "running",
+		startedAt: Date.now() - 300_000,
+		updatedAt: Date.now() - 200_000,
+		resolvedModel: "openai-codex/gpt-5.6-luna:max",
+		currentTool: "bash",
+	},
+	mainStatus: "working",
+	mainActivity: "Supervising the active worker",
+};
+const longRunningText = renderDashboard(deriveDashboardViewModel(idData, longRunningRuntime), 160, 40).lines.map(line => line.text).join("\n");
+assert.doesNotMatch(longRunningText, /POSSIBLY STALLED/);
+
+// 4. Recent transitions timeline rendering
+const metricsWithTransitions: MetricsReport = {
+	...metrics,
+	recent_transitions: [
+		{ at: "10:31", actor: "coder", kind: "worker_result", summary: "completed S3.D1" },
+		{ at: "10:32", actor: "orchestrator", kind: "work_item_verified", summary: "verified S3.D1" },
+		{ at: "10:33", actor: "reviewer", kind: "worker_started", summary: "started review" },
+	],
+};
+const transitionsText = renderDashboard(deriveDashboardViewModel({ ...idData, metrics: metricsWithTransitions }, idRuntime), 160, 44).lines.map(line => line.text).join("\n");
+assert.match(transitionsText, /RECENT TRANSITIONS/);
+assert.match(transitionsText, /10:31 Coder completed S3\.D1/);
+assert.match(transitionsText, /10:33 Reviewer started review/);
+
+// ---------------------------------------------------------------------------
+// PR4: pipeline profiles, risk, budgets, sample labels, recommendations
+// ---------------------------------------------------------------------------
+
+const profiledSteps = parseSteps(`
+## S6 — Quick refactor
+
+**Goal:** Trivial config tweak.
+**Risk:** low
+**Pipeline profile:** quick
+**Budget:** time=20m; tokens=100000; cost_usd=2.50
+
+**Do:**
+- [ ] [S6.D1] Update the config
+`);
+assert.equal(profiledSteps[0].risk, "low");
+assert.equal(profiledSteps[0].pipelineProfile, "quick");
+assert.deepEqual(profiledSteps[0].budget, { timeMinutes: 20, tokens: 100000, costUsd: 2.5 });
+
+const profiledState = parseWorkflowState(`
+schema_version: 2
+current_step: S6
+current_work_item_id: S6.D1
+current_work_item: Update the config
+pipeline:
+  profile: quick
+  authorized_by: human
+  authorized_at: 2026-08-17T12:00:00Z
+  note: Documentation-only change
+onboarding:
+  status: complete
+  mode: quick
+implementation:
+  status: running
+`);
+assert.equal(profiledState.pipelineProfile, "quick");
+assert.equal(profiledState.pipelineAuthorizedBy, "human");
+
+const profiledView = deriveDashboardViewModel(
+	{ ...idData, state: profiledState, steps: profiledSteps },
+	idRuntime,
+);
+const profiledText = renderDashboard(profiledView, 160, 44).lines.map(line => line.text).join("\n");
+assert.match(profiledText, /PROFILE · quick · RISK · low/);
+assert.match(profiledText, /WORKFLOW HEALTH/);
+assert.match(profiledText, /BUDGET/);
+assert.match(profiledText, /Time · 0m \/ 20m/);
+assert.match(profiledText, /Tokens · 0 \/ 100,000 tok/);
+assert.match(profiledText, /Cost · unavailable/);
 if (process.env.WORKFLOW_DASHBOARD_MOCKUPS === "1") {
 	for (const [label, view] of [
 		["NORMAL CURRENT", mainOnly],

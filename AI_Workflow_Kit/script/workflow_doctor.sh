@@ -59,12 +59,16 @@ check_path .omp/lib/workflow-runtime-todo.ts
 check_path .omp/lib/workflow-consistency.ts
 check_path .omp/lib/workflow-migration.ts
 check_path .omp/lib/workflow-migrate-cli.ts
+check_path .omp/lib/workflow-model-readiness.ts
+check_path .omp/lib/workflow-routing.ts
 check_path .omp/lib/workflow-stats.ts
 check_path .omp/lib/workflow-stats-runtime.ts
 check_path .omp/tests/workflow-dashboard.selftest.ts
 check_path .omp/tests/workflow-runtime-todo.selftest.ts
 check_path .omp/tests/workflow-consistency.selftest.ts
 check_path .omp/tests/workflow-migration.selftest.ts
+check_path .omp/tests/workflow-model-readiness.selftest.ts
+check_path .omp/tests/workflow-routing.selftest.ts
 check_path .omp/tests/workflow-stats.selftest.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
@@ -154,6 +158,18 @@ if command -v node >/dev/null 2>&1; then
     printf 'OK   workflow migration deterministic selftest\n'
   else
     printf 'FAIL workflow migration deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+  if node .omp/tests/workflow-model-readiness.selftest.ts >/dev/null; then
+    printf 'OK   workflow model readiness deterministic selftest\n'
+  else
+    printf 'FAIL workflow model readiness deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+  if node .omp/tests/workflow-routing.selftest.ts >/dev/null; then
+    printf 'OK   workflow routing deterministic selftest\n'
+  else
+    printf 'FAIL workflow routing deterministic selftest\n' >&2
     failures=$((failures + 1))
   fi
 else

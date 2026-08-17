@@ -329,6 +329,7 @@ export function migrationCheck(stateSource: string, stepsSource: string): Migrat
 
 	const enums: Array<[string, RegExp, Set<string>]> = [
 		["implementation.status", /^implementation:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+status:\s*(\S+)/m, new Set(["pending", "running", "waiting_review", "changes_requested", "blocked", "complete"])],
+		["pipeline.profile", /^pipeline:\s*\n(?:[ \t]+\S.*\n)*?[ \t]+profile:\s*(\S+)/m, new Set(["quick", "standard", "critical"])],
 	];
 	for (const [name, pattern, allowed] of enums) {
 		const match = stateSource.match(pattern);

@@ -54,30 +54,33 @@ Human-invoked operation; never poll upstream periodically.
 After either update action, stop; do not continue into product routing in the
 same command.
 
-## Onboarding
+## Progressive onboarding
 
-Read `onboarding.status` from `STATE.yaml` before dispatching any worker.
+Read `onboarding.status` and `onboarding.mode` from `STATE.yaml` before dispatching any worker.
 
-- For `onboard`, `setup`, or an incomplete onboarding state, run
-  `bash AI_Workflow_Kit/script/workflow_models.sh status` and show a concise
-  welcome screen explaining Main, fresh workers, primary/backup model pairs,
-  `Alt+M` model selection, the `Alt+W` live task board, separate `Alt+A` worker
-  supervision, file-backed state, and Human-authorized backup retry. Do not
-  dispatch a worker yet.
-- Use the interactive `ask` tool with these choices: **Configure model pairs**,
-  **Use current pairs and start**, **Explain manual failover**, and **Pause here**.
-- If the Human chooses configuration, tell them to press `Alt+M`, open the
-  **Roles** view, and assign both `workflow_<role>` and
-  `workflow_<role>_backup`. Then wait for `/workflow ready`.
-- On `ready`, run `bash AI_Workflow_Kit/script/workflow_models.sh validate`. Only
-  when it succeeds, set `onboarding.status: complete`,
-  `model_pairs_confirmed: true`, and `completed_at` to the current ISO timestamp.
-  Explain that model changes apply to subsequent worker spawns. If Main itself
-  is unavailable, the Human must switch the live session to
-  `@workflow_orchestrator_backup` through the model selector before continuing.
-- If onboarding is already complete, show a one-line readiness banner and
-  continue. `setup` explicitly reopens the full onboarding screen.
-
+- Onboarding supports three modes:
+  1. **Quick start (Default)**: Uses Main/default model for primary roles (`workflow_<role> -> @workflow_orchestrator`). Backups are optional until a model failure occurs. S0 starts immediately.
+  2. **Guided**: Step-by-step interactive selection for primary roles (`Orchestrator`, `Coder`, `Reviewer`, `Tester`). Architect/Security are configured JIT when needed.
+  3. **Advanced**: Full `Alt+M` Roles setup configuring all primary and backup pairs with provider diversity and thinking levels.
+- For `onboard`, `setup`, or when `onboarding.status` is pending:
+  - Run `bash AI_Workflow_Kit/script/workflow_models.sh status`.
+  - Check readiness with `bash AI_Workflow_Kit/script/workflow_models.sh validate-level main`.
+  - Present the interactive `ask` tool with options:
+    - **Quick start (Recommended)** — use current/default model for all roles and begin S0 immediately.
+    - **Guided setup** — configure primary roles step by step.
+    - **Advanced setup** — configure all 6 primary + backup pairs via `Alt+M → Roles`.
+    - **Explain manual failover & backup policy**.
+    - **Pause here**.
+  - When Quick start or Guided setup satisfies `validate-level main` (or higher), update `STATE.yaml`:
+    `onboarding.status: complete`, `onboarding.mode: <quick|guided|advanced>`, and `completed_at: <ISO timestamp>`.
+  - `/workflow ready` remains supported as a backward-compatible alias, but is no longer mandatory; any `/workflow`, `/workflow status`, or `/workflow start` command automatically verifies readiness and continues.
+- **Just-In-Time role configuration**:
+  - Before the first dispatch of any specialized worker (`coder`, `reviewer`, `tester`, `architect`, `security`), run `bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>`.
+  - If the role is unconfigured, pause and prompt the Human with `ask` to configure only that role (`Alt+M → Roles` or use Main model), without requiring unneeded optional roles or backups.
+- **Just-In-Time backup configuration**:
+  - When a persistent model failure occurs, check if `workflow_<role>_backup` is configured using `bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role> backup`.
+  - If missing, prompt the Human to configure only that backup in `Alt+M` (or replace the primary model). Never choose or invoke a backup without explicit Human authorization.
+- If onboarding is already complete, show a one-line readiness banner and continue. `setup` explicitly reopens the onboarding choice screen.
 
 ## Startup / resume reconciliation
 
