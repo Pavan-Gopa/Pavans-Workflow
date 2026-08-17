@@ -187,7 +187,7 @@ export function isReusableStatsDashboardResponse(
 	return (
 		response.status === 200 &&
 		Number.isInteger(securityVersion) &&
-		securityVersion === OMP_STATS_MIN_SECURITY_VERSION &&
+		securityVersion >= OMP_STATS_MIN_SECURITY_VERSION &&
 		response.headers.get(OMP_STATS_HOSTNAME_HEADER) === host &&
 		!response.headers.has("Access-Control-Allow-Origin")
 	);
