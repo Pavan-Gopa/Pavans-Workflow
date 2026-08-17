@@ -4,6 +4,9 @@ A reusable **multi-model, multi-agent development workflow** for
 [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with
 [Graphify](https://github.com/Graphify-Labs/graphify) as the shared code
 intelligence layer.
+> ⚡ **Workflow v2 is live!** Update an existing project in one command:  
+> `/work-update` (inside OMP) or `bash AI_Workflow_Kit/script/workflow_update.sh` (in terminal).  
+> **Key Highlights:** **Progressive Onboarding** (start immediately on 1 model), **Dual Todo & Stable IDs** (`STEP CHECKLIST` + `RUN TODO`), **Embedded OMP Stats** (`http://127.0.0.1:3847`, press `o` in `Alt+W`), **Live Worker Details & Stall Warnings**, **Why Next** (`/workflow why`), and **Pipeline Profiles** (`quick`/`standard`/`critical`).
 
 This is deliberately more than a multi-agent prompt pack. Every role has an
 independent **primary** and **backup** OMP model alias. Worker backups are
@@ -400,11 +403,13 @@ Useful controls:
 
 | Action | Control |
 |--------|---------|
+| **Fast update from upstream GitHub** | `/work-update` or `/workflow-update` |
+| **Check upstream updates (dry-run)** | `/work-update check` or `/workflow-update check` |
+| **Explain current status & next actor** | `/workflow why` or `/workflow-why` |
 | Re-read, reconcile state, and continue | `/workflow status` |
-| Check upstream workflow updates | `/workflow update check` |
-| Conservatively update workflow framework | `/workflow update` |
-| Redirect Main | `/workflow <new instruction>` |
-| Open live `PLAN | CURRENT | STATISTICS` task board | `Alt+W` or `/workflow-dashboard` |
+| Open live `PLAN \| CURRENT \| WORKFLOW HEALTH` task board | `Alt+W` or `/workflow-dashboard` |
+| Open OMP Stats observability in browser | Press `o` in Alt+W or run `/workflow-stats` |
+| Switch Todo view (Both / Step / Run) | Press `t` in Alt+W |
 | View passive local workflow metrics | `/workflow metrics` |
 | Rate the latest completed step | `/workflow metrics rate good`, `overkill`, or `underchecked` |
 | Delete local telemetry only | `/workflow metrics reset` |
@@ -413,10 +418,8 @@ Useful controls:
 | Change role model assignments | `Alt+M` or `/models` |
 | Retry a recorded worker model failure | Tell Main: `continue <role> with backup` |
 | Reopen onboarding/model setup | `/workflow setup` |
+| Run schema v2 migration | `bash AI_Workflow_Kit/script/workflow_migrate.sh apply` |
 | Query models from the terminal | `omp models` |
-
-## Repository map
-
 ```text
 .omp/
   AGENTS.md                   shared workflow contract
@@ -449,27 +452,22 @@ history is not backfilled. See `AI_Workflow_Kit/docs/AI/METRICS.md`.
 
 ## Update the workflow
 
-Run `/workflow update check` to compare the installed framework with upstream
-without edits. Run `/workflow update` to apply a reviewed, conservative update.
-The command preserves `.omp/config.yml`, project context, `STATE.yaml`, step
-cards, decisions, feedback, and reports; conflicting framework customizations
-are reported rather than overwritten. Updates are explicit—there is no
-background polling, daemon, or scheduler.
+Update your workflow framework to the latest upstream release at any time:
+
+### Inside OMP chat
+* `/work-update` (or `/workflow-update`) — pulls the latest framework files, preserves your model assignments in `.omp/config.yml` and live project state, runs schema v2 migration, and runs doctor checks.
+* `/work-update check` (or `/workflow-update check`) — dry run; shows modified files without editing.
+
+### From terminal
+```bash
+bash AI_Workflow_Kit/script/workflow_update.sh        # apply update safely
+bash AI_Workflow_Kit/script/workflow_update.sh check  # dry-run inspection
+```
+
+Your custom model mappings in `.omp/config.yml` and project files (`STATE.yaml`, `STEPS.md`, `DECISIONS.md`, `FEEDBACK.md`, reports) are **never overwritten**.
 
 ## Extend it
 
 Fork the repository and add roles, change output schemas, replace model aliases,
-or adapt the state machine. Keep the central invariants if you want the same
-operational behavior:
-
-- one controlling Main;
-- fresh workers;
-- no worker-to-worker routing;
-- Main-only state writes;
-- file-backed source of truth;
-- Graphify for navigation, source for verification;
-- explicit human supervision.
-
-## License
-
+or configure your preferred fallback providers in `.omp/config.yml`.
 MIT. See [LICENSE](LICENSE).

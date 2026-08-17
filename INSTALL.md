@@ -2,6 +2,9 @@
 
 Pavan's Workflow is a project template for [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi). OMP is the only required host. The installer adds [Graphify](https://github.com/Graphify-Labs/graphify) when it is not already available.
 
+> ⚡ **Workflow v2 is live!** Update an existing project in one command:  
+> `/work-update` (inside OMP chat) or `bash AI_Workflow_Kit/script/workflow_update.sh` (in terminal).
+
 ## 1. Install OMP
 
 Official macOS/Linux installer:
@@ -160,9 +163,10 @@ wrong directory and therefore loaded neither `.omp/config.yml` nor
 
 Useful controls:
 
+- `/work-update` (or `/workflow-update`) — fast, automated update from upstream GitHub main.
+- `/work-update check` (or `/workflow-update check`) — preview differences against upstream main without editing.
+- `/workflow why` — explain the current routing decision, status, and next actor.
 - `/workflow status` — reconcile runtime/repository state, then continue.
-- `/workflow update check` — compare the installed framework with upstream.
-- `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
 - `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board (press `t` to toggle between `STEP CHECKLIST` and `RUN TODO` views; press `o` to open OMP Stats in the browser).
@@ -190,16 +194,18 @@ Stats failures never block the workflow.
 
 ## Update
 
-From Main, run:
+Update your workflow framework to the latest upstream release at any time:
 
+### Inside OMP chat
 ```text
-/workflow update check
-/workflow update
+/work-update           # or /workflow-update
+/work-update check     # dry-run inspection
 ```
 
-The first command compares against the latest `main` from Pavan’s Workflow and
-does not edit. The second explicitly applies reviewed framework changes while
-preserving `.omp/config.yml`, project context, live `STATE.yaml`, step cards,
-decisions, feedback, and reports. Local framework conflicts are left unchanged
-and reported. The workflow never polls upstream in the background and installs
-no daemon or scheduler.
+### From terminal
+```bash
+bash AI_Workflow_Kit/script/workflow_update.sh        # apply update safely
+bash AI_Workflow_Kit/script/workflow_update.sh check  # dry-run inspection
+```
+
+The update pulls the latest framework files, preserves `.omp/config.yml` (model mappings), preserves live `STATE.yaml`, step cards, decisions, feedback, and reports, runs schema v2 migration, and executes doctor verification.
