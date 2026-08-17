@@ -5,6 +5,7 @@ import {
 	formatStatsPanelRow,
 	formatStatsUrl,
 	formatStatsWidgetLines,
+	isReusableStatsDashboardResponse,
 	statsLaunchCommandCandidates,
 	type OmpStatsContext,
 	type OmpStatsProcess,
@@ -36,6 +37,33 @@ assert.deepEqual(statsLaunchCommandCandidates("127.0.0.1", 3847)[0], {
 	label: "omp-stats",
 });
 assert.equal(statsLaunchCommandCandidates("127.0.0.1", 3847)[1].command, "omp");
+
+const secureDashboardResponse = new Response("{}", {
+	status: 200,
+	headers: {
+		"x-omp-stats-dashboard": "3",
+		"x-omp-stats-hostname": "127.0.0.1",
+	},
+});
+assert.equal(isReusableStatsDashboardResponse(secureDashboardResponse, "127.0.0.1"), true);
+const futureSecureDashboardResponse = new Response("{}", {
+	status: 200,
+	headers: {
+		"x-omp-stats-dashboard": "4",
+		"x-omp-stats-hostname": "127.0.0.1",
+	},
+});
+assert.equal(isReusableStatsDashboardResponse(futureSecureDashboardResponse, "127.0.0.1"), true);
+const insecureDashboardResponse = new Response("{}", {
+	status: 200,
+	headers: {
+		"x-omp-stats-dashboard": "2",
+		"x-omp-stats-hostname": "127.0.0.1",
+		"Access-Control-Allow-Origin": "*",
+	},
+});
+assert.equal(isReusableStatsDashboardResponse(insecureDashboardResponse, "127.0.0.1"), false);
+assert.equal(isReusableStatsDashboardResponse(secureDashboardResponse, "localhost"), false);
 
 const widgets: Array<string[] | undefined> = [];
 const notifications: Array<{ message: string; type?: string }> = [];
