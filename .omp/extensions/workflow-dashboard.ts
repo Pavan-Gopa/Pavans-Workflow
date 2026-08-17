@@ -16,6 +16,7 @@ import {
 	type TextLine,
 	type WorkerSnapshot,
 } from "../lib/workflow-dashboard-core.ts";
+import { getStatsRuntime } from "../lib/workflow-stats-runtime.ts";
 
 const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
 const STEPS_PATH = "AI_Workflow_Kit/docs/STEPS.md";
@@ -146,6 +147,7 @@ class WorkflowDashboard implements Component {
 	private localRefreshing = false;
 	private metricsRefreshing = false;
 	private closed = false;
+	private unsubscribeStats?: () => void;
 
 	constructor(
 		private readonly pi: ExtensionAPI,
@@ -156,6 +158,7 @@ class WorkflowDashboard implements Component {
 		private readonly done: (value: undefined) => void,
 	) {
 		this.timer = ctx.setInterval(() => this.refresh(false), LIVE_REFRESH_MS);
+		this.unsubscribeStats = getStatsRuntime(ctx.cwd).subscribe(() => this.requestRender());
 		this.refresh(true);
 	}
 
@@ -220,6 +223,7 @@ class WorkflowDashboard implements Component {
 		if (this.closed) return;
 		this.closed = true;
 		if (this.timer) this.ctx.clearTimer(this.timer);
+		this.unsubscribeStats?.();
 		if (activePanel === this) activePanel = undefined;
 		this.done(undefined);
 	}
@@ -252,6 +256,16 @@ class WorkflowDashboard implements Component {
 		}
 		if (matchesKey(data, "r")) {
 			this.refresh(true);
+			void getStatsRuntime(this.ctx.cwd).controller.requestSync(true);
+			return;
+		}
+		if (matchesKey(data, "o")) {
+			const runtime = getStatsRuntime(this.ctx.cwd);
+			const snapshot = runtime.controller.snapshot;
+			const url = snapshot.url ?? runtime.controller.url;
+			void runtime.openInBrowser(url).then(opened => {
+				if (!opened) this.ctx.ui.notify(`No browser opener worked. Open OMP Stats manually: ${url}`, "warning");
+			});
 			return;
 		}
 		if (matchesKey(data, "c")) {
@@ -285,7 +299,7 @@ class WorkflowDashboard implements Component {
 		} else {
 			const liveData = { ...this.data, sessionUsage: sessionUsage.snapshot() };
 			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId);
-			const result = renderDashboard(view, panelWidth, bodyHeight, this.detailScroll);
+			const result = renderDashboard(view, panelWidth, bodyHeight, this.detailScroll, getStatsRuntime(this.ctx.cwd).footerInfo());
 			this.maxDetailScroll = result.maxDetailScroll;
 			this.detailScroll = Math.min(this.detailScroll, this.maxDetailScroll);
 			rendered = result.lines;

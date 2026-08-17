@@ -145,6 +145,33 @@ files and metrics. Use `Alt+W`, `Esc`, or `q` to close it. Keep the three native
 surfaces distinct: `Alt+W` is this task board, `Alt+A` is Agent Hub for
 transcripts/steering/termination, and `Alt+M` is the model-role selector.
 
+### OMP Stats observability panel
+
+Every interactive workflow session automatically starts (or reuses) the local
+[OMP Stats](https://github.com/can1357/oh-my-pi) usage dashboard at
+`http://127.0.0.1:3847`. The server binds the loopback interface only and is
+never exposed on `0.0.0.0`.
+
+- Right after session start, a notification and a persistent widget below the
+  editor show the state (`idle`, `starting`, `ready`, `sync warning`,
+  `unavailable`) and the bare URL on its own line, so terminals can turn it
+  into a click-to-open link.
+- The **Alt+W** dashboard renders the same URL in its bottom footer; press `o`
+  inside the panel to open it in the system browser.
+- `/workflow-stats` checks the server, retries the launch when needed, requests
+  a sync, and opens the URL in the browser.
+- Session files are synced through the official `/api/sync` endpoint after
+  startup, after each Main turn, after every subagent completion/failure/stop,
+  and on manual refresh (`r` in the dashboard or `/workflow-stats`). Repeated
+  requests are coalesced into one in-flight sync plus at most one queued sync.
+- The launcher tries the quiet standalone `omp-stats` CLI first and falls back
+  to the main `omp stats` CLI. An already-running trusted Stats server is
+  reused and never stopped on session shutdown; only a server spawned by the
+  workflow session itself is stopped. A port held by an untrusted process
+  (missing OMP Stats headers or unsafe CORS) is refused, not reused.
+- Stats failures never block or break the workflow; the widget simply reports
+  the state.
+
 ### Graphify-first navigation
 
 All roles follow:

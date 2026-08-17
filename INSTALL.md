@@ -165,12 +165,13 @@ Useful controls:
 - `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
-- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board.
+- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board. Press `o` inside it to open OMP Stats in the browser.
 - `/workflow metrics` — show the passive local workflow report.
 - `/workflow metrics rate good|overkill|underchecked [step]` — add an optional Human rating.
 - `/workflow metrics reset` — delete only local telemetry and start fresh.
 - `/pause` — pause Main and subagents at safe boundaries.
 - `continue <role> with backup` — authorize one fresh backup worker after a recorded model/provider failure.
+- `/workflow-stats` — check/retry the OMP Stats server, sync session files, and open `http://127.0.0.1:3847` in the browser.
 
 Metrics use the Python standard-library runtime already required by Graphify.
 Events default to
@@ -178,6 +179,12 @@ Events default to
 Git common directory rather than assuming `.git`, so worktrees remain correct.
 The store is outside the worktree and cannot enter commits. No historical data
 is reconstructed. See `AI_Workflow_Kit/docs/AI/METRICS.md`.
+
+OMP Stats starts automatically with every interactive session at
+`http://127.0.0.1:3847` (loopback only). The URL appears in the widget below
+the editor and in the Alt+W dashboard footer. A Stats server that was already
+running before the workflow started is reused and never stopped on shutdown;
+Stats failures never block the workflow.
 
 
 ## Update

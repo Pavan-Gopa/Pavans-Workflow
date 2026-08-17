@@ -191,6 +191,11 @@ export type RenderResult = {
 	maxDetailScroll: number;
 };
 
+export type StatsFooterInfo = {
+	url?: string;
+	status: string;
+};
+
 const SPECIALIZED_ROLES = new Set(["coder", "reviewer", "tester", "architect", "security"]);
 const THINKING_SUFFIX = /:(?:none|minimal|low|medium|high|xhigh|max)$/i;
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
@@ -1165,7 +1170,13 @@ function narrowBody(view: DashboardViewModel, width: number, height: number, det
 	return { lines, maxScroll: center.maxScroll };
 }
 
-export function renderDashboard(view: DashboardViewModel, width: number, bodyHeight: number, detailScroll = 0): RenderResult {
+export function renderDashboard(
+	view: DashboardViewModel,
+	width: number,
+	bodyHeight: number,
+	detailScroll = 0,
+	statsFooter?: StatsFooterInfo,
+): RenderResult {
 	const panelWidth = Math.max(20, width);
 	const height = Math.max(8, bodyHeight);
 	const layout: RenderResult["layout"] = panelWidth >= 140 ? "wide" : panelWidth >= 100 ? "medium" : "narrow";
@@ -1186,6 +1197,9 @@ export function renderDashboard(view: DashboardViewModel, width: number, bodyHei
 			...body.lines,
 			{ text: border([panelWidth - 2]), tone: "muted" },
 			fullRow({ text: footer, tone: "muted" }, panelWidth),
+			...(statsFooter
+				? [fullRow({ text: `OMP Stats · ${statsFooter.status}${statsFooter.url ? ` · ${statsFooter.url}` : ""} · o open in browser`, tone: "muted" }, panelWidth)]
+				: []),
 			{ text: border([panelWidth - 2]), tone: "accent" },
 		],
 	};
