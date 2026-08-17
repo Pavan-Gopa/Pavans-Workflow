@@ -507,4 +507,27 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 			ctx.ui.notify(text, "info");
 		},
 	});
+
+	const handleUpdate = async (args: string, ctx: ExtensionContext) => {
+		const action = args.trim() === "check" ? "check" : "apply";
+		ctx.ui.notify(`Updating workflow framework (${action})...`, "info");
+		const result = await pi.exec("bash", ["AI_Workflow_Kit/script/workflow_update.sh", action], {
+			cwd: ctx.cwd,
+			timeout: 60_000,
+		});
+		if (result.code === 0) {
+			ctx.ui.notify(result.stdout.trim() || "Workflow update completed successfully!", "info");
+		} else {
+			ctx.ui.notify(result.stderr.trim() || result.stdout.trim() || `Update failed with exit code ${result.code}`, "error");
+		}
+	};
+
+	pi.registerCommand("workflow-update", {
+		description: "Safely update the workflow framework from upstream GitHub main",
+		handler: handleUpdate,
+	});
+	pi.registerCommand("work-update", {
+		description: "Fast alias to update the workflow framework from upstream GitHub main",
+		handler: handleUpdate,
+	});
 }

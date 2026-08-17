@@ -52,6 +52,8 @@ check_command graphify
 check_path .omp/config.yml
 check_path .omp/AGENTS.md
 check_path .omp/commands/workflow.md
+check_path .omp/commands/workflow-update.md
+check_path .omp/commands/work-update.md
 check_path .omp/extensions/workflow-dashboard.ts
 check_path .omp/extensions/workflow-stats.ts
 check_path .omp/lib/workflow-dashboard-core.ts
@@ -74,7 +76,7 @@ check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
 check_path AI_Workflow_Kit/docs/AI/METRICS.md
 check_path AI_Workflow_Kit/script/workflow_metrics.py
-for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models; do
+for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
   check_script "AI_Workflow_Kit/script/$script.sh"
 done
 
