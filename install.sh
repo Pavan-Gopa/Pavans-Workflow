@@ -7,8 +7,12 @@ SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "${1:-}" == "--update" || "${1:-}" == "-u" ]]; then
   shift
   TARGET_INPUT="${1:-.}"
-  cd "$TARGET_INPUT"
-  exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh)"
+  TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
+  TEMP_CLONE="$(mktemp -d -t pavans-workflow-install.XXXXXX)"
+  trap 'rm -rf "$TEMP_CLONE"' EXIT
+  git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$TEMP_CLONE"
+  cd "$TARGET_ROOT"
+  exec bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" apply
 fi
 TARGET_INPUT="${1:-.}"
 TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
@@ -38,7 +42,7 @@ if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   if (( ${#conflicts[@]} > 0 )); then
     echo "Workflow already exists in $TARGET_ROOT." >&2
     echo "To update to the latest release safely, run:" >&2
-    echo "  curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash" >&2
+    echo "  git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git /tmp/pw && bash /tmp/pw/AI_Workflow_Kit/script/workflow_update.sh && rm -rf /tmp/pw" >&2
     exit 1
   fi
 

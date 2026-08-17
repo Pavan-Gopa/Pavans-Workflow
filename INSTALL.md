@@ -3,7 +3,7 @@
 Pavan's Workflow is a project template for [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi). OMP is the only required host. The installer adds [Graphify](https://github.com/Graphify-Labs/graphify) when it is not already available.
 
 > ⚡ **Workflow v2 is live!** Update any existing project in one command:  
-> * **In terminal:** `curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash`  
+> * **In terminal:** `git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git /tmp/pw && bash /tmp/pw/AI_Workflow_Kit/script/workflow_update.sh && rm -rf /tmp/pw`  
 > * **Inside OMP chat:** `/work-update` (or `/workflow-update`)
 
 ## 1. Install OMP
@@ -204,9 +204,8 @@ Update your workflow framework to the latest upstream release at any time:
 ```
 
 ```bash
-# Universal one-liner from any existing workflow project:
-curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash
-
+# Universal one-liner from any existing workflow project (via Git):
+git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git /tmp/pw && bash /tmp/pw/AI_Workflow_Kit/script/workflow_update.sh && rm -rf /tmp/pw
 # Or if workflow_update.sh is already installed:
 bash AI_Workflow_Kit/script/workflow_update.sh        # apply update safely
 bash AI_Workflow_Kit/script/workflow_update.sh check  # dry-run inspection
