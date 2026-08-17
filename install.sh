@@ -87,6 +87,7 @@ Next:
   3. Press Alt+M to assign a primary and backup model to every workflow role.
   4. Press Alt+A to supervise active workers.
   5. Press Alt+W to inspect the live plan, current work, statistics, and current-session model tokens.
+  6. Click the OMP Stats URL below the editor, or run /workflow-stats to open it.
 
-OMP loads the project agents, /workflow command, live dashboard, passive metrics helper, and grilling skill automatically.
+OMP loads the project agents, /workflow command, live dashboard, local OMP Stats link, passive metrics helper, and grilling skill automatically.
 MESSAGE
