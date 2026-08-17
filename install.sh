@@ -4,6 +4,12 @@
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == "--update" || "${1:-}" == "-u" ]]; then
+  shift
+  TARGET_INPUT="${1:-.}"
+  cd "$TARGET_INPUT"
+  exec bash -c "$(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh)"
+fi
 TARGET_INPUT="${1:-.}"
 TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
 
@@ -30,9 +36,9 @@ if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   done
 
   if (( ${#conflicts[@]} > 0 )); then
-    echo "ERROR: refusing to overwrite existing workflow paths:" >&2
-    printf '  %s\n' "${conflicts[@]}" >&2
-    echo "Ask an OMP agent to merge the workflow conservatively instead." >&2
+    echo "Workflow already exists in $TARGET_ROOT." >&2
+    echo "To update to the latest release safely, run:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash" >&2
     exit 1
   fi
 

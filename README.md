@@ -4,8 +4,9 @@ A reusable **multi-model, multi-agent development workflow** for
 [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with
 [Graphify](https://github.com/Graphify-Labs/graphify) as the shared code
 intelligence layer.
-> ⚡ **Workflow v2 is live!** Update an existing project in one command:  
-> `/work-update` (inside OMP) or `bash AI_Workflow_Kit/script/workflow_update.sh` (in terminal).  
+> ⚡ **Workflow v2 is live!** Update any project in one command:  
+> * **In terminal:** `curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash`  
+> * **Inside OMP chat:** `/work-update` (or `/workflow-update`)  
 > **Key Highlights:** **Progressive Onboarding** (start immediately on 1 model), **Dual Todo & Stable IDs** (`STEP CHECKLIST` + `RUN TODO`), **Embedded OMP Stats** (`http://127.0.0.1:3847`, press `o` in `Alt+W`), **Live Worker Details & Stall Warnings**, **Why Next** (`/workflow why`), and **Pipeline Profiles** (`quick`/`standard`/`critical`).
 
 This is deliberately more than a multi-agent prompt pack. Every role has an
@@ -460,10 +461,13 @@ Update your workflow framework to the latest upstream release at any time:
 
 ### From terminal
 ```bash
+# Universal one-liner from any existing workflow project:
+curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/AI_Workflow_Kit/script/workflow_update.sh | bash
+
+# Or if workflow_update.sh is already installed:
 bash AI_Workflow_Kit/script/workflow_update.sh        # apply update safely
 bash AI_Workflow_Kit/script/workflow_update.sh check  # dry-run inspection
 ```
-
 Your custom model mappings in `.omp/config.yml` and project files (`STATE.yaml`, `STEPS.md`, `DECISIONS.md`, `FEEDBACK.md`, reports) are **never overwritten**.
 
 ## Extend it
