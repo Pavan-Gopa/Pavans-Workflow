@@ -158,6 +158,18 @@ close that process and use `omp_workflow.sh`. The session was started from the
 wrong directory and therefore loaded neither `.omp/config.yml` nor
 `.omp/extensions/`.
 
+At interactive session start, the workflow starts or reuses OMP's local Stats
+dashboard on the loopback-only URL `http://127.0.0.1:3847`. A persistent URL
+appears below the editor and can be clicked in terminals that auto-link URLs.
+`/workflow-stats` opens the URL with the operating system's default browser. The
+same URL is pinned to the bottom of the **Alt+W** panel; press `o` there when
+mouse linking is unavailable. The standalone `omp-stats` launcher is preferred
+so startup stays quiet; installations that only expose `omp stats` may open the
+dashboard once while the fallback server starts.
+The extension performs an incremental Stats sync at startup, after Main turns,
+and when workers finish. On shutdown it safely stops the server handle it owns;
+a separately running Stats server keeps its own lifecycle.
+
 Useful controls:
 
 - `/workflow status` — reconcile runtime/repository state, then continue.
@@ -165,7 +177,8 @@ Useful controls:
 - `/workflow update` — conservatively apply reviewed framework updates.
 - `/workflow <new instruction>` — redirect Main, then re-evaluate routing.
 - `Alt+A` — open Agent Hub; inspect, steer, revive, or kill a worker.
-- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board.
+- `Alt+W` (or `/workflow-dashboard`) — open the responsive live `PLAN | CURRENT | STATISTICS` task board; press `o` to open OMP Stats.
+- `/workflow-stats` — start or reuse OMP Stats and open it in the default browser.
 - `/workflow metrics` — show the passive local workflow report.
 - `/workflow metrics rate good|overkill|underchecked [step]` — add an optional Human rating.
 - `/workflow metrics reset` — delete only local telemetry and start fresh.

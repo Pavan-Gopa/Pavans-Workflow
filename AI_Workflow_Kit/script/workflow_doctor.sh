@@ -46,6 +46,15 @@ check_script() {
   fi
 }
 
+run_ts_selftest() {
+  local test_path="$1"
+  if node --help 2>&1 | grep -q -- '--experimental-strip-types'; then
+    node --no-warnings --experimental-strip-types "$test_path"
+  else
+    node "$test_path"
+  fi
+}
+
 check_command omp
 check_command graphify
 
@@ -54,7 +63,9 @@ check_path .omp/AGENTS.md
 check_path .omp/commands/workflow.md
 check_path .omp/extensions/workflow-dashboard.ts
 check_path .omp/lib/workflow-dashboard-core.ts
+check_path .omp/lib/omp-stats-link.ts
 check_path .omp/tests/workflow-dashboard.selftest.ts
+check_path .omp/tests/omp-stats-link.selftest.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
 check_path AI_Workflow_Kit/docs/AI/METRICS.md
@@ -107,14 +118,20 @@ else
 fi
 
 if command -v node >/dev/null 2>&1; then
-  if node .omp/tests/workflow-dashboard.selftest.ts >/dev/null; then
+  if run_ts_selftest .omp/tests/workflow-dashboard.selftest.ts >/dev/null; then
     printf 'OK   workflow dashboard deterministic selftest\n'
   else
     printf 'FAIL workflow dashboard deterministic selftest\n' >&2
     failures=$((failures + 1))
   fi
+  if run_ts_selftest .omp/tests/omp-stats-link.selftest.ts >/dev/null; then
+    printf 'OK   OMP stats link deterministic selftest\n'
+  else
+    printf 'FAIL OMP stats link deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
 else
-  printf 'WARN command: node unavailable; dashboard selftest skipped (OMP runtime still validated on launch)\n'
+  printf 'WARN command: node unavailable; dashboard selftests skipped (OMP runtime still validated on launch)\n'
 fi
 
 if (( failures > 0 )); then
