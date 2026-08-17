@@ -22,6 +22,9 @@ output:
             type: string
           required_change:
             type: string
+          affected_ids:
+            elements:
+              type: string
     blockers:
       type: string
 ---
@@ -82,5 +85,10 @@ Return structured output only — no narrative prose, no prompts for other roles
 ```
 verdict: approved | changes_requested
 summary: "<1-3 sentence Judgment Gate assessment and relevant evidence>"
-issues: [{file, location, issue, required_change}, ...]   # omit when approved
+issues: [{file, location, issue, required_change, affected_ids}, ...]   # omit when approved
 ```
+
+Each finding's `affected_ids` lists the stable checklist IDs
+(`<step>.D<n>` / `.O<n>` / `.J<n>`) the issue invalidates, so Main can reopen
+exactly those items. Use the IDs from the assignment and step card; never
+invent new ones.

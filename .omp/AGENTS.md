@@ -59,7 +59,8 @@ On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer suc
 3. Select exactly one next role from the existing workflow.
 4. Spawn it with `task`, its project agent name, a fresh unique run name, and a
    compact self-contained assignment: goal, step, allowed paths, exclusions,
-   Objective Gates, Reviewer-owned Judgment Gates, and source-of-truth paths.
+   Objective Gates, Reviewer-owned Judgment Gates, the assigned work-item ID
+   when one applies, and source-of-truth paths.
    On retry include only verified approach/result/evidence/rejection memory from
    `FEEDBACK.md`; never pass worker transcripts or Main's conversation history.
 5. When its structured result arrives, inspect the actual diff/source/test
@@ -72,13 +73,24 @@ On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer suc
 
 Default step flow remains `workflow-coder -> Main verification -> workflow-reviewer -> Main verification -> workflow-tester -> Main verification`. Reviewer is required unless the Human explicitly skips it. Tester is enabled unless the Human opts out. Record every skip and reason so the step gate remains satisfiable. Security is offered once near release and runs only after Human approval. Architect is used for unclear design, plan/code conflict, deep grilling, or implementation thrash.
 
-`STEPS.md` `Do` items are Main-owned semantic completion memory. New cards use
-Markdown checkboxes. Before a worker dispatch, Main sets `current_work_item` in
-`STATE.yaml` to the exact applicable `Do` text when one item cleanly describes
-the assignment. Main marks `[x]` only after verifying source/evidence, clears the
-active item after verification, and reopens it to `[ ]` when a downstream
-Reviewer/Tester finding invalidates that completion. Workers never edit this
-checklist or claim canonical completion.
+`STEPS.md` checklist items are Main-owned semantic completion memory. Every
+checkbox carries a stable ID `<step>.<D|O|J><n>` (`D` = `Do` work item,
+`O` = Objective gate, `J` = Judgment gate); IDs are unique across the file and
+never change once assigned. New cards use Markdown checkboxes with IDs
+(`workflow_migrate.sh apply` backfills legacy cards).
+
+The native OMP Todo is a separate runtime subtask list. A completed Todo item
+never checks a `STEPS.md` box; only Main verification does. Prefix runtime Todo
+subtasks with the parent work-item ID (`[S3.D2] …`) so the dashboard can link
+the two lists.
+
+Before a worker dispatch, Main selects the applicable `D` item and writes both
+`current_work_item_id` (stable ID) and `current_work_item` (display text) in
+`STATE.yaml`, and includes the ID in the assignment and in `FEEDBACK.md` /
+report entries. Main marks `[x]` on that ID only after verifying
+source/evidence, clears both fields after verification, and reopens the same ID
+to `[ ]` when a downstream Reviewer/Tester finding invalidates that completion.
+Workers never edit this checklist or claim canonical completion.
 
 After a verified Coder handoff, persist `implementation.status: waiting_review`;
 reserve `complete` for a fully satisfied step Stop-gate.
@@ -128,10 +140,12 @@ The existing `grilling/` skill is discovered through `.omp/config.yml`.
 ## Human control
 
 The Human may interrupt or redirect `Main` at any time. `Alt+W` opens the
-read-only live `PLAN | CURRENT | STATISTICS` task board. `Alt+A` remains the
-separate Agent Hub to inspect, steer, revive, or kill the current worker. After
-any intervention, `Main` rereads repository and workflow files before
-continuing.
+read-only live `PLAN | CURRENT | STATISTICS` task board: the center column
+shows the Main-verified `STEP CHECKLIST` (from `STEPS.md`) and the native OMP
+`RUN TODO` side by side (`t` switches views); the dashboard never writes state.
+`Alt+A` remains the separate Agent Hub to inspect, steer, revive, or kill the
+current worker. After any intervention, `Main` rereads repository and workflow
+files before continuing.
 
 `/workflow update check` compares the installed framework with upstream without
 editing. `/workflow update` performs a conservative explicit update while

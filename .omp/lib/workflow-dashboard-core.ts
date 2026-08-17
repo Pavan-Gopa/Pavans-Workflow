@@ -1,3 +1,6 @@
+import type { ConsistencyFinding } from "./workflow-consistency.ts";
+import type { RuntimeTodoLink, RuntimeTodoSnapshot } from "./workflow-runtime-todo.ts";
+
 export type Tone = "normal" | "accent" | "muted" | "warning";
 
 export type TextLine = {
@@ -6,6 +9,7 @@ export type TextLine = {
 };
 
 export type ChecklistItem = {
+	id?: string;
 	text: string;
 	done: boolean;
 	canonical: boolean;
@@ -22,7 +26,9 @@ export type StepCard = {
 };
 
 export type WorkflowState = {
+	schemaVersion: number;
 	currentStep: string;
+	currentWorkItemId: string;
 	currentWorkItem: string;
 	stepDescription: string;
 	track: string;
@@ -161,9 +167,9 @@ export type DashboardData = {
 	steps: StepCard[];
 	metrics?: MetricsReport;
 	metricsError?: string;
-	stateError?: string;
-	stepsError?: string;
-	sessionUsage: SessionUsage;
+	runtimeTodo?: RuntimeTodoSnapshot;
+	runtimeTodoLink?: RuntimeTodoLink;
+	consistency?: ConsistencyFinding[];
 };
 
 export type StepRelation = "current" | "completed" | "planned" | "missing";
@@ -183,6 +189,7 @@ export type DashboardViewModel = {
 	status: string;
 	nextAction: string;
 	waitingForHuman: boolean;
+	todoMode?: TodoViewMode;
 };
 
 export type RenderResult = {
@@ -195,6 +202,30 @@ export type StatsFooterInfo = {
 	url?: string;
 	status: string;
 };
+
+export type TodoViewMode = "both" | "step" | "run";
+
+
+// Canonical stable work-item/gate ID: <step>.<D|O|J><n>, e.g. S3.D2.
+export const WORK_ITEM_ID_PATTERN = /^[A-Za-z0-9._/-]+\.(?:D|O|J)[1-9][0-9]*$/;
+
+export function isValidWorkItemId(value: string): boolean {
+	return WORK_ITEM_ID_PATTERN.test(value);
+}
+
+// Extract a leading `[S3.D2]`-style stable ID from checklist text.
+export function extractWorkItemId(text: string): { id?: string; text: string } {
+	const match = text.match(/^\[([^\]\s]+)\]\s*(.*)$/);
+	if (!match) return { text };
+	const candidate = match[1];
+	if (!isValidWorkItemId(candidate)) return { text };
+	return { id: candidate, text: match[2].trim() };
+}
+
+// Conservative normalized-text fallback for legacy cards without IDs.
+export function normalizeWorkItemText(value: string): string {
+	return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
 
 const SPECIALIZED_ROLES = new Set(["coder", "reviewer", "tester", "architect", "security"]);
 const THINKING_SUFFIX = /:(?:none|minimal|low|medium|high|xhigh|max)$/i;
@@ -405,8 +436,11 @@ function listValue(source: string, key: string): string[] {
 }
 
 export function parseWorkflowState(source: string): WorkflowState {
+	const schemaVersion = Number(topValue(source, "schema_version"));
 	return {
+		schemaVersion: Number.isFinite(schemaVersion) && schemaVersion > 0 ? schemaVersion : 1,
 		currentStep: topValue(source, "current_step"),
+		currentWorkItemId: topValue(source, "current_work_item_id"),
 		currentWorkItem: topValue(source, "current_work_item"),
 		stepDescription: foldedValue(source, "step_description"),
 		track: topValue(source, "track"),
@@ -454,12 +488,14 @@ function parseChecklistSection(body: string, heading: string): ChecklistItem[] {
 		if (!rawLine.trim()) continue;
 		const item = rawLine.match(/^\s*(?:[-*]|\d+[.)])\s+(?:\[([ xX])\]\s*)?(.*\S)\s*$/);
 		if (item) {
-			items.push({ done: item[1]?.toLowerCase() === "x", canonical: item[1] !== undefined, text: item[2].trim() });
+			const parsed = extractWorkItemId(item[2].trim());
+			items.push({ id: parsed.id, done: item[1]?.toLowerCase() === "x", canonical: item[1] !== undefined, text: parsed.text });
 			continue;
 		}
 		const checkbox = rawLine.match(/^\s*\[([ xX])\]\s*(.*\S)\s*$/);
 		if (checkbox) {
-			items.push({ done: checkbox[1].toLowerCase() === "x", canonical: true, text: checkbox[2].trim() });
+			const parsed = extractWorkItemId(checkbox[2].trim());
+			items.push({ id: parsed.id, done: checkbox[1].toLowerCase() === "x", canonical: true, text: parsed.text });
 			continue;
 		}
 		if (items.length > 0) items[items.length - 1].text += ` ${rawLine.trim()}`;
@@ -570,7 +606,7 @@ function deriveNextAction(state: WorkflowState, runtime: RuntimeSnapshot): strin
 		return `Wait for ${roleLabel(runtime.worker.agent)} result, then Main verifies it`;
 	}
 	if (state.reviewVerdict === "changes_requested" || state.reviewStatus === "changes_requested") {
-		return "Main reopens affected TODO, then dispatches a fresh Coder";
+		return "Main reopens the affected work item, then dispatches a fresh Coder";
 	}
 	if (state.qaStatus === "bugs") return "Main records the bug and dispatches a fresh Coder";
 	if (state.implementationStatus === "waiting_review" && state.reviewEnabled) {
@@ -591,6 +627,7 @@ export function deriveDashboardViewModel(
 	data: DashboardData,
 	runtime: RuntimeSnapshot,
 	selectedStepId?: string,
+	todoMode?: TodoViewMode,
 ): DashboardViewModel {
 	const state = data.state;
 	const currentIndex = data.steps.findIndex(step => step.id === state.currentStep);
@@ -623,6 +660,7 @@ export function deriveDashboardViewModel(
 		status: status.status,
 		nextAction: deriveNextAction(state, runtime),
 		waitingForHuman: status.waitingForHuman,
+		todoMode,
 	};
 }
 
@@ -800,22 +838,130 @@ function buildPlanLines(view: DashboardViewModel, height: number): TextLine[] {
 	return lines;
 }
 
-function todoLines(step: StepCard, currentWorkItem: string, width: number, warnWhenEmpty: boolean): TextLine[] {
+// Resolve the active checklist item: stable ID first, then a conservative
+// normalized-text fallback for legacy cards. Ambiguous matches yield nothing.
+export function resolveActiveTodo(step: StepCard, state: WorkflowState): ChecklistItem | undefined {
+	if (state.currentWorkItemId !== "-") {
+		return step.todos.find(item => item.id === state.currentWorkItemId);
+	}
+	if (state.currentWorkItem === "-") return undefined;
+	const needle = normalizeWorkItemText(state.currentWorkItem);
+	if (!needle) return undefined;
+	const exact = step.todos.filter(item => normalizeWorkItemText(item.text) === needle);
+	if (exact.length === 1) return exact[0];
+	if (exact.length > 1) return undefined;
+	const substr = step.todos.filter(item => {
+		const hay = normalizeWorkItemText(item.text);
+		return hay.includes(needle) || needle.includes(hay);
+	});
+	if (substr.length !== 1) return undefined;
+	const hay = normalizeWorkItemText(substr[0].text);
+	const common = hay.includes(needle) ? needle.length : hay.length;
+	return common >= 8 ? substr[0] : undefined;
+}
+
+function stepChecklistLines(step: StepCard, state: WorkflowState, width: number, isCurrent: boolean): TextLine[] {
 	const lines: TextLine[] = [];
 	const done = step.todos.filter(item => item.done).length;
-	lines.push({ text: `TODO · ${done} / ${step.todos.length} verified`, tone: "accent" });
+	lines.push({ text: `STEP CHECKLIST · STEPS.md · ${done}/${step.todos.length} verified`, tone: "accent" });
+	if (width >= 46) lines.push({ text: "Main-verified acceptance items", tone: "muted" });
 	if (step.todos.some(item => !item.canonical)) {
 		lines.push({ text: "[WARN] Legacy Do list · convert to checkboxes", tone: "warning" });
 	}
+	if (isCurrent && step.todos.length > 0 && step.todos.every(item => !item.id)) {
+		lines.push({ text: "[WARN] Legacy checklist without stable IDs", tone: "warning" });
+	}
 	if (step.todos.length === 0) {
-		if (warnWhenEmpty) lines.push({ text: "[WARN] No TODO checklist parsed from STEPS.md", tone: "warning" });
+		if (isCurrent) lines.push({ text: "[WARN] No step checklist parsed from STEPS.md", tone: "warning" });
 		return lines;
 	}
+	const active = isCurrent ? resolveActiveTodo(step, state) : undefined;
 	for (const item of step.todos) {
-		const active = currentWorkItem !== "-" && item.text.trim() === currentWorkItem.trim();
-		const marker = item.done ? "✓" : active ? "●" : "○";
-		const tone: Tone = active ? "accent" : item.done ? "muted" : "normal";
-		addWrapped(lines, item.text, width, `${marker} `, tone);
+		const isActive = active === item;
+		const marker = item.done ? "✓" : isActive ? "●" : "○";
+		const tone: Tone = isActive ? "accent" : item.done ? "muted" : "normal";
+		const label = item.id ? `[${item.id}] ${item.text}` : item.text;
+		addWrapped(lines, label, width, `${marker} `, tone);
+	}
+	return lines;
+}
+
+const RUNTIME_TODO_MARKERS: Record<string, string> = {
+	completed: "✓",
+	in_progress: "●",
+	pending: "○",
+	blocked: "!",
+	abandoned: "-",
+};
+
+function runtimeTodoTone(status: string): Tone {
+	if (status === "in_progress") return "accent";
+	if (status === "blocked") return "warning";
+	if (status === "completed" || status === "abandoned") return "muted";
+	return "normal";
+}
+
+// Strip a leading stable-ID token from runtime task text for display.
+function displayTaskText(content: string): string {
+	const match = content.match(/^\[([^\]\s]+)\]\s*(.*)$/);
+	return match && isValidWorkItemId(match[1]) && match[2] ? match[2] : content;
+}
+
+export function runtimeTodoLines(
+	snapshot: RuntimeTodoSnapshot | undefined,
+	width: number,
+	options: { liveStepId?: string; viewingLive: boolean; compact?: boolean },
+): TextLine[] {
+	const lines: TextLine[] = [];
+	if (!snapshot?.available) {
+		lines.push({ text: "RUN TODO · OMP SESSION", tone: "accent" });
+		lines.push({ text: "Runtime Todo unavailable", tone: "muted" });
+		return lines;
+	}
+	const tasks = snapshot.phases.flatMap(phase => phase.tasks);
+	const done = tasks.filter(task => task.status === "completed" || task.status === "abandoned").length;
+	const scope = options.viewingLive ? "OMP SESSION" : `LIVE ${options.liveStepId ?? ""}`.trim();
+	lines.push({ text: `RUN TODO · ${scope} · ${done}/${tasks.length}`, tone: "accent" });
+	if (!options.viewingLive) {
+		lines.push({ text: "runtime subtasks of the live step, not this view", tone: "muted" });
+	}
+	if (tasks.length === 0) {
+		lines.push({ text: "No runtime tasks recorded", tone: "muted" });
+		return lines;
+	}
+	const activePhase =
+		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "in_progress")) ??
+		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "pending" || task.status === "blocked"));
+	if (activePhase && snapshot.phases.length > 1) lines.push({ text: `Phase · ${activePhase.name}`, tone: "muted" });
+	const budget = options.compact ? 4 : 8;
+	const shown: Array<{ content: string; status: string; blocker?: string }> = [];
+	const lastCompleted = [...tasks].reverse().find(task => task.status === "completed");
+	if (lastCompleted) shown.push(lastCompleted);
+	for (const task of tasks) if (task.status === "in_progress") shown.push(task);
+	for (const task of tasks) if (task.status === "blocked") shown.push(task);
+	for (const task of tasks) {
+		if (shown.length >= budget) break;
+		if (task.status === "pending") shown.push(task);
+	}
+	for (const task of shown) {
+		const marker = RUNTIME_TODO_MARKERS[task.status] ?? "○";
+		addWrapped(lines, displayTaskText(task.content), width, `${marker} `, runtimeTodoTone(task.status));
+		if (task.blocker) addWrapped(lines, task.blocker, width, "  blocked: ", "warning");
+	}
+	const hidden = tasks.length - shown.length;
+	if (hidden > 0) lines.push({ text: `${hidden} more task${hidden === 1 ? "" : "s"} hidden`, tone: "muted" });
+	return lines;
+}
+
+export function runtimeTodoLinkLines(link: RuntimeTodoLink | undefined): TextLine[] {
+	if (!link) return [];
+	const lines: TextLine[] = [];
+	lines.push({
+		text: `LINK · ${link.matched} matched · ${link.runOnly} run-only · ${link.stepOnly} step-only`,
+		tone: "muted",
+	});
+	for (const invalid of link.invalid) {
+		lines.push({ text: `[WARN] Runtime Todo references unknown item ${invalid}`, tone: "warning" });
 	}
 	return lines;
 }
@@ -877,13 +1023,43 @@ function checklistGateLines(step: StepCard): TextLine[] {
 	return lines;
 }
 
-function buildCenterContent(view: DashboardViewModel, width: number): { pinned: TextLine[]; scrollable: TextLine[] } {
+function activeWorkItemLine(state: WorkflowState, width: number): TextLine[] {
+	const lines: TextLine[] = [];
+	if (state.currentWorkItemId !== "-") {
+		const text = state.currentWorkItem !== "-" ? state.currentWorkItem : "";
+		addWrapped(lines, text ? `${state.currentWorkItemId} · ${text}` : state.currentWorkItemId, width, "ITEM · ", "accent");
+	} else if (state.currentWorkItem !== "-") {
+		addWrapped(lines, state.currentWorkItem, width, "ITEM · ", "accent");
+	}
+	return lines;
+}
+
+function consistencyLines(findings: ConsistencyFinding[] | undefined): TextLine[] {
+	if (!findings) return [];
+	if (findings.length === 0) return [{ text: "STATE CONSISTENCY · OK", tone: "muted" }];
+	const lines: TextLine[] = [{ text: "WARN · STATE DRIFT", tone: "warning" }];
+	for (const finding of findings.slice(0, 3)) {
+		lines.push({ text: finding.message, tone: finding.severity === "fail" ? "warning" : "muted" });
+	}
+	if (findings.length > 3) lines.push({ text: `${findings.length - 3} more finding${findings.length - 3 === 1 ? "" : "s"}`, tone: "muted" });
+	return lines;
+}
+
+function buildCenterContent(
+	view: DashboardViewModel,
+	width: number,
+	mode: TodoViewMode,
+	compactRuntime: boolean,
+): { pinned: TextLine[]; scrollable: TextLine[] } {
 	const pinned: TextLine[] = [];
 	const scrollable: TextLine[] = [];
 	const state = view.data.state;
 	const step = view.selectedStep;
 	const heading = view.relation === "current" ? "CURRENT STEP" : "SELECTED STEP";
 	pinned.push({ text: heading, tone: "accent" });
+	if (view.relation !== "current" && step && state.currentStep !== "-") {
+		pinned.push({ text: `VIEWING ${step.id} · LIVE WORKFLOW IS ${state.currentStep} · press c to return`, tone: "warning" });
+	}
 	if (!step) {
 		pinned.push({ text: `${view.selectedStepId} · not found in STEPS.md`, tone: "warning" });
 		if (view.data.stateError) pinned.push({ text: `[WARN] STATE.yaml: ${view.data.stateError}`, tone: "warning" });
@@ -899,6 +1075,7 @@ function buildCenterContent(view: DashboardViewModel, width: number): { pinned: 
 	} else {
 		if (state.blocker !== "-") addWrapped(pinned, state.blocker, width, "[WARN] BLOCKED · ", "warning");
 		pinned.push({ text: `STATUS · ${view.status}`, tone: view.waitingForHuman ? "warning" : "normal" });
+		pinned.push(...activeWorkItemLine(state, width));
 		if (view.waitingForHuman) addWrapped(pinned, view.nextAction, width, "NEXT ACTION · ", "warning");
 		const worker = view.runtime.worker;
 		if (worker && (worker.status === "running" || worker.status === "pending")) {
@@ -906,18 +1083,34 @@ function buildCenterContent(view: DashboardViewModel, width: number): { pinned: 
 			const model = worker.resolvedModel ? friendlyModelName(worker.resolvedModel) : "resolving model";
 			const backup = worker.resolvedModelIsFallback || isBackupAgent(worker.agent) ? " · BACKUP" : "";
 			pinned.push({ text: `ACTIVE · ${roleLabel(worker.agent)} · ${model} · ${formatDuration(elapsed)}${backup}`, tone: "accent" });
-			if (state.currentWorkItem !== "-") addWrapped(pinned, state.currentWorkItem, width, "Working on: ");
 		} else {
 			const model = view.runtime.mainModel ? friendlyModelName(view.runtime.mainModel) : "model unresolved";
 			pinned.push({ text: `MAIN · ${model} · ${view.runtime.mainStatus}` });
 			addWrapped(pinned, view.runtime.mainActivity, width, "Now: ", "muted");
 		}
+		pinned.push(...consistencyLines(view.data.consistency));
 	}
 	if (step.goal !== "-") addWrapped(scrollable, step.goal, width, "Goal: ", "muted");
 	if (step.dependsOn !== "-" && view.relation === "planned") addWrapped(scrollable, step.dependsOn, width, "Depends on: ", "muted");
 	if (scrollable.length > 0) scrollable.push({ text: "" });
-	scrollable.push(...todoLines(step, view.relation === "current" ? state.currentWorkItem : "-", width, view.relation === "current"));
-	if (view.relation === "current") {
+	const isCurrent = view.relation === "current";
+	const showStep = mode !== "run";
+	const showRun = mode !== "step" || (compactRuntime && isCurrent);
+	if (showStep) {
+		scrollable.push(...stepChecklistLines(step, state, width, isCurrent));
+	}
+	if (showRun) {
+		if (scrollable.length > 0) scrollable.push({ text: "" });
+		scrollable.push(
+			...runtimeTodoLines(view.data.runtimeTodo, width, {
+				liveStepId: state.currentStep !== "-" ? state.currentStep : undefined,
+				viewingLive: isCurrent,
+				compact: compactRuntime || !isCurrent,
+			}),
+		);
+		if (isCurrent) scrollable.push(...runtimeTodoLinkLines(view.data.runtimeTodoLink));
+	}
+	if (isCurrent) {
 		scrollable.push({ text: "" }, ...currentGateLines(state));
 		if (!view.waitingForHuman) {
 			scrollable.push({ text: "" });
@@ -1123,20 +1316,20 @@ function windowCenter(
 	return { lines: clip([...pinned, ...visible], height), maxScroll };
 }
 
-function wideBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function wideBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const available = width - 4;
 	const planWidth = Math.max(24, Math.floor(available * 0.26));
 	const centerWidth = Math.max(42, Math.floor(available * 0.44));
 	const statsWidth = available - planWidth - centerWidth;
 	const widths = [planWidth, centerWidth, statsWidth];
 	const plan = clip(buildPlanLines(view, height), height);
-	const center = windowCenter(buildCenterContent(view, centerWidth), height, detailScroll);
+	const center = windowCenter(buildCenterContent(view, centerWidth, mode, false), height, detailScroll);
 	const stats = clip(buildStatisticsLines(view, statsWidth), height);
 	const lines = Array.from({ length: height }, (_, index) => columnRow([plan[index], center.lines[index], stats[index]], widths));
 	return { lines, maxScroll: center.maxScroll };
 }
 
-function mediumBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function mediumBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const topHeight = Math.max(6, Math.floor((height - 1) * 0.64));
 	const statsHeight = Math.max(0, height - topHeight - 1);
 	const available = width - 3;
@@ -1144,14 +1337,14 @@ function mediumBody(view: DashboardViewModel, width: number, height: number, det
 	const centerWidth = available - planWidth;
 	const widths = [planWidth, centerWidth];
 	const plan = clip(buildPlanLines(view, topHeight), topHeight);
-	const center = windowCenter(buildCenterContent(view, centerWidth), topHeight, detailScroll);
+	const center = windowCenter(buildCenterContent(view, centerWidth, mode, mode === "step"), topHeight, detailScroll);
 	const lines = Array.from({ length: topHeight }, (_, index) => columnRow([plan[index], center.lines[index]], widths));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
 }
 
-function narrowBody(view: DashboardViewModel, width: number, height: number, detailScroll: number): { lines: TextLine[]; maxScroll: number } {
+function narrowBody(view: DashboardViewModel, width: number, height: number, detailScroll: number, mode: TodoViewMode): { lines: TextLine[]; maxScroll: number } {
 	const available = Math.max(6, height - 2);
 	let currentHeight = Math.max(4, Math.floor(available * 0.42));
 	let planHeight = Math.max(2, Math.floor(available * 0.18));
@@ -1161,13 +1354,17 @@ function narrowBody(view: DashboardViewModel, width: number, height: number, det
 		currentHeight = Math.max(4, currentHeight - needed);
 		statsHeight = available - currentHeight - planHeight;
 	}
-	const center = windowCenter(buildCenterContent(view, width - 2), currentHeight, detailScroll);
+	const center = windowCenter(buildCenterContent(view, width - 2, mode, mode === "step"), currentHeight, detailScroll);
 	const lines = center.lines.map(line => fullRow(line, width));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildPlanLines(view, planHeight), planHeight)) lines.push(fullRow(line, width));
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
+}
+
+export function defaultTodoMode(layout: "wide" | "medium" | "narrow"): TodoViewMode {
+	return layout === "wide" ? "both" : "step";
 }
 
 export function renderDashboard(
@@ -1180,13 +1377,14 @@ export function renderDashboard(
 	const panelWidth = Math.max(20, width);
 	const height = Math.max(8, bodyHeight);
 	const layout: RenderResult["layout"] = panelWidth >= 140 ? "wide" : panelWidth >= 100 ? "medium" : "narrow";
+	const mode = view.todoMode ?? defaultTodoMode(layout);
 	const body = layout === "wide"
-		? wideBody(view, panelWidth, height, detailScroll)
+		? wideBody(view, panelWidth, height, detailScroll, mode)
 		: layout === "medium"
-			? mediumBody(view, panelWidth, height, detailScroll)
-			: narrowBody(view, panelWidth, height, detailScroll);
+			? mediumBody(view, panelWidth, height, detailScroll, mode)
+			: narrowBody(view, panelWidth, height, detailScroll, mode);
 	const title = `PAVAN'S WORKFLOW · LIVE · ${view.data.state.track !== "-" ? view.data.state.track : "file-backed"}`;
-	const footer = `↑/↓ step · c current · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
+	const footer = `↑/↓ step · c current · t todo view · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
 	return {
 		layout,
 		maxDetailScroll: body.maxScroll,

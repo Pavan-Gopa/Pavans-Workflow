@@ -1,13 +1,16 @@
 # Live orchestration state — Orchestrator owns this file.
 # Keep it simple. Project-agnostic template.
 
+schema_version: 2
 project_prefix: proj
 onboarding:
   status: pending
   model_pairs_confirmed: false
   completed_at: null
 current_step: S0
-# Exact STEPS.md Do text while one item is actively assigned; Main owns/clears it.
+# Stable checklist ID (<step>.D<n>) of the actively assigned Do item; Main owns/clears it.
+current_work_item_id: null
+# Human-readable display text for that item; readability + legacy text fallback.
 current_work_item: null
 step_description: >-
   Session start: Orchestrator confirms workflow readiness, asks Human for

@@ -14,8 +14,11 @@ import {
 	type RuntimeSnapshot,
 	type StepCard,
 	type TextLine,
+	type TodoViewMode,
 	type WorkerSnapshot,
 } from "../lib/workflow-dashboard-core.ts";
+import { checkWorkflowConsistency } from "../lib/workflow-consistency.ts";
+import { linkRuntimeTodo, readRuntimeTodo } from "../lib/workflow-runtime-todo.ts";
 import { getStatsRuntime } from "../lib/workflow-stats-runtime.ts";
 
 const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
@@ -148,6 +151,8 @@ class WorkflowDashboard implements Component {
 	private metricsRefreshing = false;
 	private closed = false;
 	private unsubscribeStats?: () => void;
+	private todoMode?: TodoViewMode;
+	private lastLayout: "wide" | "medium" | "narrow" = "wide";
 
 	constructor(
 		private readonly pi: ExtensionAPI,
@@ -268,6 +273,12 @@ class WorkflowDashboard implements Component {
 			});
 			return;
 		}
+		if (matchesKey(data, "t")) {
+			const effective = this.todoMode ?? (this.lastLayout === "wide" ? "both" : "step");
+			this.todoMode = effective === "both" ? "step" : effective === "step" ? "run" : "both";
+			this.requestRender();
+			return;
+		}
 		if (matchesKey(data, "c")) {
 			if (this.data?.steps.some(step => step.id === this.data?.state.currentStep)) {
 				this.selectedStepId = this.data.state.currentStep;
@@ -284,6 +295,16 @@ class WorkflowDashboard implements Component {
 		this.requestRender();
 	}
 
+	// Compare STATE.yaml omp.active_agent with live worker progress records.
+	private hubConsistency(): boolean | undefined {
+		const active = this.data?.state.activeAgent;
+		if (!active || active === "-") return undefined;
+		const live = [...liveWorkers.values()].some(
+			worker => (worker.status === "running" || worker.status === "pending") && worker.agent === active,
+		);
+		return live;
+	}
+
 	render(width: number): readonly string[] {
 		const panelWidth = Math.max(20, width);
 		const bodyHeight = Math.max(8, this.tui.terminal.rows - 9);
@@ -297,9 +318,22 @@ class WorkflowDashboard implements Component {
 				{ text: border, tone: "accent" },
 			];
 		} else {
-			const liveData = { ...this.data, sessionUsage: sessionUsage.snapshot() };
-			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId);
+			const runtimeTodo = readRuntimeTodo(this.ctx.sessionManager.getBranch());
+			const liveData: DashboardData = {
+				...this.data,
+				sessionUsage: sessionUsage.snapshot(),
+				runtimeTodo,
+				runtimeTodoLink: linkRuntimeTodo(runtimeTodo, this.data.steps, this.data.state.currentStep !== "-" ? this.data.state.currentStep : undefined),
+				consistency: checkWorkflowConsistency({
+					state: this.data.state,
+					steps: this.data.steps,
+					runtimeTodo,
+					hubActiveAgentConsistent: this.hubConsistency(),
+				}),
+			};
+			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId, this.todoMode);
 			const result = renderDashboard(view, panelWidth, bodyHeight, this.detailScroll, getStatsRuntime(this.ctx.cwd).footerInfo());
+			this.lastLayout = result.layout;
 			this.maxDetailScroll = result.maxDetailScroll;
 			this.detailScroll = Math.min(this.detailScroll, this.maxDetailScroll);
 			rendered = result.lines;

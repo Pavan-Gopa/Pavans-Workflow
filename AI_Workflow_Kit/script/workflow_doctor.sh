@@ -55,15 +55,22 @@ check_path .omp/commands/workflow.md
 check_path .omp/extensions/workflow-dashboard.ts
 check_path .omp/extensions/workflow-stats.ts
 check_path .omp/lib/workflow-dashboard-core.ts
+check_path .omp/lib/workflow-runtime-todo.ts
+check_path .omp/lib/workflow-consistency.ts
+check_path .omp/lib/workflow-migration.ts
+check_path .omp/lib/workflow-migrate-cli.ts
 check_path .omp/lib/workflow-stats.ts
 check_path .omp/lib/workflow-stats-runtime.ts
 check_path .omp/tests/workflow-dashboard.selftest.ts
+check_path .omp/tests/workflow-runtime-todo.selftest.ts
+check_path .omp/tests/workflow-consistency.selftest.ts
+check_path .omp/tests/workflow-migration.selftest.ts
 check_path .omp/tests/workflow-stats.selftest.ts
 check_path grilling/SKILL.md
 check_path AI_Workflow_Kit/docs/AI/STATE.yaml
 check_path AI_Workflow_Kit/docs/AI/METRICS.md
 check_path AI_Workflow_Kit/script/workflow_metrics.py
-for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_models; do
+for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models; do
   check_script "AI_Workflow_Kit/script/$script.sh"
 done
 
@@ -110,6 +117,14 @@ else
   failures=$((failures + 1))
 fi
 
+if migrate_output="$(bash AI_Workflow_Kit/script/workflow_migrate.sh check 2>&1)"; then
+  printf '%s\n' "$migrate_output"
+else
+  printf '%s\n' "$migrate_output" >&2
+  printf 'FAIL workflow schema migration check\n' >&2
+  failures=$((failures + 1))
+fi
+
 if command -v node >/dev/null 2>&1; then
   if node .omp/tests/workflow-dashboard.selftest.ts >/dev/null; then
     printf 'OK   workflow dashboard deterministic selftest\n'
@@ -121,6 +136,24 @@ if command -v node >/dev/null 2>&1; then
     printf 'OK   workflow stats deterministic selftest\n'
   else
     printf 'FAIL workflow stats deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+  if node .omp/tests/workflow-runtime-todo.selftest.ts >/dev/null; then
+    printf 'OK   workflow runtime todo deterministic selftest\n'
+  else
+    printf 'FAIL workflow runtime todo deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+  if node .omp/tests/workflow-consistency.selftest.ts >/dev/null; then
+    printf 'OK   workflow consistency deterministic selftest\n'
+  else
+    printf 'FAIL workflow consistency deterministic selftest\n' >&2
+    failures=$((failures + 1))
+  fi
+  if node .omp/tests/workflow-migration.selftest.ts >/dev/null; then
+    printf 'OK   workflow migration deterministic selftest\n'
+  else
+    printf 'FAIL workflow migration deterministic selftest\n' >&2
     failures=$((failures + 1))
   fi
 else

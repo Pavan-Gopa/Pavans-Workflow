@@ -95,8 +95,9 @@ Advance the established workflow automatically inside this OMP session:
 - update workflow documents only from `Main`;
 - dispatch exactly one fresh project worker at a time with `task`;
 - use `workflow-coder`, `workflow-reviewer`, `workflow-tester`, `workflow-architect`, or `workflow-security` only when the current file-backed state calls for that role;
-- give the worker a minimal, self-contained assignment and source-of-truth paths, never this conversation history;
-- verify every structured worker result against the repository before recording it or transitioning;
+- give the worker a minimal, self-contained assignment including the assigned stable work-item ID (`<step>.D<n>`) and source-of-truth paths, never this conversation history;
+- verify every structured worker result against the repository and update or reopen checklist items by stable ID before recording or transitioning;
+- distinguish the Main-verified Step Checklist from native runtime Todo subtasks (completing a Todo never marks a `STEPS.md` box);
 - write canonical feedback/reports/state yourself;
 - stop after three materially identical failed attempts and surface a blocker;
 - separate Objective Gates from Reviewer-owned Judgment Gates; Coder

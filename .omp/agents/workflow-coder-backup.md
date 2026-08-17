@@ -14,6 +14,12 @@ output:
     verification_evidence:
       type: string
   optionalProperties:
+    work_item_ids:
+      elements:
+        type: string
+    objective_gate_ids:
+      elements:
+        type: string
     blockers:
       type: string
 ---
