@@ -16,23 +16,23 @@
 
 set -euo pipefail
 
-if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-else
-  PROJECT_ROOT="$PWD"
-fi
-ACTION="${1:-apply}"
+ACTION="apply"
+TARGET_DIR="$PWD"
+
+for arg in "$@"; do
+  case "$arg" in
+    check|apply) ACTION="$arg" ;;
+    *)
+      if [[ -d "$arg" ]]; then
+        TARGET_DIR="$(cd "$arg" && pwd)"
+      fi
+      ;;
+  esac
+done
+
+PROJECT_ROOT="$TARGET_DIR"
 UPSTREAM_URL="${WF_UPSTREAM_URL:-https://github.com/Pavan-Gopa/Pavans-Workflow.git}"
 UPSTREAM_BRANCH="${WF_UPSTREAM_BRANCH:-main}"
-
-case "$ACTION" in
-  check|apply) ;;
-  *)
-    echo "Usage: $0 [check|apply]" >&2
-    exit 2
-    ;;
-esac
 
 if ! command -v git >/dev/null 2>&1; then
   echo "ERROR: git is required to update the workflow." >&2
