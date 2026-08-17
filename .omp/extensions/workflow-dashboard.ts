@@ -83,7 +83,7 @@ function humanMainActivity(toolName: string): string {
 			edit: "Updating verified workflow state",
 			write: "Persisting verified workflow state",
 			todo: "Updating the live task checklist",
-			ask: "Requesting required Human input",
+			"ask": "Requesting required Human input",
 		}[toolName] ?? "Working on the next verified transition"
 	);
 }
