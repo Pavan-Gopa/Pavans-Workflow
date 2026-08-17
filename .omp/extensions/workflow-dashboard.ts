@@ -15,7 +15,9 @@ import {
 	type StepCard,
 	type TextLine,
 	type WorkerSnapshot,
+	type WorkflowState,
 } from "../lib/workflow-dashboard-core.ts";
+import { OmpStatsController } from "../lib/omp-stats-link.ts";
 
 const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
 const STEPS_PATH = "AI_Workflow_Kit/docs/STEPS.md";
@@ -51,6 +53,7 @@ let mainActivity = "Ready for instruction";
 let listenersInstalled = false;
 let activePanel: WorkflowDashboard | undefined;
 let metricsCache: { data?: MetricsReport; error?: string; fetchedAt: number } = { fetchedAt: 0 };
+const ompStats = new OmpStatsController({ onChange: () => activePanel?.requestRender() });
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -250,8 +253,13 @@ class WorkflowDashboard implements Component {
 			this.close();
 			return;
 		}
+		if (matchesKey(data, "o")) {
+			void ompStats.open(this.pi, this.ctx);
+			return;
+		}
 		if (matchesKey(data, "r")) {
 			this.refresh(true);
+			void ompStats.sync(true);
 			return;
 		}
 		if (matchesKey(data, "c")) {
@@ -273,6 +281,7 @@ class WorkflowDashboard implements Component {
 	render(width: number): readonly string[] {
 		const panelWidth = Math.max(20, width);
 		const bodyHeight = Math.max(8, this.tui.terminal.rows - 9);
+		const statsLine: TextLine = { text: ompStats.panelRow(panelWidth), tone: ompStats.panelTone() };
 		let rendered: TextLine[];
 		if (!this.data) {
 			const border = `+${"-".repeat(Math.max(0, panelWidth - 2))}+`;
@@ -280,15 +289,17 @@ class WorkflowDashboard implements Component {
 			rendered = [
 				{ text: border, tone: "accent" },
 				{ text: `|${content.slice(0, Math.max(0, panelWidth - 2)).padEnd(Math.max(0, panelWidth - 2))}|`, tone: "muted" },
+				statsLine,
 				{ text: border, tone: "accent" },
 			];
 		} else {
 			const liveData = { ...this.data, sessionUsage: sessionUsage.snapshot() };
 			const view = deriveDashboardViewModel(liveData, runtimeSnapshot(this.ctx), this.selectedStepId);
-			const result = renderDashboard(view, panelWidth, bodyHeight, this.detailScroll);
+			const result = renderDashboard(view, panelWidth, Math.max(8, bodyHeight - 1), this.detailScroll);
 			this.maxDetailScroll = result.maxDetailScroll;
 			this.detailScroll = Math.min(this.detailScroll, this.maxDetailScroll);
-			rendered = result.lines;
+			rendered = [...result.lines];
+			rendered.splice(Math.max(0, rendered.length - 1), 0, statsLine);
 		}
 		return rendered.map(line => {
 			if (line.tone === "warning") return this.theme.fg("warning", line.text);
@@ -350,6 +361,7 @@ function installLiveListeners(pi: ExtensionAPI): void {
 			status: payload.status === "started" ? "running" : payload.status,
 			updatedAt: Date.now(),
 		});
+		if (["completed", "failed", "aborted"].includes(payload.status)) void ompStats.sync(false);
 		activePanel?.requestRender();
 	});
 }
@@ -357,6 +369,8 @@ function installLiveListeners(pi: ExtensionAPI): void {
 async function showDashboard(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
 	installLiveListeners(pi);
+	ompStats.attach(ctx);
+	void ompStats.start(ctx, false);
 	await ctx.ui.custom<undefined>((tui, theme, keybindings, done) => {
 		const panel = new WorkflowDashboard(pi, ctx, tui, theme, keybindings, done);
 		activePanel = panel;
@@ -370,12 +384,26 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 		liveWorkers.clear();
 		rebuildMainUsage(ctx);
 		installLiveListeners(pi);
+		ompStats.attach(ctx);
+		ctx.ui.notify(`OMP Stats: ${ompStats.snapshot().url} (starting in background)`, "info");
+		void ompStats.start(ctx, false).then(url => {
+			if (url) void ompStats.sync(true);
+			else ctx.ui.notify(`OMP Stats unavailable: ${ompStats.snapshot().error ?? "start failed"}`, "warning");
+		});
 	});
 	pi.on("session_switch", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		liveWorkers.clear();
 		rebuildMainUsage(ctx);
+		ompStats.attach(ctx);
+		void ompStats.start(ctx, false).then(url => {
+			if (url) void ompStats.sync(false);
+		});
 		activePanel?.requestRender();
+	});
+	pi.on("session_shutdown", async (_event, ctx) => {
+		if (!ctx.hasUI) return;
+		await ompStats.shutdown(ctx);
 	});
 	pi.on("turn_end", async (event, ctx) => {
 		if (!ctx.hasUI) return;
@@ -385,6 +413,7 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 			"orchestrator",
 			`turn:${event.turnIndex}:${message.timestamp ?? 0}:${message.responseId ?? ""}`,
 		);
+		void ompStats.sync(false);
 		activePanel?.requestRender();
 	});
 	pi.on("agent_start", async (_event, ctx) => {
@@ -413,6 +442,13 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 	pi.registerCommand("workflow-dashboard", {
 		description: "Open the live PLAN | CURRENT | STATISTICS workflow dashboard",
 		handler: async (_args, ctx) => showDashboard(pi, ctx),
+	});
+	pi.registerCommand("workflow-stats", {
+		description: "Open the local OMP observability dashboard in the default browser",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI) return;
+			await ompStats.open(pi, ctx);
+		},
 	});
 	pi.registerShortcut(Key.alt("w"), {
 		description: "Open Pavan's live workflow dashboard",
