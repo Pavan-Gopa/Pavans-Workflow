@@ -4,6 +4,7 @@ export const OMP_STATS_WIDGET_KEY = "pavans-workflow.omp-stats";
 
 const OMP_STATS_DASHBOARD_HEADER = "x-omp-stats-dashboard";
 const OMP_STATS_HOSTNAME_HEADER = "x-omp-stats-hostname";
+const OMP_STATS_MIN_SECURITY_VERSION = 3;
 const DEFAULT_START_TIMEOUT_MS = 90_000;
 const DEFAULT_SYNC_TIMEOUT_MS = 120_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -177,15 +178,27 @@ export function statsLaunchCommandCandidates(host: string, port: number): StatsL
 	];
 }
 
+export function isReusableStatsDashboardResponse(
+	response: Pick<Response, "status" | "headers">,
+	host: string,
+): boolean {
+	const versionHeader = response.headers.get(OMP_STATS_DASHBOARD_HEADER);
+	const securityVersion = versionHeader === null ? Number.NaN : Number(versionHeader);
+	return (
+		response.status === 200 &&
+		Number.isInteger(securityVersion) &&
+		securityVersion >= OMP_STATS_MIN_SECURITY_VERSION &&
+		response.headers.get(OMP_STATS_HOSTNAME_HEADER) === host &&
+		!response.headers.has("Access-Control-Allow-Origin")
+	);
+}
+
 async function defaultProbeDashboard(url: string, host: string): Promise<boolean> {
 	try {
 		const response = await fetch(`${url}/api/stats/models`, {
 			signal: AbortSignal.timeout(750),
 		});
-		const isStatsDashboard =
-			response.status === 200 &&
-			Boolean(response.headers.get(OMP_STATS_DASHBOARD_HEADER)) &&
-			response.headers.get(OMP_STATS_HOSTNAME_HEADER) === host;
+		const isStatsDashboard = isReusableStatsDashboardResponse(response, host);
 		await response.body?.cancel();
 		return isStatsDashboard;
 	} catch {
