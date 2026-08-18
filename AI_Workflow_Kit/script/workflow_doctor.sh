@@ -61,6 +61,16 @@ for role in coder reviewer tester architect security; do
   check_path ".omp/agents/workflow-$role-backup.md"
 done
 
+for alias in workflow_orchestrator workflow_coder workflow_reviewer workflow_tester workflow_architect workflow_security; do
+  for configured in "$alias" "${alias}_backup"; do
+    if grep -q "^[[:space:]]*$configured:" .omp/config.yml; then
+      ok "model alias: $configured"
+    else
+      fail "model alias: $configured"
+    fi
+  done
+done
+
 for file in .omp/agents/workflow-coder.md .omp/agents/workflow-coder-backup.md; do
   grep -Eq '^autoloadSkills:[[:space:]]*\["ponytail"\]' "$file" \
     && ok "Ponytail autoload: $file" \
@@ -87,7 +97,7 @@ grep -q 'status: snapshot.status === "idle" ? "manual"' .omp/lib/workflow-stats-
   && ok "Alt+W manual Stats footer" \
   || fail "Alt+W must expose the manual Stats URL"
 
-EXPECTED_GRAPHIFY="$(awk '/^  version:/{print $2; exit}' AI_Workflow_Kit/vendor/dependencies.lock 2>/dev/null || true)"
+EXPECTED_GRAPHIFY="$(awk '$1 == "graphify:" { in_graphify=1; next } in_graphify && $1 == "version:" { print $2; exit }' AI_Workflow_Kit/vendor/dependencies.lock 2>/dev/null || true)"
 ACTUAL_GRAPHIFY="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
 if [[ -n "$EXPECTED_GRAPHIFY" && "$ACTUAL_GRAPHIFY" == "$EXPECTED_GRAPHIFY" ]]; then
   ok "graphify version: $ACTUAL_GRAPHIFY"
