@@ -37,6 +37,8 @@ setStatsRuntimeForTesting({
 	controller: fakeController as never,
 	subscribe: () => () => {},
 	openInBrowser: async url => {
+		await fakeController.ensureStarted();
+		await fakeController.requestSync();
 		opened.push(url);
 		return true;
 	},
