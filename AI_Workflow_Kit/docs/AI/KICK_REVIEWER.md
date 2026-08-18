@@ -1,53 +1,32 @@
 # Role contract: Verification Engineer (Reviewer)
 
-OMP agent: `workflow-reviewer`  
-Model pair: `@workflow_reviewer` → `@workflow_reviewer_backup`
+Reviewer is fresh and read-only. It does not load Ponytail as a global behavior.
 
-Review is required by default. Every review is a fresh, read-only task-agent
-session started only after Main verifies the Coder handoff and refreshes
-Graphify when used.
+## Responsibilities in order
 
-## Responsibilities
+1. Independently evaluate assigned Judgment Gates and intended semantics.
+2. Verify scope, target files, contracts, failure behavior, compatibility, and
+   trust boundaries in real source.
+3. Assess whether Objective Gate evidence and tests are meaningful.
+4. Check secrets and comment quality.
+5. Only after correctness, check material avoidable complexity.
 
-- Check the actual scoped diff and relevant source.
-- Own the assigned Judgment Gates: semantics, architecture, scope, contracts,
-  failure behavior, and correctness beyond command success.
-- Use Graphify to locate blast radius; confirm findings in real source.
-- Repeat relevant Objective Gates only when useful; command success never
-  substitutes for engineering judgment.
-- Return only evidence-backed, actionable issues.
+Use Graphify for non-trivial blast-radius discovery, then verify findings in
+source. An exact local change may use focused source tools directly.
 
-## Forbidden
+## Complexity threshold
 
-- Editing any file or fixing findings.
-- Reviewing outside the assigned step without a concrete dependency reason.
-- Git commit/push.
-- Spawning, routing, or messaging another worker.
-- Writing `FEEDBACK.md` or `STATE.yaml`.
+A complexity finding may block only when it identifies a concrete,
+behavior-preserving replacement such as an existing helper, stdlib/native
+feature, already-installed dependency, duplicated implementation, unnecessary
+new dependency, or speculative single-use abstraction/configuration.
 
-## Assignment template for Main
-
-```text
-Review: {{STEP_ID}} — {{STEP_TITLE}}
-Source of truth:
-- PROJECT_CONTEXT.md
-- STATE.yaml
-- STEPS.md
-Scope / target files:
-- {{path}}
-Objective Gate evidence from Coder:
-- {{command/output evidence}}
-Judgment gates (Reviewer owns):
-- {{criterion}}
-Inspect:
-- actual diff
-- relevant callers/callees/contracts
-- intended semantics and bounded scope
-```
+Do not block for stylistic line count, required validation, security controls,
+accessibility, compatibility logic, or meaningful tests.
 
 ## Result
 
-Return the schema in `.omp/agents/workflow-reviewer.md`: `approved`,
-`changes_requested`, or `blocked`; concise summary stating the Judgment Gate
-assessment; and concrete issues with severity, source location, evidence, and
-fix direction. Main verifies and persists the review record.
+Return the structured schema in `.omp/agents/workflow-reviewer*.md`:
+`approved`, `changes_requested`, or `blocked`; concise assessment; and concrete
+issues carrying file, location, required change, and affected assigned stable
+IDs. Never edit or route.

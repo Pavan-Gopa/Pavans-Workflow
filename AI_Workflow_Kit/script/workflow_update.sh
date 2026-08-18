@@ -1,60 +1,34 @@
 #!/usr/bin/env bash
-# Automated, deterministic update for Pavan's OMP Workflow framework.
+# Safe explicit update of Pavan's Workflow framework.
 #
 # Usage:
-#   workflow_update.sh check    # show differences against upstream main without editing
-#   workflow_update.sh apply    # safely pull framework updates, migrate schema, and run doctor
-#   workflow_update.sh          # defaults to apply
+#   workflow_update.sh check
+#   workflow_update.sh apply   # default
 #
-# Preserved files (NEVER overwritten):
-#   - .omp/config.yml (user model mappings and provider settings)
-#   - AI_Workflow_Kit/docs/AI/STATE.yaml (live project state; schema migrated in-place)
-#   - AI_Workflow_Kit/docs/STEPS.md (project cards; migrated in-place)
-#   - AI_Workflow_Kit/docs/PROJECT_CONTEXT.md (project context)
-#   - AI_Workflow_Kit/docs/DECISIONS.md (ADRs)
-#   - AI_Workflow_Kit/docs/AI/FEEDBACK.md, REPORT.md, BUG_REPORT.md, SECURITY_REPORT.md
+# Preserved: .omp/config.yml and all live project state/plan/report files.
 
 set -euo pipefail
 
 ACTION="apply"
 TARGET_DIR="$PWD"
-
 for arg in "$@"; do
   case "$arg" in
     check|apply) ACTION="$arg" ;;
-    *)
-      if [[ -d "$arg" ]]; then
-        TARGET_DIR="$(cd "$arg" && pwd)"
-      fi
-      ;;
+    *) [[ -d "$arg" ]] && TARGET_DIR="$(cd "$arg" && pwd)" ;;
   esac
 done
 
 PROJECT_ROOT="$TARGET_DIR"
 UPSTREAM_URL="${WF_UPSTREAM_URL:-https://github.com/Pavan-Gopa/Pavans-Workflow.git}"
 UPSTREAM_BRANCH="${WF_UPSTREAM_BRANCH:-main}"
-
-if ! command -v git >/dev/null 2>&1; then
-  echo "ERROR: git is required to update the workflow." >&2
-  exit 1
-fi
-
 TEMP_CLONE="$(mktemp -d -t pavans-workflow-update.XXXXXX)"
-cleanup() {
-  rm -rf "$TEMP_CLONE"
-}
-trap cleanup EXIT
+trap 'rm -rf "$TEMP_CLONE"' EXIT
 
-printf 'Fetching upstream workflow from %s (%s)...\n' "$UPSTREAM_URL" "$UPSTREAM_BRANCH"
+command -v git >/dev/null 2>&1 || { echo "ERROR: git is required." >&2; exit 1; }
 git clone --depth 1 --branch "$UPSTREAM_BRANCH" --quiet "$UPSTREAM_URL" "$TEMP_CLONE"
-
 UPSTREAM_COMMIT="$(git -C "$TEMP_CLONE" rev-parse --short HEAD)"
-UPSTREAM_DATE="$(git -C "$TEMP_CLONE" log -1 --format="%cd (%cr)" --date=short)"
-printf 'Upstream commit: %s · %s\n\n' "$UPSTREAM_COMMIT" "$UPSTREAM_DATE"
+UPSTREAM_VERSION="$(tr -d '[:space:]' < "$TEMP_CLONE/VERSION" 2>/dev/null || echo unknown)"
 
-cd "$PROJECT_ROOT"
-
-# List of framework surfaces to manage
 FRAMEWORK_PATHS=(
   ".omp/AGENTS.md"
   ".omp/agents"
@@ -63,7 +37,12 @@ FRAMEWORK_PATHS=(
   ".omp/lib"
   ".omp/tests"
   "grilling"
+  "ponytail"
+  "ponytail-review"
+  "ponytail-audit"
+  "ponytail-debt"
   "AI_Workflow_Kit/script"
+  "AI_Workflow_Kit/vendor"
   "AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md"
   "AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md"
   "AI_Workflow_Kit/docs/AI/METRICS.md"
@@ -71,78 +50,108 @@ FRAMEWORK_PATHS=(
   "ORCHESTRATOR_FIRST_PROMPT.md"
   "INSTALL.md"
   "README.md"
+  "VERSION"
+  "CHANGELOG.md"
 )
 
+printf 'Upstream: %s · version %s · commit %s\n\n' "$UPSTREAM_BRANCH" "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
+cd "$PROJECT_ROOT"
+
 if [[ "$ACTION" == "check" ]]; then
-  printf '=== Workflow Update Check (Dry Run) ===\n'
-  has_diff=0
+  echo "=== Workflow Update Check (read-only) ==="
+  changed=0
   for item in "${FRAMEWORK_PATHS[@]}"; do
-    if [[ -d "$TEMP_CLONE/$item" ]]; then
-      if [[ ! -d "$PROJECT_ROOT/$item" ]]; then
-        printf '[NEW DIR]  %s\n' "$item"
-        has_diff=1
-      else
-        diff_out="$(diff -rq --exclude=".git" --exclude=".DS_Store" --exclude="*.bak*" --exclude="*.lock" "$PROJECT_ROOT/$item" "$TEMP_CLONE/$item" 2>/dev/null || true)"
-        if [[ -n "$diff_out" ]]; then
-          printf '[MODIFIED] %s\n' "$item"
-          printf '%s\n' "$diff_out" | sed 's/^/  /'
-          has_diff=1
-        fi
+    src="$TEMP_CLONE/$item"; dst="$PROJECT_ROOT/$item"
+    [[ -e "$src" ]] || continue
+    if [[ ! -e "$dst" ]]; then
+      printf '[NEW]      %s\n' "$item"; changed=1
+    elif [[ -d "$src" ]]; then
+      if ! diff -qr --exclude=.DS_Store --exclude='*.lock' "$dst" "$src" >/dev/null 2>&1; then
+        printf '[MODIFIED] %s\n' "$item"; changed=1
       fi
-    elif [[ -f "$TEMP_CLONE/$item" ]]; then
-      if [[ ! -f "$PROJECT_ROOT/$item" ]]; then
-        printf '[NEW FILE] %s\n' "$item"
-        has_diff=1
-      elif ! cmp -s "$PROJECT_ROOT/$item" "$TEMP_CLONE/$item"; then
-        printf '[MODIFIED] %s\n' "$item"
-        has_diff=1
-      fi
+    elif ! cmp -s "$dst" "$src"; then
+      printf '[MODIFIED] %s\n' "$item"; changed=1
     fi
   done
-  if (( has_diff == 0 )); then
-    printf 'Workflow is already up to date with upstream %s (%s).\n' "$UPSTREAM_BRANCH" "$UPSTREAM_COMMIT"
-  else
-    printf '\nRun `bash AI_Workflow_Kit/script/workflow_update.sh apply` or `/work-update` to apply.\n'
-  fi
+  [[ -e .graphifyignore ]] || { printf '[NEW]      .graphifyignore\n'; changed=1; }
+  (( changed == 0 )) && echo "Already up to date."
   exit 0
 fi
 
-# Apply mode
-printf '=== Applying Workflow Update ===\n'
+COMMON_GIT_DIR="$(git rev-parse --git-common-dir 2>/dev/null || echo .git)"
+case "$COMMON_GIT_DIR" in /*) ;; *) COMMON_GIT_DIR="$PROJECT_ROOT/$COMMON_GIT_DIR" ;; esac
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+BACKUP_ROOT="$COMMON_GIT_DIR/pavans-workflow/update-backups/$STAMP"
+mkdir -p "$BACKUP_ROOT"
 
+backup_path() {
+  local path="$1"
+  [[ -e "$PROJECT_ROOT/$path" ]] || return 0
+  mkdir -p "$BACKUP_ROOT/$(dirname "$path")"
+  cp -R "$PROJECT_ROOT/$path" "$BACKUP_ROOT/$path"
+}
+
+copy_file() {
+  local path="$1"
+  backup_path "$path"
+  mkdir -p "$PROJECT_ROOT/$(dirname "$path")"
+  cp "$TEMP_CLONE/$path" "$PROJECT_ROOT/$path"
+  printf 'OK   synced %s\n' "$path"
+}
+
+copy_overlay_dir() {
+  local path="$1"
+  backup_path "$path"
+  mkdir -p "$PROJECT_ROOT/$path"
+  cp -R "$TEMP_CLONE/$path/." "$PROJECT_ROOT/$path/"
+  printf 'OK   synced %s/\n' "$path"
+}
+
+copy_exact_dir() {
+  local path="$1"
+  backup_path "$path"
+  rm -rf "$PROJECT_ROOT/$path"
+  mkdir -p "$(dirname "$PROJECT_ROOT/$path")"
+  cp -R "$TEMP_CLONE/$path" "$PROJECT_ROOT/$path"
+  printf 'OK   replaced managed %s/\n' "$path"
+}
+
+echo "=== Applying Workflow v$UPSTREAM_VERSION ==="
 for item in "${FRAMEWORK_PATHS[@]}"; do
+  [[ -e "$TEMP_CLONE/$item" ]] || continue
   if [[ -d "$TEMP_CLONE/$item" ]]; then
-    mkdir -p "$PROJECT_ROOT/$item"
-    # Copy directory contents recursively
-    cp -R "$TEMP_CLONE/$item/"* "$PROJECT_ROOT/$item/" 2>/dev/null || true
-    printf 'OK   synced %s/\n' "$item"
-  elif [[ -f "$TEMP_CLONE/$item" ]]; then
-    mkdir -p "$(dirname "$PROJECT_ROOT/$item")"
-    cp "$TEMP_CLONE/$item" "$PROJECT_ROOT/$item"
-    printf 'OK   synced %s\n' "$item"
+    case "$item" in
+      ponytail|ponytail-review|ponytail-audit|ponytail-debt|AI_Workflow_Kit/vendor)
+        copy_exact_dir "$item"
+        ;;
+      *) copy_overlay_dir "$item" ;;
+    esac
+  else
+    copy_file "$item"
   fi
 done
 
-# Ensure all scripts are executable
-chmod +x "$PROJECT_ROOT/AI_Workflow_Kit/script/"*.sh 2>/dev/null || true
-
-# Run schema migration for in-place cards upgrade
-printf '\n=== Migrating Step Cards and State Schema ===\n'
-if [[ -f "$PROJECT_ROOT/AI_Workflow_Kit/script/workflow_migrate.sh" ]]; then
-  bash "$PROJECT_ROOT/AI_Workflow_Kit/script/workflow_migrate.sh" apply || true
+if [[ ! -e "$PROJECT_ROOT/.graphifyignore" ]]; then
+  cp "$TEMP_CLONE/.graphifyignore" "$PROJECT_ROOT/.graphifyignore"
+  echo "OK   installed .graphifyignore"
+else
+  echo "KEEP existing .graphifyignore"
 fi
 
-# Rebuild graphify if available
-if [[ -f "$PROJECT_ROOT/graphify-out/graph.json" && -f "$PROJECT_ROOT/AI_Workflow_Kit/script/graphify_rebuild.sh" ]]; then
-  printf '\n=== Rebuilding Graphify Navigation Index ===\n'
-  bash "$PROJECT_ROOT/AI_Workflow_Kit/script/graphify_rebuild.sh" || true
+chmod +x "$PROJECT_ROOT"/AI_Workflow_Kit/script/*.sh 2>/dev/null || true
+
+printf '\n=== Migrating durable state ===\n'
+bash AI_Workflow_Kit/script/workflow_migrate.sh apply || true
+
+if command -v graphify >/dev/null 2>&1; then
+  printf '\n=== Refreshing Graphify (fast/local) ===\n'
+  bash AI_Workflow_Kit/script/graphify_rebuild.sh fast || true
 fi
 
-# Run workflow doctor
-printf '\n=== Running Workflow Doctor Post-Update ===\n'
-if [[ -f "$PROJECT_ROOT/AI_Workflow_Kit/script/workflow_doctor.sh" ]]; then
-  bash "$PROJECT_ROOT/AI_Workflow_Kit/script/workflow_doctor.sh"
-fi
+printf '\n=== Running workflow doctor ===\n'
+bash AI_Workflow_Kit/script/workflow_doctor.sh
 
-printf '\nWorkflow update completed successfully to commit %s!\n' "$UPSTREAM_COMMIT"
-printf 'Your model configurations in .omp/config.yml were preserved intact.\n'
+printf '\nWorkflow updated to v%s (%s).\n' "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
+printf 'Live state and .omp/config.yml were preserved.\n'
+printf 'Framework backup: %s\n' "$BACKUP_ROOT"
+printf 'Restart OMP so updated extensions, agents, and skills are discovered.\n'

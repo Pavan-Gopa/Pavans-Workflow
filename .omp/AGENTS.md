@@ -1,153 +1,139 @@
-# OMP Workflow Contract
+# Pavan's Workflow v3 — OMP Contract
 
-This project runs its established workflow inside one OMP session.
+This project runs one file-backed, Human-supervised multi-agent workflow inside
+an OMP Main session.
 
-## Role boundary
+## Authority and role boundaries
 
-- The OMP `Main` session is the Orchestrator when launched through `/workflow` or `AI_Workflow_Kit/script/omp_workflow.sh`.
-- A task subagent follows its `.omp/agents/` role and assignment. It never manages routing or workflow state.
-- Only `Main` may change `AI_Workflow_Kit/docs/**`, `PIPELINE.md`, `README.md`, `ORCHESTRATOR_FIRST_PROMPT.md`, or `.omp/**` during workflow execution.
-- Workers never commit, tag, push, invoke another worker, or send work directly to another worker. Their only normal handoff is their structured task result to `Main`.
-- Main does not implement product code after worker failures. Only an explicit,
-  task-specific Human instruction may authorize a Main code edit.
-- Run one specialized worker at a time. Every retry is a new task agent session.
-
-## Onboarding and manual model failover
-
-- Before the first worker, Main completes the `STATE.yaml` onboarding gate.
-- `Alt+M` configures paired `workflow_<role>` and
-  `workflow_<role>_backup` aliases through OMP's native Roles selector.
-- Primary worker definitions select only the primary alias. Backup execution
-  variants select only the backup alias and enforce Human authorization.
-- Persistent worker model/provider failure is recorded and pauses routing.
-- Main's own backup requires a live Human model switch or a relaunch on
-  `@workflow_orchestrator_backup`.
-- A backup result still requires normal repository and test verification.
-
+- Main is the sole Orchestrator when launched through `/workflow` or
+  `AI_Workflow_Kit/script/omp_workflow.sh`.
+- Only Main writes workflow state, plans, feedback, reports, checkpoints, and
+  `.omp/**` during a workflow run.
+- Specialized workers never route, spawn another worker, commit, tag, push, or
+  hand work directly to another worker.
+- Main does not implement product code after worker failures unless the Human
+  gives explicit task-specific authorization.
+- Run exactly one specialized worker at a time. Every retry is a fresh session.
 
 ## Source of truth
 
-Conversation history is not authoritative. Before every routing or stage transition, `Main` rereads:
+Conversation history is not authoritative. Before routing or changing a gate,
+Main rereads:
 
-1. authoritative plan files named in `AI_Workflow_Kit/docs/PROJECT_CONTEXT.md`;
+1. authoritative plan files named by `PROJECT_CONTEXT.md`;
 2. `AI_Workflow_Kit/docs/AI/STATE.yaml`;
-3. `AI_Workflow_Kit/docs/STEPS.md` and `AI_Workflow_Kit/docs/DECISIONS.md`;
-4. the latest feedback/report files relevant to the current gate;
+3. `AI_Workflow_Kit/docs/STEPS.md` and `DECISIONS.md`;
+4. current feedback/report files;
 5. repository status, real source, diff, and test evidence.
 
-On conflict, follow `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Do not infer success from a worker exiting.
+Higher-priority sources in `TEAM_CONTRACT.md` win. A worker exiting does not
+prove success.
 
-## Passive metrics boundary
+## Main loop
 
-- Main alone records local workflow events after the existing transition has
-  been verified. Workers never write or receive telemetry context.
-- `AI_Workflow_Kit/docs/AI/METRICS.md` is the schema, formula, storage, privacy,
-  and instrumentation source of truth.
-- Metrics are append-only observation. Missing/corrupt storage, helper failure,
-  report failure, or dashboard failure never changes state, gates, retries,
-  recovery, failover, checkpoints, or routing.
-- `/workflow metrics` is read-only. Metrics reset deletes telemetry only.
+1. Reconcile file-backed state with real OMP `hub jobs` / `hub list`, available
+   artifacts, and the authorized repository diff. Preserve interrupted work;
+   runtime disappearance alone is not a product failure.
+2. Select one role justified by current state.
+3. Dispatch a fresh project agent with a compact self-contained assignment:
+   goal, step, stable work-item ID, target files, exclusions, Objective Gates,
+   Reviewer-owned Judgment Gates, and source-of-truth paths.
+4. Coder assignments include `ponytail_mode: off | lite | full`; default `full`.
+5. Verify every result against real source/diff/tests before writing canonical
+   feedback, checking or reopening stable IDs, recording metrics, or routing.
+6. Stop after three materially identical failures of the same approach. New
+   evidence, a new approach, or a different failure is progress.
 
-## Orchestration loop
+Default flow:
 
-1. Reconstruct the current step from files. At startup/resume reconcile any
-   `omp.active_agent` with `hub jobs`, `hub list`, available agent/history
-   artifacts, and the actual authorized repository diff. Preserve partial work;
-   runtime interruption alone increments no implementation/retry counter.
-2. Incorporate the Human's latest instruction, then reread affected
-   source-of-truth files.
-3. Select exactly one next role from the existing workflow.
-4. Spawn it with `task`, its project agent name, a fresh unique run name, and a
-   compact self-contained assignment: goal, step, allowed paths, exclusions,
-   Objective Gates, Reviewer-owned Judgment Gates, the assigned work-item ID
-   when one applies, and source-of-truth paths.
-   On retry include only verified approach/result/evidence/rejection memory from
-   `FEEDBACK.md`; never pass worker transcripts or Main's conversation history.
-5. When its structured result arrives, inspect the actual diff/source/test
-   output. If Tester changed tests, inspect the test diff for weakened
-   assertions and real product behavior; use a short targeted Reviewer pass for
-   a substantial diff.
-6. Only after verification, write the canonical entry to `FEEDBACK.md`,
-   `REPORT.md`, `BUG_REPORT.md`, or `SECURITY_REPORT.md`, update `STATE.yaml`,
-   and route the next role.
+```text
+Coder -> Main verification -> Reviewer -> Main verification
+      -> Tester -> Main verification -> next step
+```
 
-Default step flow remains `workflow-coder -> Main verification -> workflow-reviewer -> Main verification -> workflow-tester -> Main verification`. Reviewer is required unless the Human explicitly skips it. Tester is enabled unless the Human opts out. Record every skip and reason so the step gate remains satisfiable. Security is offered once near release and runs only after Human approval. Architect is used for unclear design, plan/code conflict, deep grilling, or implementation thrash.
+Reviewer is enabled unless explicitly skipped. Tester is recommended unless the
+Human opts out. Security is offered once near release. Architect is used for
+material design uncertainty, plan/code conflict, deep Grilling, or thrash.
 
-`STEPS.md` checklist items are Main-owned semantic completion memory. Every
-checkbox carries a stable ID `<step>.<D|O|J><n>` (`D` = `Do` work item,
-`O` = Objective gate, `J` = Judgment gate); IDs are unique across the file and
-never change once assigned. New cards use Markdown checkboxes with IDs
-(`workflow_migrate.sh apply` backfills legacy cards).
+## Stable checklist and runtime Todo
 
-The native OMP Todo is a separate runtime subtask list. A completed Todo item
-never checks a `STEPS.md` box; only Main verification does. Prefix runtime Todo
-subtasks with the parent work-item ID (`[S3.D2] …`) so the dashboard can link
-the two lists.
+`STEPS.md` is Main-owned semantic completion memory. Every item has a stable ID:
+`<step>.D<n>`, `<step>.O<n>`, or `<step>.J<n>`. Main alone checks or reopens it
+after verification.
 
-Before a worker dispatch, Main selects the applicable `D` item and writes both
-`current_work_item_id` (stable ID) and `current_work_item` (display text) in
-`STATE.yaml`, and includes the ID in the assignment and in `FEEDBACK.md` /
-report entries. Main marks `[x]` on that ID only after verifying
-source/evidence, clears both fields after verification, and reopens the same ID
-to `[ ]` when a downstream Reviewer/Tester finding invalidates that completion.
-Workers never edit this checklist or claim canonical completion.
+OMP's native Todo is a separate runtime subtask list. Prefix runtime tasks with
+the parent work item (`[S3.D2] ...`). Completing a runtime Todo never checks a
+`STEPS.md` item automatically.
 
-After a verified Coder handoff, persist `implementation.status: waiting_review`;
-reserve `complete` for a fully satisfied step Stop-gate.
+## Ponytail
 
-For bounded design uncertainty, Main may dispatch the existing
-`workflow-architect` with `Mode: advisory`. Advice is read-only and optional:
-no Grilling, Human interview, ADR, Architecture Package, persistence, or
-routing. `Mode: design` and `Mode: /grilling` retain their existing paths.
+Ponytail is a project-local implementation policy, not a global Pi/OMP plugin.
 
-If the same approach produces the same material failure three times without
-progress, stop automatic retries. A new approach, new evidence, or materially
-different failure is progress, not another identical failure. Main records the
-verified attempt memory in `FEEDBACK.md`, surfaces blockers in `STATE.yaml`, and
-asks the Human for direction or routes once to `workflow-architect` when the
-workflow permits it.
-
-Persistent model/provider failure is a pause, not a routing decision. Record it
-under `omp.model_failure` and `retry_guard.blocker` in `STATE.yaml`; do not
-increment product-work attempts or launch the configured backup automatically.
-Only after the Human explicitly requests backup retry for that recorded role may
-Main dispatch `workflow-<role>-backup`, with
-`human_backup_authorization: true` and the exact Human instruction in the fresh
-assignment. Clear the model-failure record only after a verified result. A
-failed backup pauses again. Non-model failures and Human aborts are not eligible.
+- Only `workflow-coder` and `workflow-coder-backup` autoload `ponytail`.
+- The accepted requirement, `target_files`, stable IDs, assigned gates,
+  validation, security, accessibility, compatibility, data integrity, and the
+  role's structured output always outrank simplification.
+- `ponytail_mode` is assignment-local and does not persist between workers.
+  `full` is default; `ultra` is never selected automatically.
+- Reviewer remains correctness-first. It may block material avoidable
+  complexity only when it names a concrete behavior-preserving replacement.
+  Stylistic line-count preferences are not blocking findings.
+- Architect prefers the smallest reversible design satisfying confirmed
+  constraints but does not load Ponytail over Grilling.
+- Tester and Security never reduce their gates for brevity.
+- `ponytail-review`, `ponytail-audit`, and `ponytail-debt` are explicit one-shot
+  tools, not automatic pipeline stages or canonical workflow memory.
 
 ## Graphify
 
-Use `GRAPHIFY -> FIND; SOURCE -> VERIFY`:
+Graphify is navigation evidence, never source of truth.
 
-1. If `graphify-out/graph.json` exists, start with focused `graphify query`, `path`, `explain`, or `affected` calls.
-2. Read the smallest relevant real source/doc slice before editing or making a consequential claim.
-3. If the graph is missing or stale, `Main` runs `bash AI_Workflow_Kit/script/graphify_rebuild.sh`. Workers report staleness rather than rebuilding it.
-4. Never wander through the repository without a task-specific reason.
+Use Graphify first for non-trivial discovery: unknown entry points, cross-file
+behavior, callers/callees, dependency paths, blast radius, public APIs, schemas,
+trust boundaries, Architect analysis, and Security analysis.
 
-## Grilling
+When Main already supplies an exact file and symbol and impact is demonstrably
+local, focused LSP/grep/read may be smaller than a ritual graph query. In every
+case, read the smallest relevant real source slice before editing or concluding.
 
-The existing `grilling/` skill is discovered through `.omp/config.yml`.
+Freshness is Main-owned:
 
-- Quick mode stays in `Main`.
-- Deep mode uses fresh `workflow-architect` runs with the `grilling` skill
-  autoloaded. Main is a transparent relay: it forwards exact questions and
-  exact Human answers with the latest grilling checkpoint, never answering on
-  the Human's behalf.
-- `Main` alone persists confirmed plans, ADRs, glossary changes, and downstream
-  steps.
+```bash
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast      # normal local loop
+bash AI_Workflow_Kit/script/graphify_rebuild.sh deep      # clustered code map
+bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic  # explicit docs/media pass
+bash AI_Workflow_Kit/script/graphify_rebuild.sh force     # full local recovery
+```
+
+Workers report staleness instead of rebuilding. Graphify failure never blocks
+source-based work by itself.
+
+## OMP Stats
+
+OMP Stats is manual in v3.
+
+- Nothing probes, starts, syncs, or displays a widget at session startup.
+- There is no persistent Stats notice below the editor.
+- Alt+W always shows the copyable local URL `http://127.0.0.1:3847` with status
+  `manual` while idle.
+- Press `o` in Alt+W or run `/workflow-stats` to explicitly start, sync, and open
+  Stats. Only a server started by this OMP process is stopped at shutdown.
+- Stats failure never affects routing, gates, or workflow metrics.
+
+Passive workflow metrics under Git's private common directory remain separate
+from OMP Stats and never control execution.
+
+## Model failover
+
+Automatic cross-model fallback is disabled. Persistent provider/model failure
+is recorded and pauses routing without incrementing product attempts. Main may
+start `workflow-<role>-backup` only after the Human explicitly authorizes that
+recorded role and the fresh assignment carries
+`human_backup_authorization: true` plus the exact instruction. Backup output
+still requires ordinary repository and gate verification.
 
 ## Human control
 
-The Human may interrupt or redirect `Main` at any time. `Alt+W` opens the
-read-only live `PLAN | CURRENT | STATISTICS` task board: the center column
-shows the Main-verified `STEP CHECKLIST` (from `STEPS.md`) and the native OMP
-`RUN TODO` side by side (`t` switches views); the dashboard never writes state.
-`Alt+A` remains the separate Agent Hub to inspect, steer, revive, or kill the
-current worker. After any intervention, `Main` rereads repository and workflow
-files before continuing.
-
-`/workflow update check` compares the installed framework with upstream without
-editing. `/workflow update` performs a conservative explicit update while
-preserving `.omp/config.yml` and all project/live workflow memory. There is no
-background polling, daemon, or scheduler.
+The Human may interrupt or redirect Main at any time. Alt+A is Agent Hub for
+worker inspection and intervention. Alt+W is the read-only workflow dashboard.
+After any intervention Main rereads real repository and workflow state.

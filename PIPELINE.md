@@ -1,161 +1,98 @@
-# Pipeline — multi-model, multi-agent OMP workflow
+# Pipeline — Pavan's Workflow v3
 
-Drop this kit into any project. Choose a primary and backup model alias per
-role, then control the fresh-context agent loop through one OMP Main session.
+A file-backed, multi-model OMP development loop with fresh specialized workers,
+Main-owned state, conditional Graphify navigation, and Coder-only Ponytail.
 
----
-
-## Phase 0 — Start the Main Orchestrator
-
-Run from the project root:
+## Start
 
 ```bash
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Equivalent: launch `omp`, then run `/workflow onboard`.
+Main completes progressive onboarding, validates the next required role model,
+and reconciles any interrupted runtime before dispatch.
 
-OMP loads `.omp/AGENTS.md`, `.omp/config.yml`, the project agents, dashboard
-extension, and `grilling` skill. On first launch, Main shows onboarding and
-validates all primary/backup model pairs before dispatching a worker. Press
-`Alt+M` to configure roles, then run `/workflow ready`. Press `Alt+W` at any
-time to inspect plan position, the current actor and next action, verified
-`STEP CHECKLIST` and native `RUN TODO` progress (press `t` to switch views),
-gates, blockers, passive metrics, and current-session model tokens;
-file-backed workflow and asks for missing project context. Do not start a
-separate worker terminal or copy a kick prompt.
-
----
-
-## Phase 1 — Context from you
-
-Tell the Orchestrator, in plain language:
-
-- Project title  
-- What it is  
-- What you want done now  
-- Stack / how to build & test (if you know)  
-- Constraints (optional)
-
-The Orchestrator saves a short version into `AI_Workflow_Kit/docs/PROJECT_CONTEXT.md` when useful.
-
----
-
-## Phase 2 — Plan, advice, or Architect
-
-| Situation | What the Orchestrator does |
-|-----------|----------------------------|
-| **Enough context** to act safely | Writes a **minimal plan** (few steps in `STEPS.md` / `STATE.yaml`) and starts the first coding step. |
-| **One bounded design uncertainty** | Optionally asks the existing Architect for a fresh read-only `Mode: advisory` second opinion. No Grilling, ADR, or Architecture Package. |
-| **Not enough** for a real plan | Uses `Mode: design` or deep `/grilling` through a separate **Architect** session. |
-
-### Architect modes
-
-Main dispatches `workflow-architect` as a fresh OMP task agent. Advisory mode
-returns concise advice and stops. For deep discovery, `/grilling` autoloads the
-skill: headless iterations return exact material questions and a checkpoint;
-Main transparently relays exact Human answers into the next fresh Architect.
-Only after explicit confirmation does the Architect return an Architecture
-Package. It never implements or persists plans; Main verifies and writes
-accepted plan/ADR changes.
-
----
-
-## Phase 3 — Coding loop (each step)
+## Step loop
 
 ```text
-Human ↔ Main Orchestrator only
-  → fresh workflow-coder runs assigned Objective Gates
-  → Main verifies source/diff/evidence
-  → fresh workflow-reviewer evaluates Judgment Gates
-  → Main verifies findings
-  → fresh workflow-tester runs runtime/QA Objective Gates
-  → Main verifies tests/reports
-  → green → Main updates state and opens the next step
-  → red → Main records verified attempt memory and starts a fresh Coder fix run
+Human <-> Main
+  -> fresh Coder + assignment-local Ponytail
+  -> Main verifies source, diff, stable IDs, and Objective evidence
+  -> fresh Reviewer checks Judgment Gates and material complexity
+  -> Main verifies findings
+  -> fresh Tester runs runtime/QA Objective Gates and gap-hunts coverage
+  -> Main verifies tests/reports
+  -> green: close step and continue
+  -> red: persist compact verified retry memory and start a fresh Coder
 ```
 
-| Gate | Default | Human choice |
-|------|---------|--------------|
-| **Code review** | **On** every step | Explicit skip is recorded in state |
-| **Tester** | **Recommended on** | Explicit opt-out is recorded in state |
-| **Security** | **Offer once** near release | Optional, expensive |
+Workers never write workflow state, route, spawn another worker, commit, or
+push. Main never infers success from a worker exit.
 
-Workers never invent the pipeline, write workflow-state files, invoke another
-worker, or commit. Main is the only workflow-state owner.
+## Ponytail
 
-Fresh retries receive compact verified facts from `FEEDBACK.md`: attempted
-approach, observed result, evidence, and rejection reason. They never receive a
-prior worker transcript. At startup or `/workflow status`, Main reconciles
-file-backed active-agent state with real `hub` status, artifacts, and the
-authorized diff. Interrupted partial work is preserved; runtime disappearance
-alone is not an implementation failure.
+Only Coder and backup Coder autoload `ponytail`. Main assigns
+`ponytail_mode: off|lite|full`, default `full`. The skill minimizes only among
+implementations that already satisfy confirmed scope, target files, gates,
+security, validation, accessibility, compatibility, data integrity, and the
+structured handoff.
 
----
+Reviewer remains correctness-first. Tester and Security do not load Ponytail.
+Architect uses the smallest reversible confirmed design while retaining the
+full Grilling contract.
 
-## Roles in one line
-
-| Role | Job |
-|------|-----|
-| **Orchestrator** | Reconciles state, verifies results, and routes compact self-contained assignments |
-| **Coder** | Implements current scope and runs assigned Objective Gates |
-| **Reviewer** | Owns independent Judgment Gates; approves or requests changes |
-| **Tester** | Runs runtime/QA Objective Gates and fills real coverage gaps |
-| **Architect** | Optional bounded advice, normal design, or deep Grilling |
-| **Security** | Optional final vuln audit when project is ready |
-
----
-
-## Models (short)
-
-Canonical recommendations: `AI_Workflow_Kit/docs/AI/MODELS.md`.
-Runtime aliases are in `.omp/config.yml`:
-
-| Role | Primary | Backup |
-|------|---------|--------|
-| Orchestrator | `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
-| Coder | `@workflow_coder` | `@workflow_coder_backup` |
-| Reviewer | `@workflow_reviewer` | `@workflow_reviewer_backup` |
-| Tester | `@workflow_tester` | `@workflow_tester_backup` |
-| Architect | `@workflow_architect` | `@workflow_architect_backup` |
-| Security | `@workflow_security` | `@workflow_security_backup` |
-
-Change either assignment through `Alt+M`; no agent prompt changes.
-
-Persistent worker model/provider failure pauses the workflow. Main records the
-failure and starts `workflow-<role>-backup` only after explicit Human
-authorization. Automatic cross-model fallback is disabled.
-
----
-
-## Folder map
+## Graphify
 
 ```text
-.omp/
-  AGENTS.md                       ← shared control-plane contract
-  config.yml                      ← role aliases + task lifecycle
-  agents/                         ← independent worker definitions
-  commands/workflow.md            ← /workflow entry point
-grilling/                         ← discovery skill
-AI_Workflow_Kit/
-  docs/                           ← file-backed state, plans, reports
-  script/omp_workflow.sh          ← OMP launcher
-  script/workflow_models.sh        ← primary/backup model-pair validation
-  script/graphify_rebuild.sh      ← Graphify refresh
+non-trivial discovery -> Graphify -> focused real source -> verify
+known exact local symbol -> focused source tools -> verify
 ```
 
----
+Main owns graph freshness. Default refresh:
 
-## Golden rules
+```bash
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+```
 
-1. Human controls the process through **Main**; Agent Hub is available for live intervention.
-2. One fresh specialized worker at a time.
-3. Only Main writes workflow state, plans, feedback, and reports.
-4. Workers receive task-specific context, never Main's conversation history.
-5. `GRAPHIFY -> FIND; SOURCE -> VERIFY`.
-6. Main verifies actual repository and test evidence before every transition.
-7. Stop only materially identical failures of the same approach after three
-   attempts; preserve compact verified retry memory.
-8. Reconcile stale runtime state before routing.
-9. Passive local metrics observe verified Main transitions only; telemetry
-   failure never changes state, gates, retries, or routing.
+`deep` adds clustering, `semantic` is an explicit docs/media pass, and `force`
+performs full local recovery. A graph failure is advisory, not a product gate.
+
+## Gates
+
+- Objective Gates: deterministic commands/artifacts.
+- Judgment Gates: Reviewer-owned semantic engineering assessment.
+- Reviewer: on by default.
+- Tester: recommended unless explicitly skipped.
+- Security: offered once near release.
+
+Main alone checks/reopens stable IDs `<step>.D<n>`, `.O<n>`, and `.J<n>` after
+verification. OMP Todo is separate runtime memory.
+
+## Failure and recovery
+
+A retry receives only verified approach, observed result, evidence, and rejection
+reason. Three materially identical no-progress failures stop. Runtime
+interruption and provider/model failure do not increment product attempts.
+Backups require explicit Human authorization.
+
+## Dashboard and observability
+
+- `Alt+W`: plan, current step, dual Todo, gates, blockers, metrics, session tokens,
+  and the copyable Stats URL.
+- `Alt+A`: worker transcripts and intervention.
+- `Alt+M`: model roles.
+- `/workflow metrics`: passive local telemetry outside the worktree.
+- `/workflow-stats` or `o` in Alt+W: explicit OMP Stats start/sync/open.
+
+OMP Stats never starts automatically and never places a persistent widget below
+the editor.
+
+## Update
+
+```bash
+tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rm -rf "$tmp_dir"
+```
+
+The updater preserves live project memory and model mappings, backs up framework
+files, migrates stable IDs, refreshes Graphify, and runs the doctor. Restart OMP
+afterward.
