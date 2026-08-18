@@ -14,9 +14,11 @@ function errorMessage(error: unknown): string {
 
 async function startAndOpen(ctx: ExtensionContext): Promise<void> {
 	const runtime = getStatsRuntime(ctx.cwd);
+	const url = runtime.controller.url;
 	try {
-		if (ctx.hasUI) ctx.ui.notify(`Starting OMP Stats on ${runtime.controller.url}…`, "info");
-		let state = await runtime.controller.ensureStarted(true);
+		if (ctx.hasUI) ctx.ui.notify(`Starting OMP Stats on ${url}…`, "info");
+		const opened = await runtime.openInBrowser(url);
+		const state = runtime.controller.snapshot;
 		if (state.status !== "ready" && state.status !== "sync-warning") {
 			if (ctx.hasUI) {
 				ctx.ui.notify(
@@ -26,9 +28,6 @@ async function startAndOpen(ctx: ExtensionContext): Promise<void> {
 			}
 			return;
 		}
-		state = await runtime.controller.requestSync(true);
-		const url = state.url ?? runtime.controller.url;
-		const opened = await runtime.openInBrowser(url);
 		if (ctx.hasUI) {
 			ctx.ui.notify(
 				opened
