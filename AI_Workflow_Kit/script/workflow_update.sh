@@ -69,7 +69,7 @@ if [[ "$ACTION" == "check" ]]; then
     if [[ ! -e "$dst" ]]; then
       printf '[NEW]      %s\n' "$item"; changed=1
     elif [[ -d "$src" ]]; then
-      if ! diff -qr --exclude=.DS_Store --exclude='*.lock' "$dst" "$src" >/dev/null 2>&1; then
+      if ! diff -qr -x .DS_Store "$dst" "$src" >/dev/null 2>&1; then
         printf '[MODIFIED] %s\n' "$item"; changed=1
       fi
     elif ! cmp -s "$dst" "$src"; then
