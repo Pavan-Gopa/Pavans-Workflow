@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
-# Install Pavan's Workflow into an existing project, or prepare a template clone.
+# Install Pavan's Workflow v3 into an existing project or prepare a template clone.
 
 set -euo pipefail
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "${1:-}" == "--update" || "${1:-}" == "-u" ]]; then
+TARGET_INPUT="${1:-.}"
+
+if [[ "$TARGET_INPUT" == "--update" || "$TARGET_INPUT" == "-u" ]]; then
   shift
-  TARGET_INPUT="${1:-.}"
-  TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
+  TARGET_ROOT="$(cd "${1:-.}" && pwd)"
   TEMP_CLONE="$(mktemp -d -t pavans-workflow-install.XXXXXX)"
   trap 'rm -rf "$TEMP_CLONE"' EXIT
   git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$TEMP_CLONE"
   cd "$TARGET_ROOT"
   exec bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" apply
 fi
-TARGET_INPUT="${1:-.}"
-TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
 
+TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
 PAYLOAD=(
   ".omp"
   "AI_Workflow_Kit"
   "grilling"
+  "ponytail"
+  "ponytail-review"
+  "ponytail-audit"
+  "ponytail-debt"
   "PIPELINE.md"
   "ORCHESTRATOR_FIRST_PROMPT.md"
+  "VERSION"
+  "CHANGELOG.md"
 )
 
 if ! command -v omp >/dev/null 2>&1; then
@@ -34,69 +40,63 @@ fi
 if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   conflicts=()
   for path in "${PAYLOAD[@]}"; do
-    if [[ -e "$TARGET_ROOT/$path" ]]; then
-      conflicts+=("$path")
-    fi
+    [[ -e "$TARGET_ROOT/$path" ]] && conflicts+=("$path")
   done
-
   if (( ${#conflicts[@]} > 0 )); then
-    echo "Workflow already exists in $TARGET_ROOT." >&2
-    echo "To update to the latest release safely, run:" >&2
+    echo "Workflow paths already exist in $TARGET_ROOT: ${conflicts[*]}" >&2
+    echo "Use the safe updater instead:" >&2
     echo "  git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git /tmp/pw && bash /tmp/pw/AI_Workflow_Kit/script/workflow_update.sh && rm -rf /tmp/pw" >&2
     exit 1
   fi
-
-  for path in "${PAYLOAD[@]}"; do
-    cp -R "$SOURCE_ROOT/$path" "$TARGET_ROOT/$path"
-  done
+  for path in "${PAYLOAD[@]}"; do cp -R "$SOURCE_ROOT/$path" "$TARGET_ROOT/$path"; done
+  if [[ ! -e "$TARGET_ROOT/.graphifyignore" ]]; then
+    cp "$SOURCE_ROOT/.graphifyignore" "$TARGET_ROOT/.graphifyignore"
+  fi
 fi
 
-# GitHub API downloads and AI-assisted file copies may lose executable bits.
-# Restore them, while keeping every documented command runnable through `bash`.
-if ! chmod +x "$TARGET_ROOT"/AI_Workflow_Kit/script/*.sh; then
-  echo "WARN: could not restore script executable bits; use the documented bash commands." >&2
-fi
+chmod +x "$TARGET_ROOT"/AI_Workflow_Kit/script/*.sh 2>/dev/null || true
 
 GITIGNORE="$TARGET_ROOT/.gitignore"
-if [[ ! -f "$GITIGNORE" ]] || ! grep -qxF 'graphify-out/' "$GITIGNORE"; then
-  printf '\ngraphify-out/\n' >> "$GITIGNORE"
-fi
+touch "$GITIGNORE"
+grep -qxF 'graphify-out/' "$GITIGNORE" || printf '\ngraphify-out/\n' >> "$GITIGNORE"
 
+EXPECTED_GRAPHIFY=0.9.46
 if ! command -v graphify >/dev/null 2>&1; then
-  echo "Installing Graphify (PyPI package: graphifyy)..."
+  echo "Installing tested Graphify version $EXPECTED_GRAPHIFY (package graphifyy)..."
   if command -v uv >/dev/null 2>&1; then
-    uv tool install graphifyy
+    uv tool install "graphifyy==$EXPECTED_GRAPHIFY"
   elif command -v pipx >/dev/null 2>&1; then
-    pipx install graphifyy
+    pipx install "graphifyy==$EXPECTED_GRAPHIFY"
   elif command -v python3 >/dev/null 2>&1; then
-    python3 -m pip install --user graphifyy || {
-      echo "ERROR: Graphify installation failed." >&2
-      echo "Install uv, then run: uv tool install graphifyy" >&2
-      exit 1
-    }
+    python3 -m pip install --user "graphifyy==$EXPECTED_GRAPHIFY"
   else
     echo "ERROR: Graphify needs Python 3.10+ and uv or pipx." >&2
     exit 1
   fi
+else
+  actual="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
+  if [[ "$actual" != "$EXPECTED_GRAPHIFY" ]]; then
+    echo "WARN: Graphify $actual is installed; workflow v3 was validated with $EXPECTED_GRAPHIFY." >&2
+    echo "      To align: uv tool install --force 'graphifyy==$EXPECTED_GRAPHIFY'" >&2
+  fi
 fi
 
 cd "$TARGET_ROOT"
-if ! bash ./AI_Workflow_Kit/script/graphify_rebuild.sh; then
-  echo "WARN: initial Graphify index was not built; the workflow can rebuild it after product source exists." >&2
+if ! bash AI_Workflow_Kit/script/graphify_rebuild.sh fast; then
+  echo "WARN: initial product graph was not built; source tools remain available." >&2
 fi
-
-bash ./AI_Workflow_Kit/script/workflow_doctor.sh
+bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 cat <<'MESSAGE'
 
-Pavan's Workflow is installed.
+Pavan's Workflow v3 is installed.
 
 Next:
   1. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh
-  2. Follow the first-run onboarding screen.
-  3. Press Alt+M to assign a primary and backup model to every workflow role.
-  4. Press Alt+A to supervise active workers.
-  5. Press Alt+W to inspect the live plan, current work, statistics, and current-session model tokens.
+  2. Complete onboarding and model-role setup.
+  3. Use Alt+W for the live workflow dashboard.
+  4. OMP Stats is manual: its URL is shown in Alt+W; press o or run /workflow-stats to start it explicitly.
 
-OMP loads the project agents, /workflow command, live dashboard, passive metrics helper, and grilling skill automatically.
+Coder agents load the project-local Ponytail policy automatically. Other roles
+keep their independent correctness, QA, architecture, and security contracts.
 MESSAGE

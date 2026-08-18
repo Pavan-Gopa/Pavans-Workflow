@@ -1,29 +1,33 @@
-// Real-environment wiring for the StatsController: global fetch, detached
-// child_process spawns, and platform browser openers. A process-wide singleton
-// so the stats extension, the dashboard extension, and the /workflow-stats
-// command all drive one controller and one owned server process.
+// Real-environment wiring for the StatsController.
+//
+// v3 keeps the runtime lazy: constructing it performs no probe, spawn, sync, UI
+// update, or browser action. The dashboard may always display the known local
+// URL, while an explicit Human action starts the service.
 
 import { spawn } from "node:child_process";
 import {
 	browserCommands,
 	defaultLaunchCandidates,
 	statsStatusLabel,
-	statsWidgetLines,
 	StatsController,
 	type ChildExit,
 	type ChildLike,
 	type StatsState,
 } from "./workflow-stats.ts";
 
+/** Legacy key retained for source compatibility; v3 never installs the widget. */
 export const STATS_WIDGET_KEY = "workflow-stats";
 export const STATS_DEFAULT_URL = "http://127.0.0.1:3847";
 
 export type StatsRuntime = {
 	controller: StatsController;
 	subscribe(listener: (state: StatsState) => void): () => void;
+	/** Explicit action: ensure Stats is running, sync once, then open the URL. */
 	openInBrowser(url: string): Promise<boolean>;
+	/** Always empty: v3 has no persistent below-editor Stats widget. */
 	widgetLines(): string[];
-	footerInfo(): { url?: string; status: string } | undefined;
+	/** Always available so Alt+W can show a copyable URL while Stats is idle. */
+	footerInfo(): { url: string; status: string };
 };
 
 let runtime: StatsRuntime | undefined;
@@ -58,7 +62,7 @@ function spawnDetached(command: string, args: string[], options: { cwd?: string 
 
 const BROWSER_OPEN_TIMEOUT_MS = 4_000;
 
-async function openInBrowser(url: string): Promise<boolean> {
+async function openUrlInBrowser(url: string): Promise<boolean> {
 	const env = process.env as Record<string, string | undefined>;
 	for (const candidate of browserCommands(process.platform, env, url)) {
 		try {
@@ -79,19 +83,14 @@ async function openInBrowser(url: string): Promise<boolean> {
 					resolve(code);
 				});
 			});
-			// A still-running opener counts as success; it may just be slow.
 			if (exit === "timeout" || exit === 0) return true;
 		} catch {
-			// Try the next opener.
+			// Try the next platform opener.
 		}
 	}
 	return false;
 }
 
-/**
- * Lazily create the shared StatsController. The quiet standalone `omp-stats`
- * CLI is tried first; the main `omp stats` CLI is the portable fallback.
- */
 export function getStatsRuntime(cwd?: string): StatsRuntime {
 	if (runtime) return runtime;
 	const listeners = new Set<(state: StatsState) => void>();
@@ -106,7 +105,7 @@ export function getStatsRuntime(cwd?: string): StatsRuntime {
 			try {
 				listener(state);
 			} catch {
-				// One broken listener must not blind the others.
+				// One broken dashboard listener must not blind the others.
 			}
 		}
 	};
@@ -114,18 +113,23 @@ export function getStatsRuntime(cwd?: string): StatsRuntime {
 		controller,
 		subscribe(listener) {
 			listeners.add(listener);
-			return () => {
-				listeners.delete(listener);
-			};
+			return () => listeners.delete(listener);
 		},
-		openInBrowser,
-		widgetLines: () => statsWidgetLines(controller.snapshot),
+		async openInBrowser(url) {
+			let state = controller.snapshot;
+			if (state.status !== "ready" && state.status !== "sync-warning") {
+				state = await controller.ensureStarted(true);
+			}
+			if (state.status !== "ready" && state.status !== "sync-warning") return false;
+			await controller.requestSync(true);
+			return openUrlInBrowser(url);
+		},
+		widgetLines: () => [],
 		footerInfo: () => {
 			const snapshot = controller.snapshot;
-			if (snapshot.status === "idle") return undefined;
 			return {
-				url: snapshot.status === "unavailable" ? undefined : snapshot.url,
-				status: statsStatusLabel(snapshot.status),
+				url: controller.url,
+				status: snapshot.status === "idle" ? "manual" : statsStatusLabel(snapshot.status),
 			};
 		},
 	};

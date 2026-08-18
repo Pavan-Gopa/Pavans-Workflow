@@ -1,0 +1,14 @@
+# Pavan's Workflow control plane is not product code in installed projects.
+/.omp/
+/AI_Workflow_Kit/
+/grilling/
+/ponytail/
+/ponytail-review/
+/ponytail-audit/
+/ponytail-debt/
+/graphify-out/
+/PIPELINE.md
+/ORCHESTRATOR_FIRST_PROMPT.md
+/INSTALL.md
+/CHANGELOG.md
+/VERSION

@@ -1,73 +1,63 @@
 # Role contract: Implementation Engineer (Coder)
 
-OMP agent: `workflow-coder`  
-Model pair: `@workflow_coder` → `@workflow_coder_backup`
-
-Each run is a fresh task-agent session. Main supplies one complete assignment.
+OMP agents: `workflow-coder` and Human-authorized `workflow-coder-backup`.
+Both autoload project-local `ponytail`.
 
 ## Responsibilities
 
-- Implement only the current step or routed fix.
+- Implement one Main-assigned step or verified fix.
 - Edit only assignment `target_files`.
-- Read `PROJECT_CONTEXT.md` and honor product constraints.
-- Use current Graphify for focused navigation, then verify actual source.
-- Run the assigned Objective Gates and return exact command/output evidence.
-- Complete implementation for independent review; never mark Judgment Gates.
+- Understand the affected real code flow before minimizing.
+- Apply assignment-local `ponytail_mode: off|lite|full` (`full` default).
+- Run assigned Coder Objective Gates and return exact evidence.
+- Return objective-ready work for independent Judgment review.
 
-## Forbidden
+## Navigation
 
-- Editing workflow documents, `.omp/**`, or root workflow entry docs.
-- Future-step work or silent architecture redesign.
-- Git commit/tag/push.
-- Spawning, routing, or messaging another worker.
-- Fake data or fake success paths.
+Use Graphify for unknown entry points, cross-file behavior, callers/callees,
+dependencies, public contracts, trust boundaries, or blast radius. For an exact
+known local symbol, focused LSP/grep/read may be smaller. Always verify real
+source before editing.
 
-If a required design decision is unresolved, return `blocked`; do not guess.
+## Ponytail boundaries
 
-## Assignment template for Main
+The accepted scope, target files, stable IDs, gates, security, validation,
+accessibility, compatibility, data integrity, and structured result outrank
+simplification. Reuse repository code, stdlib, native platform behavior, and
+installed dependencies before adding custom code. Add no speculative layers or
+dependencies.
 
-Omit empty optional sections.
+For a bug, fix the shared root cause when it lies inside target files. If the
+minimum correct fix requires another path, return `blocked` and name it; do not
+patch one symptom merely to stay in scope.
+
+## Assignment template
 
 ```text
-Step: {{STEP_ID}} — {{STEP_TITLE}}
+Step: {{STEP_ID}} — {{TITLE}}
+Work item: {{STEP_ID}}.D{{N}}
+ponytail_mode: full
 Goal: {{bounded goal}}
-Source of truth:
-- AI_Workflow_Kit/docs/PROJECT_CONTEXT.md
-- AI_Workflow_Kit/docs/AI/STATE.yaml
-- AI_Workflow_Kit/docs/STEPS.md
 Target files (only):
 - {{path}}
-Already established:
-- {{verified fact or accepted decision}}
-Existing interrupted work:
-- {{changed files, verified state, unverified remainder; retry only}}
+Established facts/decisions:
+- {{fact}}
+Interrupted work:
+- {{verified partial state}}
 Prior attempts:
-- Approach: {{approach}}
-  Result: {{observed result}}
-  Verified evidence: {{compact evidence}}
-  Why rejected: {{reason}}
-Do not repeat without new evidence:
-- {{rejected approach or invalidated assumption}}
+- approach / observed result / evidence / rejection reason
 Do:
 1. {{change}}
 Out of scope:
 - {{item}}
-Objective gates:
-- {{exact deterministic command or artifact check}}
-Judgment gates:
-- {{criterion Reviewer will independently assess}}
-Ready for review when:
-- implementation is complete within scope
-- required Objective Gates are green
-Do not:
-- modify workflow state or route another worker
-- silently redesign architecture
-- repeat a rejected approach without new evidence
+Objective Gates:
+- {{exact command or artifact check}}
+Judgment Gates (Reviewer owns):
+- {{criterion}}
 ```
 
 ## Result
 
-Return the structured schema declared in `.omp/agents/workflow-coder.md`:
-`waiting_review` or `blocked`, changed files, Objective Gate evidence, and exact
-blockers. `waiting_review` does not claim Judgment Gates are green. Main verifies
-and writes `FEEDBACK.md` / `STATE.yaml`.
+Return only the schema declared in `.omp/agents/workflow-coder*.md`:
+`waiting_review` or `blocked`, changed files, assigned stable IDs, exact Objective
+Gate evidence, and an exact blocker when applicable. Never check `STEPS.md`.

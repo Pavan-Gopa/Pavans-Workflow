@@ -1,162 +1,99 @@
-# AI Team Contract
+# AI Team Contract — Workflow v3
 
-Keep this light. Human ↔ **Orchestrator** only for process control.
+Human process control goes through Main. Workers return structured evidence only.
 
-## Source of truth (priority)
+## Source-of-truth priority
 
-1. Authoritative plan files listed in `PROJECT_CONTEXT.md` (if any)  
-2. `STATE.yaml` — what to do **right now**  
-3. `STEPS.md` — step cards  
-4. `DECISIONS.md` — ADRs  
-5. `PROJECT_CONTEXT.md` — repo map + commands  
-6. `PIPELINE.md` — simple human overview  
+1. Authoritative plan files listed in `PROJECT_CONTEXT.md`
+2. `STATE.yaml`
+3. `STEPS.md`
+4. `DECISIONS.md`
+5. `PROJECT_CONTEXT.md`
+6. `PIPELINE.md`
 
-Higher wins on conflict. Plan vs code conflict → **Architect** before large Coder work.
+Higher wins. A material plan/code conflict routes to Architect before large
+implementation.
 
----
+## Roles and write boundaries
 
-## Roles
+| Role | Product writes | Boundary |
+|---|---:|---|
+| Main | No | State, plans, reports, checkpoints, routing, passive metrics |
+| Coder | Yes | Assignment `target_files` only; Ponytail policy autoloaded |
+| Reviewer | No | Read-only correctness/Judgment verdict plus bounded complexity check |
+| Tester | Tests only | Approved test/QA paths and runtime evidence |
+| Architect | No | Advice, design, questions, Architecture Package |
+| Security | No | Optional evidence-grounded vulnerability audit |
+| Human | — | Context, preferences, authorization, intervention |
 
-| Role | Writes product code? | Job / write boundary |
-|------|----------------------|----------------------|
-| **Main Orchestrator** | No | Sole owner of state, plans, feedback, reports, routing, checkpoints, and passive metrics recording |
-| **Coder** | Yes, assignment target files only | One implementation/fix; structured result to Main |
-| **Reviewer** | No | Read-only verdict and findings |
-| **Tester** | Tests / QA scripts only | Gate, gap-hunt, structured evidence |
-| **Architect** | No | Read-only research, questions, Architecture Package |
-| **Security** | No | Read-only optional final vulnerability audit |
-| **Human** | — | Context, preferences, supervision and intervention |
+Workers never commit, push, route, spawn another worker, or write canonical
+workflow memory.
 
-### Models (summary)
+## Gate contract
 
-| Role | Default |
-|------|---------|
-| Orchestrator | **Grok 4.5 · Max / High** · or **GPT 5.6 Sol · Medium** |
-| Coder | Luna / DeepSeek Flash / Gemini Flash · Max–High |
-| Reviewer | Luna / Gemini · **no DeepSeek** |
-| Tester | Terra · Max / Extra High |
-| Architect | Sol High–Extra High or Terra Max · **not Ultra** |
-| Security | **GLM 5.2 · max** · Sol max · Opus 5 max (final offer only) |
+- **Objective Gates** are deterministic commands/artifacts. Coder runs assigned
+  implementation gates; Tester owns runtime/QA gates.
+- **Judgment Gates** cover semantics, accepted architecture, scope, contracts,
+  failure behavior, maintainability, and trust boundaries. Reviewer owns them.
+- `waiting_review` is not completion. Main closes a step only after verified
+  objective evidence, Reviewer judgment, and enabled QA.
+- Reviewer is on by default; Tester is recommended; Security is offered near
+  release. Every Human skip and reason is persisted.
 
-Full table: `MODELS.md`.
+## Ponytail contract
 
----
+Ponytail reduces the implementation only after the problem and real code flow
+are understood.
 
-## OMP pipeline
+Precedence:
 
-```text
-Human ↔ Main
-  → fresh Coder → Main verification
-  → fresh Reviewer → Main verification
-  → fresh Tester → Main verification
-  → next step
-```
+1. role and structured-output contracts;
+2. confirmed requirement, target files, stable IDs, and gates;
+3. security, validation, accessibility, compatibility, and data integrity;
+4. real source evidence;
+5. simplification.
 
-Main dispatches project agents through OMP `task`. Children do not inherit
-Main's conversation history. Every retry is a new task-agent session.
+Only primary and backup Coder autoload Ponytail. Main sets assignment-local
+`ponytail_mode: off|lite|full`, default `full`. It never persists across fresh
+workers and never authorizes changing confirmed scope.
 
-### Quality gates (Human preferences)
+Reviewer may block a complexity issue only when it is material and has a
+specific behavior-preserving replacement: existing repository reuse, stdlib,
+native platform behavior, an already-installed dependency, deletion of
+speculative configuration/layers, or removal of duplicated logic. Shorter style
+alone is not a finding.
 
-| Gate | Default | Notes |
-|------|---------|-------|
-| **Code review** | **On** | Minimum recommended bar. Skip only if Human says so. |
-| **Tester** | **Recommended on** | Orchestrator should include Tester unless Human opts out. |
-| **Security** | **Offer once** near release | Optional. Expensive top models. Not every step. |
+Tester and Security never reduce required coverage or controls for brevity.
+Architect seeks the smallest reversible confirmed design without loading the
+full implementation skill over Grilling.
 
-### Verification gates
+## Graphify contract
 
-This section is the canonical gate contract. Step cards separate:
-
-- **Objective gates** — deterministic evidence such as command exit codes,
-  test/build/typecheck results, or artifact existence. Coder runs the assigned
-  objective gates; Tester owns runtime/QA objective gates. Reviewer may repeat
-  relevant commands.
-- **Judgment gates** — engineering evaluation of semantics, accepted
-  architecture, scope, public contracts, failure behavior, and trust
-  boundaries. Reviewer is the primary evaluator; Coder never marks these green.
-
-`waiting_review` means the scoped implementation and required Coder objective
-gates are ready for independent judgment, not that the step is proven correct.
-Only Main combines verified objective evidence, Reviewer judgment, and enabled
-QA results to transition the step.
-
-### Tester (when enabled)
-
-1. Run the assigned runtime/QA Objective Gates.
-2. Gap-hunt intended feature behavior and coverage against current source.
-3. Add tests only in assignment-approved test/QA paths.
-4. Return structured counts, commands, new tests, and failures to Main.
-5. Main inspects every Tester-authored test diff for weakened assertions,
-   implementation-coupled checks, and real product-behavior coverage.
-6. A substantial test diff receives a short targeted Reviewer pass before the
-   step closes.
-7. Main verifies and writes `REPORT.md` / `BUG_REPORT.md`.
-
-### Architect (when needed)
-
-Research → options/questions → recommendation → Architecture Package. Main
-persists accepted steps and ADRs.
-
-### Bugs and security findings
-
-| Who | Action |
-|-----|--------|
-| Tester / Security | Return structured evidence to Main |
-| Main | Verify, write canonical report/state, issue Coder fix assignment |
-| Coder | Patch product within target files |
-| Reviewer | Re-review after fix |
-
-Do not send bugs to another worker directly. Do not put live secrets in output.
-
----
+Use Graphify for non-trivial discovery and blast-radius work. For an exact known
+local symbol, focused LSP/grep/read may be cheaper. The real source is always
+verified before edits or consequential claims. Main owns freshness; workers
+report stale/unavailable graphs. Graphify is advisory and never a release gate.
 
 ## Hard rules
 
-1. One step and one active specialized worker at a time.
-2. Product diffs stay inside `STATE.yaml` / assignment target files.
-3. Specialized agents return only to Main; no worker-to-worker handoff.
-4. Only Main writes workflow documents or commits/tags/pushes.
-5. No silent architecture redesign by Coder.
-6. No fake data or fake green in production.
-7. Graphify first when current; verify in real source.
-8. Fresh worker context for every role run and retry.
-9. Main verifies repository/test evidence before every transition.
-10. Passive metrics are Main-only observation. Telemetry failure never changes
-    workflow state, gates, retries, failover, recovery, checkpoints, or routing.
-11. Stop three materially identical failures of the same approach and surface
-    the blocker; changed approaches/evidence/failure states are progress.
-12. Three failed Coder runs never authorize Main to write product code; stop,
-    route to Architect when appropriate, or request Human direction.
-13. Main alone checks or reopens `STEPS.md` checklist boxes (by stable ID
-    `<step>.D<n>` / `.O<n>` / `.J<n>`) after source/evidence verification;
-    workers never mutate canonical checklist state. The native OMP Todo is a
-    runtime subtask list only — a completed Todo never checks a `STEPS.md` box.
+1. One step and one specialized worker at a time.
+2. Product edits stay inside assignment target files.
+3. Worker output returns only to Main.
+4. Main alone changes workflow files and canonical checkboxes.
+5. No silent architecture redesign, fake data, or fake green.
+6. Fresh worker context for every role and retry.
+7. Main verifies repository/test evidence before every transition.
+8. Stop three materially identical failures; new evidence or approach is progress.
+9. Runtime disappearance and model failure are not product attempts.
+10. Automatic backup model selection is forbidden.
+11. Passive metrics and OMP Stats never control routing or gates.
+12. OMP Stats is manual and must not install a startup widget or notification.
 
----
+## Stable IDs and handoff
 
-## Comments (quality bar)
+`STEPS.md` items use `<step>.D<n>`, `.O<n>`, and `.J<n>`. Main alone checks or
+reopens them after verification. Runtime Todo remains separate and uses the
+parent ID prefix for dashboard linkage.
 
-| Where | What |
-|-------|------|
-| Module header | Role, ownership, must-not (short) |
-| Non-obvious logic | **Why** |
-| Public API | Intent + invariants |
-| TODOs | Tied to a step id |
-
-No secrets in comments. No novel on every getter.
-
----
-
-## Worker handoff
-
-Workers return the structured schema defined by their `.omp/agents/*.md` file,
-including the stable work-item/gate IDs they touched
-(`work_item_ids`, `objective_gate_ids`, `judgment_gate_ids`) so Main can verify,
-check, or reopen exactly the affected items. They do not write `FEEDBACK.md`,
-route the next role, or ask the Human to copy a prompt. Main validates the
-result and persists the canonical workflow record.
-
-On a retry, Main adds only verified attempt memory: approach, observed result,
-evidence, and why it was rejected. Worker transcripts and reasoning are never
-handoff context. The durable record lives in `FEEDBACK.md`; the assignment
-carries only the compact task-relevant subset, including the affected IDs.
+Retry assignments carry only verified approach, observed result, evidence, and
+rejection reason. They never carry transcripts or hidden reasoning.

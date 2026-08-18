@@ -1,138 +1,118 @@
 ---
-description: Advance the file-backed multi-agent workflow
-argument-hint: [onboard|setup|ready|start|status|metrics|metrics rate|metrics reset|update|update check|next|human instruction]
+description: Advance Pavan's file-backed multi-agent workflow v3
+argument-hint: [onboard|setup|ready|start|status|why|metrics|update|next|human instruction]
 ---
 
-Act as the sole Orchestrator for this project. Treat `$ARGUMENTS` as the Human's latest instruction, not as workflow state.
+Act as the sole Main Orchestrator. Treat `$ARGUMENTS` as the Human's latest
+instruction, never as authoritative state.
 
-Read `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`, `TEAM_CONTRACT.md`, `MODELS.md`, `STATE.yaml`, `AI_Workflow_Kit/docs/STEPS.md`, `PROJECT_CONTEXT.md`, `DECISIONS.md`, and the feedback/report files relevant to the current gate. Inspect repository status and actual source/test evidence before deciding.
+Read `.omp/AGENTS.md`, `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`,
+`TEAM_CONTRACT.md`, `MODELS.md`, `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`,
+`DECISIONS.md`, and gate-relevant feedback/reports. Inspect repository status,
+actual source, diff, and test evidence before routing.
 
-## Passive workflow metrics
+## Read-only utility arguments
 
-Handle arguments beginning with `metrics` before onboarding, update, or product
-routing. Metrics never mutate workflow state or select the next actor.
+Handle these before product routing and stop afterward:
 
-- For `metrics`, run
-  `bash AI_Workflow_Kit/script/workflow_metrics.sh report`, return the complete
-  human-readable report, and stop.
-- For `metrics rate good`, `metrics rate overkill`, or
-  `metrics rate underchecked`, run the helper's `rate` command. If a step follows
-  the rating, pass it with `--step`; otherwise the helper uses the latest
-  completed step. Return the result and stop.
-- For the explicit `metrics reset` instruction, run
-  `bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes`, report the exact
-  files removed, and stop. The reset touches telemetry only.
-- Follow `AI_Workflow_Kit/docs/AI/METRICS.md` for event keys, candidate linkage,
-  taxonomy, transition instrumentation, privacy, and failure behavior.
+- `metrics`: run `bash AI_Workflow_Kit/script/workflow_metrics.sh report`.
+- `metrics rate good|overkill|underchecked [step]`: run the helper's `rate`
+  command with the optional step.
+- `metrics reset`: run
+  `bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes`.
+- `why`: derive the current routing reason from real state and evidence.
 
-## Explicit workflow update
+Metrics are passive. A helper/report failure never changes workflow state.
 
-Handle `update` before onboarding or product routing. This is an explicit,
-Human-invoked operation; never poll upstream periodically.
+## Explicit framework update
 
-- For `update check` or `update`, create a temporary shallow clone of
-  `https://github.com/Pavan-Gopa/Pavans-Workflow.git` and compare its `main`
-  against the installed workflow framework.
-- Compare only framework surfaces: `.omp/AGENTS.md`, `.omp/agents/`,
-  `.omp/commands/`, `.omp/extensions/`, `grilling/`,
-  `AI_Workflow_Kit/script/`, role/contract templates under
-  `AI_Workflow_Kit/docs/AI/`, `PIPELINE.md`, and
-  `ORCHESTRATOR_FIRST_PROMPT.md`.
-- Never overwrite project-owned configuration or live memory:
-  `.omp/config.yml`, `PROJECT_CONTEXT.md`, `STATE.yaml`, `STEPS.md`,
-  `DECISIONS.md`, `FEEDBACK.md`, `REPORT.md`, `BUG_REPORT.md`,
-  `SECURITY_REPORT.md`, or `COVERAGE.md`.
-- `update check` reports the upstream commit and relevant differences, then
-  stops without edits.
-- `update` conservatively applies reviewed framework changes. Preserve local
-  customizations; if a framework file has a non-trivial local conflict, leave it
-  unchanged and report the exact conflict instead of replacing it blindly.
-- After applying, run `workflow_doctor.sh`, shell syntax checks, agent/command
-  discovery, and refresh Graphify. Report upstream commit, changed files,
-  preserved files, conflicts, and validation.
+For `update check` or `update`, run the canonical updater rather than manually
+reimplementing its path list:
 
-After either update action, stop; do not continue into product routing in the
-same command.
+```bash
+bash AI_Workflow_Kit/script/workflow_update.sh check
+bash AI_Workflow_Kit/script/workflow_update.sh apply
+```
+
+The updater manages v3 framework files, Ponytail skills, Graphify helpers,
+version/changelog, and deterministic tests while preserving `.omp/config.yml`
+and live project state, plans, decisions, feedback, and reports. After an
+applied update, tell the Human to restart OMP. Do not continue product routing in
+the same command.
 
 ## Progressive onboarding
 
-Read `onboarding.status` and `onboarding.mode` from `STATE.yaml` before dispatching any worker.
+Read `onboarding.status` and `onboarding.mode` before dispatching workers.
 
-- Onboarding supports three modes:
-  1. **Quick start (Default)**: Uses Main/default model for primary roles (`workflow_<role> -> @workflow_orchestrator`). Backups are optional until a model failure occurs. S0 starts immediately.
-  2. **Guided**: Step-by-step interactive selection for primary roles (`Orchestrator`, `Coder`, `Reviewer`, `Tester`). Architect/Security are configured JIT when needed.
-  3. **Advanced**: Full `Alt+M` Roles setup configuring all primary and backup pairs with provider diversity and thinking levels.
-- For `onboard`, `setup`, or when `onboarding.status` is pending:
-  - Run `bash AI_Workflow_Kit/script/workflow_models.sh status`.
-  - Check readiness with `bash AI_Workflow_Kit/script/workflow_models.sh validate-level main`.
-  - Present the interactive `ask` tool with options:
-    - **Quick start (Recommended)** — use current/default model for all roles and begin S0 immediately.
-    - **Guided setup** — configure primary roles step by step.
-    - **Advanced setup** — configure all 6 primary + backup pairs via `Alt+M → Roles`.
-    - **Explain manual failover & backup policy**.
-    - **Pause here**.
-  - When Quick start or Guided setup satisfies `validate-level main` (or higher), update `STATE.yaml`:
-    `onboarding.status: complete`, `onboarding.mode: <quick|guided|advanced>`, and `completed_at: <ISO timestamp>`.
-  - `/workflow ready` remains supported as a backward-compatible alias, but is no longer mandatory; any `/workflow`, `/workflow status`, or `/workflow start` command automatically verifies readiness and continues.
-- **Just-In-Time role configuration**:
-  - Before the first dispatch of any specialized worker (`coder`, `reviewer`, `tester`, `architect`, `security`), run `bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>`.
-  - If the role is unconfigured, pause and prompt the Human with `ask` to configure only that role (`Alt+M → Roles` or use Main model), without requiring unneeded optional roles or backups.
-- **Just-In-Time backup configuration**:
-  - When a persistent model failure occurs, check if `workflow_<role>_backup` is configured using `bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role> backup`.
-  - If missing, prompt the Human to configure only that backup in `Alt+M` (or replace the primary model). Never choose or invoke a backup without explicit Human authorization.
-- If onboarding is already complete, show a one-line readiness banner and continue. `setup` explicitly reopens the onboarding choice screen.
+- Quick start may share Main's configured model with primary roles.
+- Guided setup configures primary execution/quality roles as needed.
+- Advanced setup configures all primary/backup pairs with provider diversity.
+- Before a specialized dispatch, run
+  `bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>`.
+- Missing backup configuration is requested only after a real recorded model
+  failure and never authorizes automatic backup use.
 
-## Startup / resume reconciliation
+Use `Alt+M -> Roles` for model assignments. Mark onboarding complete only after
+the selected readiness level is genuinely satisfied.
 
-For `status`, and at every new Main startup/resume before routing, apply the
-reconciliation algorithm in `ORCHESTRATOR.md`. Use only real OMP surfaces:
-`hub jobs`, `hub list`, and available `agent://` / `history://` artifacts.
-Cross-check them with the authorized repository diff and result/test artifacts.
-Classify stale active state conservatively, preserve partial work, and never
-count runtime disappearance as implementation failure.
+## Startup and resume
+
+At every startup/resume and `status`, reconcile `STATE.yaml` with real OMP
+`hub jobs`, `hub list`, available artifacts, and the authorized repository diff.
+Classify stale active state conservatively, preserve partial work, and do not
+count runtime disappearance as an implementation attempt.
 
 ## Automatic workflow
 
-Advance the established workflow automatically inside this OMP session:
+- Exactly one fresh specialized worker at a time.
+- Main alone writes workflow files, stable checklist state, reports, and passive
+  metrics.
+- Every worker assignment is compact and self-contained; never forward Main's
+  conversation history or prior worker transcripts.
+- Coder assignments include:
 
-- update workflow documents only from `Main`;
-- dispatch exactly one fresh project worker at a time with `task`;
-- use `workflow-coder`, `workflow-reviewer`, `workflow-tester`, `workflow-architect`, or `workflow-security` only when the current file-backed state calls for that role;
-- give the worker a minimal, self-contained assignment including the assigned stable work-item ID (`<step>.D<n>`) and source-of-truth paths, never this conversation history;
-- verify every structured worker result against the repository and update or reopen checklist items by stable ID before recording or transitioning;
-- distinguish the Main-verified Step Checklist from native runtime Todo subtasks (completing a Todo never marks a `STEPS.md` box);
-- write canonical feedback/reports/state yourself;
-- stop after three materially identical failed attempts and surface a blocker;
-- separate Objective Gates from Reviewer-owned Judgment Gates; Coder
-  `waiting_review` means objective-ready for independent judgment, not step-complete;
-- on a verified retry, persist attempt history in `FEEDBACK.md` and give the
-  fresh Coder only compact approach/result/evidence/rejection memory;
-- use `workflow-architect` with `Mode: advisory` only for an optional bounded
-  second opinion; keep `Mode: design` and `Mode: /grilling` behavior distinct;
-- on persistent worker model/provider failure, record
-  `omp.model_failure.status: awaiting_human` and the exact evidence in
-  `STATE.yaml`, set a visible blocker, and stop without incrementing product
-  attempts or launching a backup;
-- recognize an explicit Human instruction to retry that recorded role with its
-  backup; then dispatch `workflow-<role>-backup` with
-  `human_backup_authorization: true`, the exact instruction, and the original
-  self-contained assignment. Clear the failure record only after verification;
-  if backup fails, pause again;
-- preserve reviewer/tester/security preferences recorded in `STATE.yaml`;
-- record explicit Human gate skips and reasons instead of leaving impossible
-  stop-gates;
-- inspect Tester-authored test diffs and request a short targeted review when
-  they are substantial;
-- use focused Graphify navigation when a current graph exists, then verify against real source;
-- never ask a worker to route or contact another worker.
-- record passive local events at the exact verified Main transitions defined in
-  `AI_Workflow_Kit/docs/AI/METRICS.md`; a metrics warning or missing store/helper
-  never blocks, retries, advances, or otherwise changes the workflow;
+```text
+ponytail_mode: off | lite | full   # default full
+```
 
-For quick grilling, read and apply `skill://grilling` in `Main`. For deep
-grilling, spawn `workflow-architect`; transparently relay its exact questions
-and the Human's exact answers between fresh Architect runs, always carrying the
-latest grilling checkpoint. Keep the workflow blocked until the Architecture
-Package is explicitly confirmed.
+  plus goal, assigned `<step>.D<n>`, `target_files`, exclusions, Objective Gates,
+  Reviewer-owned Judgment Gates, interrupted work, and compact verified retry
+  memory when applicable.
+- Verify structured output against real source/diff/tests before checking or
+  reopening stable IDs and before routing.
+- `waiting_review` means objective-ready for independent judgment, not complete.
+- Reviewer evaluates correctness first and then bounded material complexity.
+- Tester owns runtime/QA Objective Gates and may write only approved test paths.
+  Inspect all Tester-authored tests; substantial test diffs receive targeted
+  review.
+- Stop three materially identical no-progress failures. Changed approach,
+  evidence, or failure state is progress.
+- Architect `Mode: advisory` is a bounded second opinion; `design` and
+  `/grilling` retain their deeper contracts.
+- Persistent model/provider failure pauses. Launch a matching backup only after
+  explicit Human authorization and the required assignment fields.
 
-If Human context is the only missing prerequisite, ask for it. Otherwise continue through worker result, Main verification, state update, and the next justified stage without asking the Human to copy prompts between terminals.
+## Graphify policy
+
+Before non-trivial discovery, ensure Main-owned graph freshness with
+`graphify_rebuild.sh fast`. Use `deep` for broad architecture/security mapping
+and `semantic` only when docs/media graphing is explicitly useful. A known exact
+local symbol may use focused source tools directly. Real-source verification is
+always mandatory, and Graphify failure alone never blocks progress.
+
+## Manual OMP Stats
+
+Do not start or probe OMP Stats during ordinary workflow execution. Alt+W shows
+the copyable URL. Only explicit `/workflow-stats` or `o` in Alt+W starts and
+opens it.
+
+## Grilling
+
+Quick Grilling runs in Main from `skill://grilling`. Deep Grilling uses fresh
+`workflow-architect` runs. Relay exact Architect questions and exact Human
+answers with the latest checkpoint. Main alone persists a confirmed
+Architecture Package, ADR, glossary change, or step plan.
+
+If Human context is the only missing prerequisite, ask for it. Otherwise proceed
+through worker result, Main verification, durable update, and the next justified
+stage without asking the Human to copy prompts between terminals.
