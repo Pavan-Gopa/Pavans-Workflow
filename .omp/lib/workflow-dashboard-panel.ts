@@ -214,7 +214,7 @@ class WorkflowDashboard implements Component {
 		else if (matchesKey(data, Key.pageUp)) return this.manualScroll(() => this.viewport.page(-1));
 		else if (matchesKey(data, Key.pageDown)) return this.manualScroll(() => this.viewport.page(1));
 		else if (matchesKey(data, "g")) return this.manualScroll(() => this.viewport.scrollToTop());
-		else if (matchesKey(data, "G")) return this.manualScroll(() => this.viewport.scrollToBottom());
+		else if (matchesKey(data, "shift+g")) return this.manualScroll(() => this.viewport.scrollToBottom());
 		else return;
 		this.requestRender();
 	}
@@ -278,15 +278,15 @@ class WorkflowDashboard implements Component {
 			}
 		}
 
-		this.viewport.setHeight(viewportHeight);
-		this.revealSelected(lines, viewportHeight);
 		const styled = lines.map(line => {
 			if (line.tone === "warning" || line.tone === "accent" || line.tone === "muted") {
 				return this.theme.fg(line.tone, line.text);
 			}
 			return line.text;
 		});
+		this.viewport.setHeight(viewportHeight);
 		this.viewport.setLines(styled);
+		this.revealSelected(lines, viewportHeight);
 		return this.viewport.render(panelWidth);
 	}
 
