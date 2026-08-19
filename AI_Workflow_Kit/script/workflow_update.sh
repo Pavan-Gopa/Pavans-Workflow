@@ -29,6 +29,7 @@ TEMP_CLONE="$(mktemp -d -t pavans-workflow-update.XXXXXX)"
 trap 'rm -rf "$TEMP_CLONE"' EXIT
 
 command -v git >/dev/null 2>&1 || { echo "ERROR: git is required." >&2; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required." >&2; exit 1; }
 git clone --depth 1 --branch "$UPSTREAM_BRANCH" --quiet "$UPSTREAM_URL" "$TEMP_CLONE"
 UPSTREAM_COMMIT="$(git -C "$TEMP_CLONE" rev-parse --short HEAD)"
 UPSTREAM_VERSION="$(tr -d '[:space:]' < "$TEMP_CLONE/VERSION" 2>/dev/null || echo unknown)"
@@ -88,25 +89,8 @@ FRAMEWORK_PATHS=(
   "CHANGELOG.md"
 )
 
-MODEL_ALIAS_DEFAULTS=(
-  "workflow_design_advisor: @workflow_reviewer"
-  "workflow_designer: @workflow_architect"
-  "workflow_design_advisor_backup: @workflow_reviewer_backup"
-  "workflow_designer_backup: @workflow_architect_backup"
-)
-
 printf 'Upstream: %s · version %s · commit %s\n\n' "$UPSTREAM_BRANCH" "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
 cd "$PROJECT_ROOT"
-
-missing_model_aliases() {
-  local config="$PROJECT_ROOT/.omp/config.yml"
-  [[ -f "$config" ]] || return 0
-  local entry alias
-  for entry in "${MODEL_ALIAS_DEFAULTS[@]}"; do
-    alias="${entry%%:*}"
-    grep -q "^[[:space:]]*$alias:" "$config" || printf '%s\n' "$alias"
-  done
-}
 
 if [[ "$ACTION" == "check" ]]; then
   echo "=== Workflow Update Check (read-only) ==="
@@ -125,11 +109,13 @@ if [[ "$ACTION" == "check" ]]; then
     fi
   done
   [[ -e .graphifyignore ]] || { printf '[NEW]      .graphifyignore\n'; changed=1; }
-  while IFS= read -r alias; do
-    [[ -n "$alias" ]] || continue
-    printf '[ADD ALIAS] .omp/config.yml -> %s\n' "$alias"
+  if [[ ! -f .omp/config.yml ]]; then
+    printf '[REPAIR]   .omp/config.yml missing; updater will recover the newest workflow config backup\n'
     changed=1
-  done < <(missing_model_aliases)
+  elif ! python3 "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_config_repair.py" check .omp/config.yml >/dev/null 2>&1; then
+    printf '[REPAIR]   .omp/config.yml needs workflow role/YAML repair\n'
+    changed=1
+  fi
   if [[ -f .graphifyignore ]] && ! grep -qxF '/ui-designer/' .graphifyignore; then
     printf '[ADD]       .graphifyignore -> /ui-designer/\n'; changed=1
   fi
@@ -175,48 +161,10 @@ copy_exact_dir() {
   printf 'OK   replaced managed %s/\n' "$path"
 }
 
-merge_model_aliases() {
-  local config="$PROJECT_ROOT/.omp/config.yml"
-  if [[ ! -f "$config" ]]; then
-    copy_file ".omp/config.yml"
-    return
-  fi
+repair_model_config() {
   backup_path ".omp/config.yml"
-  python3 - "$config" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-source = path.read_text(encoding="utf-8")
-defaults = [
-    ("workflow_design_advisor", "@workflow_reviewer"),
-    ("workflow_designer", "@workflow_architect"),
-    ("workflow_design_advisor_backup", "@workflow_reviewer_backup"),
-    ("workflow_designer_backup", "@workflow_architect_backup"),
-]
-missing = [(key, value) for key, value in defaults if not any(
-    line.lstrip().startswith(f"{key}:") for line in source.splitlines()
-)]
-if not missing:
-    print("KEEP existing .omp/config.yml model aliases")
-    raise SystemExit(0)
-lines = source.splitlines()
-try:
-    start = next(i for i, line in enumerate(lines) if line.strip() == "modelRoles:")
-except StopIteration:
-    block = ["modelRoles:", *[f"  {key}: {value}" for key, value in missing], ""]
-    lines = block + lines
-else:
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        line = lines[i]
-        if line and not line.startswith((" ", "\t", "#")):
-            end = i
-            break
-    lines[end:end] = [f"  {key}: {value}" for key, value in missing]
-path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-print("OK   added optional Designer model aliases: " + ", ".join(key for key, _ in missing))
-PY
+  python3 "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_config_repair.py" \
+    repair "$PROJECT_ROOT" "$TEMP_CLONE/.omp/config.yml" "$COMMON_GIT_DIR"
 }
 
 run_with_timeout() {
@@ -250,7 +198,6 @@ except subprocess.TimeoutExpired:
 PYTIMEOUT
 }
 
-
 echo "=== Applying Workflow v$UPSTREAM_VERSION ==="
 for item in "${FRAMEWORK_PATHS[@]}"; do
   [[ -e "$TEMP_CLONE/$item" ]] || continue
@@ -265,7 +212,8 @@ for item in "${FRAMEWORK_PATHS[@]}"; do
   fi
 done
 
-merge_model_aliases
+printf '\n=== Preserving / repairing project model roles ===\n'
+repair_model_config
 
 if [[ ! -e "$PROJECT_ROOT/.graphifyignore" ]]; then
   cp "$TEMP_CLONE/.graphifyignore" "$PROJECT_ROOT/.graphifyignore"
@@ -300,6 +248,6 @@ printf '\n=== Running workflow doctor ===\n'
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 printf '\nWorkflow updated to v%s (%s).\n' "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
-printf 'Live state and existing model selections were preserved.\n'
+printf 'Live state and existing model selections were preserved/recovered.\n'
 printf 'Framework backup: %s\n' "$BACKUP_ROOT"
 printf 'Restart OMP so updated extensions, agents, and skills are discovered.\n'
