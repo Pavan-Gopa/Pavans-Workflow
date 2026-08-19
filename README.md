@@ -1,39 +1,38 @@
 # Pavan's Workflow
 
 A reusable **multi-model, multi-agent development workflow** for
-[Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with
-[Graphify](https://github.com/Graphify-Labs/graphify) for scoped code
-intelligence and a project-local adaptation of
-[Ponytail](https://github.com/DietrichGebert/ponytail) for minimal compliant
-implementation.
+[Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with scoped
+[Graphify](https://github.com/Graphify-Labs/graphify) navigation, Coder-only
+[Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
+Human-requested Product Designer path.
 
-> ⚡ **Workflow v3.0.0 is live.** Update an installed project from its root:
+> **Workflow v3.1.0 is live.** Update an installed project from its root:
 >
 > ```bash
 > ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 > ```
 >
-> Inside OMP, use `/work-update` or `/workflow-update`. Restart OMP after the
-> update so the new extensions, agents, and skills are discovered.
+> Inside OMP, run `/work-update` or `/workflow-update`, then restart OMP.
 
-## v3 highlights
+## v3.1 highlights
 
-- **Ponytail for Coder only:** primary and backup Coder agents automatically
-  apply a pinned, workflow-safe minimal implementation policy. Other roles keep
-  independent correctness, QA, architecture, and security contracts.
-- **Smarter Graphify:** Graphify is used for non-trivial discovery and blast
-  radius, while an exact known local symbol can use focused LSP/grep/read.
-  Real-source verification is always mandatory.
-- **Graphify profiles:** `fast`, `deep`, `semantic`, and `force`, with JSON
-  validation and last-good recovery. Normal work uses local AST code-only mode.
-- **Manual OMP Stats:** no startup server, no persistent widget, no startup
-  warning, and no automatic lifecycle sync. Alt+W always shows the copyable URL;
-  `o` or `/workflow-stats` starts it explicitly.
-- **Reproducible dependencies:** tested Ponytail and Graphify versions are
-  recorded under `AI_Workflow_Kit/vendor/`.
-- **All v2 foundations remain:** progressive onboarding, stable checklist IDs,
-  dual Todo views, passive workflow metrics, live dashboard, fresh workers, and
-  Human-authorized model failover.
+- **Live plan cursor restored:** Alt+W follows actual current work even when
+  canonical `current_step` is temporarily stale. Arrow navigation pauses follow;
+  `c` returns to the live step.
+- **Separate selected and live states:** `*` marks what the Human is inspecting;
+  `>` marks what the workflow is actually executing.
+- **Optional Design Advisor:** lower-cost read-only UI/UX brief for ordinary Coder.
+- **Optional Designer:** a strong visual model such as Kimi may directly redesign
+  one bounded presentation-layer surface.
+- **Visual safety:** Designer preserves behavior, APIs, data flow, localization,
+  accessibility, security, and unrelated scope; direct edits still pass Main,
+  Reviewer, Tester, and final Human acceptance.
+- **Safe project updates:** missing design aliases are added without overwriting
+  existing model selections or live project memory.
+- **Non-blocking updates:** existing Graphify output is preserved and refresh is
+  deferred by default; an explicit refresh is bounded by a portable timeout.
+- **v3 foundations remain:** Coder-only Ponytail, conditional Graphify, manual OMP
+  Stats, stable IDs, dual Todo, passive metrics, fresh workers, and manual failover.
 
 ## Architecture
 
@@ -46,34 +45,34 @@ flowchart LR
     R --> O
     O --> T[Fresh Tester]
     T --> O
-    O -. when needed .-> A[Fresh Architect + Grilling]
+    O -. system uncertainty .-> A[Architect + Grilling]
     A --> O
-    O -. optional near release .-> S[Fresh Security Reviewer]
+    O -. visual advice .-> DA[Design Advisor]
+    DA --> O
+    O -. visual implementation .-> D[Designer + UI skill]
+    D --> O
+    O -. optional pre-release .-> S[Security]
     S --> O
 ```
 
 All routing goes through Main. Workers never route, invoke another worker,
 commit, push, or write canonical workflow state.
 
-Default step loop:
+The default loop is unchanged:
 
 ```text
-Main -> Coder -> Main source/diff/gate verification
+Main -> Coder -> Main verification
      -> Reviewer -> Main verification
      -> Tester -> Main verification
      -> next step
 ```
 
-A failed gate produces compact verified retry memory: approach, observed
-result, evidence, and rejection reason. Every retry is a new worker. Three
-materially identical no-progress failures stop automatic retries; a new
-approach, new evidence, or different failure is progress.
+Designer is not automatic. It is used only after explicit Human feedback or a
+direct request.
 
-## Core properties
+## Multi-model role pairs
 
-### Multi-model role pairs
-
-Every role resolves through `.omp/config.yml`:
+Configure through **Alt+M → Roles**:
 
 | Role | Primary | Human-authorized backup |
 |---|---|---|
@@ -83,44 +82,61 @@ Every role resolves through `.omp/config.yml`:
 | Tester | `@workflow_tester` | `@workflow_tester_backup` |
 | Architect | `@workflow_architect` | `@workflow_architect_backup` |
 | Security | `@workflow_security` | `@workflow_security_backup` |
+| Design Advisor | `@workflow_design_advisor` | `@workflow_design_advisor_backup` |
+| Designer | `@workflow_designer` | `@workflow_designer_backup` |
 
-Persistent model/provider failure pauses the workflow. Main never switches to a
-backup automatically. The Human must explicitly authorize the recorded role;
-the backup still passes the normal repository and gate verification.
+The two design roles are optional. By default they alias existing Reviewer and
+Architect models so upgrades remain immediately valid. Assign Kimi or another
+strong visual model to `workflow_designer` when desired. Missing design roles do
+not block ordinary development.
 
-### Fresh context and file-backed memory
+Persistent model/provider failure pauses. Main never switches to a backup
+automatically; the Human must explicitly authorize the recorded role.
 
-Each worker receives only its role contract, current assignment, stable IDs,
-target files, gates, source-of-truth paths, and compact verified retry facts.
-Worker transcripts and Main conversation history are not handoff memory.
+## Optional Designer path
 
-Durable state lives in:
+### Lower-cost advice
 
-- `AI_Workflow_Kit/docs/AI/STATE.yaml`;
-- `AI_Workflow_Kit/docs/STEPS.md`;
-- `AI_Workflow_Kit/docs/DECISIONS.md`;
-- feedback and gate reports;
-- actual repository, diff, and test evidence.
+```text
+/workflow designer advise settings panel
+```
 
-Main alone checks or reopens stable checklist IDs (`<step>.D<n>`, `.O<n>`,
-`.J<n>`) after verification. OMP's native Todo is a separate runtime list.
+or:
 
-### Ponytail without role leakage
+```text
+Consult the designer, but let ordinary Coder implement the result.
+```
 
-The project-local `ponytail/SKILL.md` is autoloaded only by Coder and backup
-Coder. Its precedence is deliberately strict:
+`workflow-design-advisor` returns a concrete brief: problems tied to evidence,
+precise changes by file/component, responsive/accessibility requirements,
+non-goals, implementation order, and observable visual acceptance.
 
-1. role/output contract;
-2. confirmed requirement, target files, stable IDs, and gates;
-3. security, validation, accessibility, compatibility, and data integrity;
-4. real source evidence;
-5. minimal implementation policy.
+### Direct redesign
 
-Main assigns `ponytail_mode: off|lite|full`; default is `full`, and it does not
-persist across fresh workers. Reviewer performs correctness first, then a bounded
-material-complexity check. Tester and Security never reduce gates for brevity.
+```text
+/workflow designer redesign settings panel
+```
 
-Manual one-shot skills are available:
+or:
+
+```text
+The feature works, but the UI looks bad. Let Designer rewrite this component.
+```
+
+Main confirms target files and preserved behavior, then dispatches
+`workflow-designer`. The role may edit assigned components, styles, approved
+assets, and UI tests only. It must render/capture/inspect when project tooling
+supports it. The result goes through normal engineering review and QA, then the
+Human makes final visual acceptance.
+
+## Ponytail without role leakage
+
+Only primary and backup Coder autoload `ponytail`. Confirmed scope, target files,
+stable IDs, gates, validation, security, accessibility, compatibility, and data
+integrity outrank simplification. Designer and Advisor load `ui-designer`, not
+Ponytail.
+
+Manual one-shot skills remain available:
 
 ```text
 /skill:ponytail-review
@@ -128,69 +144,69 @@ Manual one-shot skills are available:
 /skill:ponytail-debt
 ```
 
-### Conditional Graphify navigation
-
-Use Graphify when discovery is genuinely non-trivial: unknown entry points,
-cross-file behavior, callers/callees, dependency paths, public contracts,
-schemas, trust boundaries, and blast radius. When Main already names an exact
-local file and symbol, focused source tools may be smaller.
-
-In both paths:
+## Conditional Graphify
 
 ```text
-LOCATE -> READ REAL SOURCE -> VERIFY -> EDIT OR CONCLUDE
+non-trivial discovery -> Graphify -> focused real source -> verify
+known exact local symbol -> focused LSP/grep/read -> verify
 ```
 
-Graph profiles:
+Profiles:
 
 ```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast      # normal, local, incremental
-bash AI_Workflow_Kit/script/graphify_rebuild.sh deep      # clustered code map
-bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic  # explicit docs/media pass
-bash AI_Workflow_Kit/script/graphify_rebuild.sh force     # full local recovery
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+bash AI_Workflow_Kit/script/graphify_rebuild.sh deep
+bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic
+bash AI_Workflow_Kit/script/graphify_rebuild.sh force
 ```
 
-Graphify is advisory. A stale or unavailable graph never replaces source and
-never blocks a source-based workflow by itself.
+Graphify is advisory. Workflow updates preserve the existing graph and defer
+refresh by default, so updating cannot appear frozen on a large repository.
+Refresh afterward:
 
-### Alt+W live dashboard
+```bash
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+```
 
-Press **Alt+W** or run `/workflow-dashboard` to see:
+Or request a bounded refresh as part of the update:
 
-- plan order and completed/remaining steps;
-- Main-verified `STEP CHECKLIST` and native `RUN TODO` linkage;
-- current role, model, activity, stable work item, gates, and blockers;
-- passive per-step/team metrics;
-- current-session model token consumption;
-- the copyable OMP Stats URL.
+```bash
+bash AI_Workflow_Kit/script/workflow_update.sh apply --refresh-graphify
+```
 
-Useful keys: `Up`/`Down`, `c` current step, `t` Todo view, `PgUp`/`PgDn`, `r`
-refresh, `?` help, and `Alt+W`/`Esc`/`q` close.
+## Alt+W live dashboard
 
-### OMP Stats is manual
+Alt+W shows plan, selected/current step, Main-verified `STEP CHECKLIST`, native
+`RUN TODO`, active worker/model/tool, gates, blockers, passive metrics, session
+tokens, and the copyable Stats URL.
 
-The footer always shows:
+Markers:
+
+```text
+* = selected for inspection
+> = live workflow step
+✓ = completed
+● = current/running
+○ = planned
+```
+
+When the Human has not navigated away, the plan automatically follows `>`.
+Up/Down switches to manual inspection; `c` resumes live follow.
+
+If runtime evidence proves a different live step than `STATE.yaml`, the dashboard
+uses the runtime step for display and shows a drift warning. It never writes
+state itself.
+
+## OMP Stats is manual
+
+The footer always exposes:
 
 ```text
 OMP Stats · manual · http://127.0.0.1:3847
 ```
 
-Nothing is launched or probed when OMP starts, and no widget is placed below the
-editor. Press `o` in Alt+W or run `/workflow-stats` to explicitly start, sync,
-and open the local dashboard. Stats failures never affect workflow execution.
-
-Passive workflow metrics (`/workflow metrics`) are separate and remain stored
-inside Git's private common directory, outside commits.
-
-## Requirements
-
-- OMP;
-- Git;
-- Python 3.10+;
-- Graphify CLI (`graphifyy`, tested with `0.9.46`);
-- model provider credentials selected by the user.
-
-No API key is hard-coded.
+Nothing starts at OMP launch, and there is no persistent widget. Press `o` in
+Alt+W or run `/workflow-stats` to explicitly start, sync, and open it.
 
 ## Install
 
@@ -202,7 +218,7 @@ cd my-project
 bash install.sh .
 ```
 
-### Existing repository
+### Existing repository without the workflow
 
 ```bash
 tmp_dir="$(mktemp -d)"
@@ -211,10 +227,8 @@ bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
 rm -rf "$tmp_dir"
 ```
 
-The installer refuses to overwrite existing workflow paths. Use the updater for
-an existing installation.
-
-Full installation notes: [INSTALL.md](INSTALL.md).
+Use the updater—not the installer—for projects already running v2 or v3.
+Full notes: [INSTALL.md](INSTALL.md).
 
 ## Start
 
@@ -222,11 +236,30 @@ Full installation notes: [INSTALL.md](INSTALL.md).
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-The launcher pins OMP to the exact project root, which is required for project
-roles, extensions, and skills. Configure role models through **Alt+M -> Roles**.
-Use `/workflow onboard`, `/workflow setup`, or `/workflow status` as needed.
+## Update an existing workflow project
 
-Useful controls:
+Close that project's OMP process first, then run from the project root:
+
+```bash
+( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
+```
+
+To refresh Graphify during the same update, append `--refresh-graphify`; the
+refresh is terminated after the configured timeout and cannot block the updater
+indefinitely.
+
+The updater preserves:
+
+- `.omp/config.yml` selections, adding only missing optional design aliases;
+- `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, decisions, feedback, and reports;
+- product code and tests;
+- custom `.graphifyignore` rules, while appending the new control-plane exclusion.
+
+It backs up replaced framework paths under Git's private common directory, runs
+migration and doctor, preserves the existing Graphify index by default, and
+tells you to restart OMP.
+
+## Useful controls
 
 | Action | Control |
 |---|---|
@@ -234,44 +267,24 @@ Useful controls:
 | Dry-run update | `/work-update check` |
 | Reconcile and continue | `/workflow status` |
 | Explain routing | `/workflow why` |
-| Live workflow dashboard | `Alt+W` |
+| Designer advice | `/workflow designer advise <surface>` |
+| Designer edits | `/workflow designer redesign <surface>` |
+| Live dashboard | `Alt+W` |
 | Agent Hub | `Alt+A` |
-| Model role selector | `Alt+M` |
+| Model roles | `Alt+M` |
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
-| Passive workflow report | `/workflow metrics` |
-| Human rating | `/workflow metrics rate good|overkill|underchecked` |
-| Authorize recorded backup | `continue <role> with backup` |
-| Schema migration | `bash AI_Workflow_Kit/script/workflow_migrate.sh apply` |
-| Installation diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |
-
-## Update from a terminal
-
-Run from the root of any installed workflow project:
-
-```bash
-( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
-```
-
-Preview without changing files:
-
-```bash
-bash AI_Workflow_Kit/script/workflow_update.sh check
-```
-
-The updater preserves `.omp/config.yml` and live state, plans, decisions,
-feedback, and reports. It stores a framework backup under Git's private common
-directory, applies migration, refreshes Graphify in fast mode, and runs the
-workflow doctor. Restart OMP afterward.
+| Diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |
 
 ## Repository map
 
 ```text
-.omp/                         agents, commands, extensions, shared contract
-ponytail*/                    project-local implementation/review/audit skills
+.omp/                         agents, commands, extensions, shared runtime
+ui-designer/                  progressive UI/UX skill for optional design roles
+ponytail*/                    Coder simplification and one-shot audit skills
 grilling/                     architecture discovery skill
 AI_Workflow_Kit/docs/         durable workflow state and role contracts
 AI_Workflow_Kit/script/       launcher, update, doctor, metrics, Graphify
-AI_Workflow_Kit/vendor/       tested dependency lock and third-party license
+AI_Workflow_Kit/vendor/       dependency/version metadata
 VERSION                       current workflow version
 CHANGELOG.md                  release notes
 ```

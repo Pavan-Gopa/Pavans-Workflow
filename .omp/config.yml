@@ -7,12 +7,18 @@ modelRoles:
   workflow_tester: openai-codex/gpt-5.6-terra:max
   workflow_architect: openai-codex/gpt-5.6-sol:xhigh
   workflow_security: nvidia/z-ai/glm-5.2:max
+  # Optional design escalation. Reassign Designer to Kimi or another strong
+  # visual model through Alt+M -> Roles without changing agent prompts.
+  workflow_design_advisor: @workflow_reviewer
+  workflow_designer: @workflow_architect
   workflow_orchestrator_backup: google-antigravity/gemini-3.6-flash:high
   workflow_coder_backup: google-antigravity/gemini-3.6-flash:high
   workflow_reviewer_backup: openai-codex/gpt-5.6-sol:high
   workflow_tester_backup: google-antigravity/gemini-3.6-flash:high
   workflow_architect_backup: google-antigravity/gemini-3.6-flash:high
   workflow_security_backup: openai-codex/gpt-5.6-sol:max
+  workflow_design_advisor_backup: @workflow_reviewer_backup
+  workflow_designer_backup: @workflow_architect_backup
 
 retry:
   enabled: true

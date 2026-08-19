@@ -1,4 +1,4 @@
-# Pavan's Workflow v3 — OMP Contract
+# Pavan's Workflow v3.1 — OMP Contract
 
 This project runs one file-backed, Human-supervised multi-agent workflow inside
 an OMP Main session.
@@ -44,7 +44,7 @@ prove success.
 6. Stop after three materially identical failures of the same approach. New
    evidence, a new approach, or a different failure is progress.
 
-Default flow:
+Default flow remains unchanged:
 
 ```text
 Coder -> Main verification -> Reviewer -> Main verification
@@ -53,7 +53,33 @@ Coder -> Main verification -> Reviewer -> Main verification
 
 Reviewer is enabled unless explicitly skipped. Tester is recommended unless the
 Human opts out. Security is offered once near release. Architect is used for
-material design uncertainty, plan/code conflict, deep Grilling, or thrash.
+material system-design uncertainty, plan/code conflict, deep Grilling, or
+implementation thrash.
+
+## Optional Designer escalation
+
+Designer is never inserted automatically into the default flow. Main uses it
+only after explicit Human visual feedback or a direct request.
+
+Two paths are available:
+
+- `workflow-design-advisor`: read-only, lower-cost, implementation-ready brief;
+  ordinary Coder may implement it afterward.
+- `workflow-designer`: edit-capable, bounded presentation-layer redesign.
+
+Main asks one concise clarification when advisory versus direct implementation
+is ambiguous. Every design assignment carries the Human's exact feedback,
+target surface, preserve-list, explicit files, visual acceptance criteria, and
+available screenshot/capture or reproduction evidence.
+
+Designer never changes backend behavior, API/schema, persistence, security,
+business logic, routing, localization meaning, or unrelated screens. Direct
+Designer output passes Main verification, Reviewer, enabled Tester, and final
+Human visual acceptance. Reviewer/Tester green alone does not prove the Human
+likes the result.
+
+Neither design role autoloads Ponytail. Both autoload `ui-designer` and reuse
+existing components/tokens before adding primitives or dependencies.
 
 ## Stable checklist and runtime Todo
 
@@ -65,44 +91,47 @@ OMP's native Todo is a separate runtime subtask list. Prefix runtime tasks with
 the parent work item (`[S3.D2] ...`). Completing a runtime Todo never checks a
 `STEPS.md` item automatically.
 
+## Live dashboard cursor
+
+Alt+W distinguishes the selected step (`*`) from the live workflow step (`>`).
+When the Human has not navigated away, the plan follows the live step
+automatically. Arrow navigation pauses follow mode; `c` returns to live follow.
+
+The read-only dashboard resolves stale display state from, in order:
+
+1. `current_work_item_id`;
+2. active/in-progress OMP Todo;
+3. active worker assignment;
+4. canonical `STATE.yaml.current_step`;
+5. a unique pending Todo fallback.
+
+A runtime-derived live step produces a visible state-drift warning. Dashboard
+recovery never writes canonical state; Main must reconcile it.
+
 ## Ponytail
 
 Ponytail is a project-local implementation policy, not a global Pi/OMP plugin.
-
-- Only `workflow-coder` and `workflow-coder-backup` autoload `ponytail`.
-- The accepted requirement, `target_files`, stable IDs, assigned gates,
-  validation, security, accessibility, compatibility, data integrity, and the
-  role's structured output always outrank simplification.
-- `ponytail_mode` is assignment-local and does not persist between workers.
-  `full` is default; `ultra` is never selected automatically.
-- Reviewer remains correctness-first. It may block material avoidable
-  complexity only when it names a concrete behavior-preserving replacement.
-  Stylistic line-count preferences are not blocking findings.
-- Architect prefers the smallest reversible design satisfying confirmed
-  constraints but does not load Ponytail over Grilling.
-- Tester and Security never reduce their gates for brevity.
-- `ponytail-review`, `ponytail-audit`, and `ponytail-debt` are explicit one-shot
-  tools, not automatic pipeline stages or canonical workflow memory.
+Only primary and backup Coder autoload it. Confirmed requirements, target files,
+stable IDs, gates, validation, security, accessibility, compatibility, data
+integrity, and structured output outrank simplification. Reviewer remains
+correctness-first. Tester, Security, Architect, Advisor, and Designer never
+reduce their contracts for brevity.
 
 ## Graphify
 
-Graphify is navigation evidence, never source of truth.
+Graphify is navigation evidence, never source of truth. Use it for non-trivial
+discovery, cross-file behavior, callers/callees, dependency paths, blast radius,
+public APIs, schemas, trust boundaries, Architect work, and Security work. A
+known exact local symbol may use focused LSP/grep/read. Real-source verification
+is mandatory in both paths.
 
-Use Graphify first for non-trivial discovery: unknown entry points, cross-file
-behavior, callers/callees, dependency paths, blast radius, public APIs, schemas,
-trust boundaries, Architect analysis, and Security analysis.
-
-When Main already supplies an exact file and symbol and impact is demonstrably
-local, focused LSP/grep/read may be smaller than a ritual graph query. In every
-case, read the smallest relevant real source slice before editing or concluding.
-
-Freshness is Main-owned:
+Main owns freshness:
 
 ```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast      # normal local loop
-bash AI_Workflow_Kit/script/graphify_rebuild.sh deep      # clustered code map
-bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic  # explicit docs/media pass
-bash AI_Workflow_Kit/script/graphify_rebuild.sh force     # full local recovery
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+bash AI_Workflow_Kit/script/graphify_rebuild.sh deep
+bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic
+bash AI_Workflow_Kit/script/graphify_rebuild.sh force
 ```
 
 Workers report staleness instead of rebuilding. Graphify failure never blocks
@@ -110,27 +139,18 @@ source-based work by itself.
 
 ## OMP Stats
 
-OMP Stats is manual in v3.
-
-- Nothing probes, starts, syncs, or displays a widget at session startup.
-- There is no persistent Stats notice below the editor.
-- Alt+W always shows the copyable local URL `http://127.0.0.1:3847` with status
-  `manual` while idle.
-- Press `o` in Alt+W or run `/workflow-stats` to explicitly start, sync, and open
-  Stats. Only a server started by this OMP process is stopped at shutdown.
-- Stats failure never affects routing, gates, or workflow metrics.
-
-Passive workflow metrics under Git's private common directory remain separate
-from OMP Stats and never control execution.
+OMP Stats remains manual. Nothing probes, starts, syncs, or displays a widget at
+startup. Alt+W always shows `http://127.0.0.1:3847`. Press `o` or run
+`/workflow-stats` to start/sync/open it explicitly. Stats never controls gates.
 
 ## Model failover
 
 Automatic cross-model fallback is disabled. Persistent provider/model failure
 is recorded and pauses routing without incrementing product attempts. Main may
-start `workflow-<role>-backup` only after the Human explicitly authorizes that
-recorded role and the fresh assignment carries
-`human_backup_authorization: true` plus the exact instruction. Backup output
-still requires ordinary repository and gate verification.
+start a matching backup only after the Human explicitly authorizes that role and
+the assignment carries `human_backup_authorization: true` plus the exact
+instruction. This applies to Coder, Reviewer, Tester, Architect, Security,
+Design Advisor, and Designer.
 
 ## Human control
 

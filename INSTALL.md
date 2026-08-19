@@ -1,28 +1,31 @@
-# Install Pavan's Workflow v3
+# Install Pavan's Workflow v3.1
 
-Pavan's Workflow is a project template for
-[Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi). Version 3 adds a
-project-local Ponytail policy, conditional Graphify navigation, dependency
-locking, and manual OMP Stats.
+Version 3.1 restores the Alt+W live cursor and adds optional Design Advisor and
+Designer roles without changing the default Coder → Reviewer → Tester flow.
 
-## Update an existing workflow
+## Update an existing v2/v3 project
 
-From the installed project's root:
+First close OMP for that project. From its root:
 
 ```bash
-tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rm -rf "$tmp_dir"
+( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 ```
 
-Or inside OMP:
+Workflow updates preserve the existing Graphify index and do not rebuild it by
+default. To request a bounded refresh during the same update, append
+`--refresh-graphify`.
+
+The updater preserves `.omp/config.yml`, live state, steps, project context,
+decisions, feedback, reports, product code, and tests. It adds only missing
+optional design aliases to the existing model map and creates a backup under:
 
 ```text
-/work-update
+<git-common-dir>/pavans-workflow/update-backups/<timestamp>/
 ```
 
-After updating, close and relaunch OMP so project extensions, agents, and skills
-are reloaded.
+Restart OMP after a successful update.
 
-## 1. Install OMP
+## Install OMP
 
 macOS/Linux:
 
@@ -43,15 +46,7 @@ Windows PowerShell:
 irm https://omp.sh/install.ps1 | iex
 ```
 
-Verify:
-
-```bash
-omp --version
-```
-
-Start OMP once and authenticate the model providers you intend to use.
-
-## 2A. New project from the template
+## New project from template
 
 ```bash
 git clone https://github.com/Pavan-Gopa/Pavans-Workflow.git my-project
@@ -59,10 +54,7 @@ cd my-project
 bash install.sh .
 ```
 
-Replace the template project context and step cards with your product details.
-Keep `.omp/`, `AI_Workflow_Kit/`, `grilling/`, and the `ponytail*` directories.
-
-## 2B. Install into an existing repository
+## Install into an existing repository without the workflow
 
 ```bash
 tmp_dir="$(mktemp -d)"
@@ -71,154 +63,87 @@ bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
 rm -rf "$tmp_dir"
 ```
 
-The installer refuses to overwrite existing workflow paths. For an existing
-installation, use the updater at the top of this document.
+The installer refuses to overwrite an existing workflow; use the updater for
+existing installations.
 
-## 3. Graphify
+## Graphify
 
-The installer uses the official PyPI package `graphifyy` and installs the tested
-version when Graphify is absent:
+Tested version:
 
 ```bash
 uv tool install "graphifyy==0.9.46"
 ```
 
-Alternatives:
+A new installation attempts a local AST code-only graph with a 120-second
+portable timeout. Skip that initial build with:
 
 ```bash
-pipx install "graphifyy==0.9.46"
-python3 -m pip install --user "graphifyy==0.9.46"
+WF_INSTALL_SKIP_GRAPHIFY=1 bash install.sh .
 ```
 
-Check:
-
-```bash
-graphify --version
-```
-
-A different installed version is not silently downgraded; the doctor reports a
-warning because a global Graphify tool may be shared with other projects.
-
-The default graph refresh is local AST code-only and incremental:
+Workflow updates preserve the current graph by default. Rebuild later:
 
 ```bash
 bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
 ```
 
-Use `semantic` only when you deliberately want docs/media extraction through a
-configured backend. `.graphifyignore` keeps workflow control-plane files out of
-normal product graphs; customize it for your repository if needed.
-
-## 4. First launch and model roles
+## Launch and model roles
 
 ```bash
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-The explicit `bash` form works even when copied files lost executable bits. The
-launcher sets the active working directory to the project root; OMP does not
-search parent directories for project `.omp/` configuration.
-
-Use **Alt+M -> Roles** to configure:
+Use **Alt+M → Roles** for the six core role pairs. Version 3.1 also adds:
 
 ```text
-workflow_orchestrator
-workflow_coder
-workflow_reviewer
-workflow_tester
-workflow_architect
-workflow_security
+workflow_design_advisor
+workflow_design_advisor_backup
+workflow_designer
+workflow_designer_backup
 ```
 
-Each also has a `_backup` role. Backups are optional until needed, but they are
-never invoked automatically. Persistent model failure pauses and requires an
-explicit instruction such as `continue Tester with backup`.
+They are optional. Existing upgrades receive aliases to Reviewer/Architect
+models so nothing breaks. Assign Kimi or another strong visual model to
+`workflow_designer` when you want direct redesign work.
 
-Progressive onboarding supports quick, guided, and advanced setup. Use:
+## Designer usage
+
+Read-only advice:
 
 ```text
-/workflow onboard
-/workflow setup
-/workflow status
+/workflow designer advise <surface>
 ```
 
-## 5. Ponytail behavior
-
-The installer adds four project skills:
-
-- `ponytail` — automatically loaded only by Coder and backup Coder;
-- `ponytail-review` — explicit one-shot complexity review;
-- `ponytail-audit` — explicit repository-wide simplification audit;
-- `ponytail-debt` — explicit ledger of `ponytail:` markers.
-
-Ponytail never overrides target files, confirmed scope, stable IDs, gates,
-validation, security, accessibility, compatibility, data integrity, or the
-worker's structured handoff.
-
-## 6. OMP Stats is manual
-
-Version 3 does **not** start OMP Stats at session startup and does not install a
-persistent below-editor widget or warning.
-
-Open Alt+W to see the copyable URL:
+Direct scoped implementation:
 
 ```text
-http://127.0.0.1:3847
+/workflow designer redesign <surface>
 ```
 
-Press `o` in Alt+W or run:
+Main passes exact Human feedback, target files, preserve-list, visual evidence,
+and acceptance gates. Direct Designer edits still pass Reviewer, Tester, and
+final Human visual acceptance.
 
-```text
-/workflow-stats
-```
+## Alt+W behavior
 
-That explicit action starts, syncs, and opens Stats. Ordinary workflow turns and
-worker completions do not auto-sync it. Passive `/workflow metrics` remain
-available independently.
+The plan uses separate selected and live markers. It auto-follows live work until
+you navigate with Up/Down. Press `c` to return to the live step. Runtime evidence
+can recover display from stale state, but the dashboard never writes state.
 
-## 7. Verify installation
+## OMP Stats
+
+Still manual. Alt+W shows `http://127.0.0.1:3847`; press `o` or run
+`/workflow-stats`. No startup server or persistent widget is installed.
+
+## Verify
 
 ```bash
+cat VERSION
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 ```
 
-The doctor checks:
-
-- version and required paths;
-- shell syntax and deterministic selftests;
-- Ponytail discovery and Coder-only autoload scoping;
-- absence of Stats startup/widget/lifecycle hooks;
-- Graphify version, graph JSON, and a bounded smoke query when a graph exists;
-- model aliases, migration, and passive metrics runtime.
-
-## 8. Useful controls
-
-- `Alt+W` — live workflow dashboard and manual Stats URL.
-- `Alt+A` — Agent Hub.
-- `Alt+M` — model roles.
-- `/workflow status` — reconcile runtime and continue.
-- `/workflow why` — explain routing.
-- `/work-update` — apply upstream framework update.
-- `/work-update check` — dry-run update.
-- `/workflow metrics` — passive local report.
-- `/workflow-stats` — explicit Stats start/open.
-
-## Update guarantees
-
-`workflow_update.sh` preserves:
-
-- `.omp/config.yml`;
-- `STATE.yaml`;
-- `STEPS.md`;
-- `PROJECT_CONTEXT.md`;
-- `DECISIONS.md`;
-- feedback, QA, bug, security, and coverage reports.
-
-Before replacing framework files it stores a backup under:
+Expected version:
 
 ```text
-<git-common-dir>/pavans-workflow/update-backups/<timestamp>/
+3.1.0
 ```
-
-The project `.graphifyignore` is installed only when absent and is not overwritten
-on later updates.

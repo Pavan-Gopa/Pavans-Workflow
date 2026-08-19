@@ -2,18 +2,21 @@
 # Safe explicit update of Pavan's Workflow framework.
 #
 # Usage:
-#   workflow_update.sh check
-#   workflow_update.sh apply   # default
+#   workflow_update.sh check [project]
+#   workflow_update.sh apply [project] [--refresh-graphify]
 #
-# Preserved: .omp/config.yml and all live project state/plan/report files.
+# Preserved: live project state/plan/report files and existing model selections.
 
 set -euo pipefail
 
 ACTION="apply"
 TARGET_DIR="$PWD"
+REFRESH_GRAPHIFY="${WF_UPDATE_REFRESH_GRAPHIFY:-0}"
 for arg in "$@"; do
   case "$arg" in
     check|apply) ACTION="$arg" ;;
+    --refresh-graphify) REFRESH_GRAPHIFY=1 ;;
+    --skip-graphify) REFRESH_GRAPHIFY=0 ;;
     *) [[ -d "$arg" ]] && TARGET_DIR="$(cd "$arg" && pwd)" ;;
   esac
 done
@@ -21,6 +24,7 @@ done
 PROJECT_ROOT="$TARGET_DIR"
 UPSTREAM_URL="${WF_UPSTREAM_URL:-https://github.com/Pavan-Gopa/Pavans-Workflow.git}"
 UPSTREAM_BRANCH="${WF_UPSTREAM_BRANCH:-main}"
+GRAPHIFY_TIMEOUT="${WF_GRAPHIFY_UPDATE_TIMEOUT:-120}"
 TEMP_CLONE="$(mktemp -d -t pavans-workflow-update.XXXXXX)"
 trap 'rm -rf "$TEMP_CLONE"' EXIT
 
@@ -28,6 +32,29 @@ command -v git >/dev/null 2>&1 || { echo "ERROR: git is required." >&2; exit 1; 
 git clone --depth 1 --branch "$UPSTREAM_BRANCH" --quiet "$UPSTREAM_URL" "$TEMP_CLONE"
 UPSTREAM_COMMIT="$(git -C "$TEMP_CLONE" rev-parse --short HEAD)"
 UPSTREAM_VERSION="$(tr -d '[:space:]' < "$TEMP_CLONE/VERSION" 2>/dev/null || echo unknown)"
+LOCAL_VERSION="$(tr -d '[:space:]' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.0.0)"
+
+version_relation="$(python3 - "$LOCAL_VERSION" "$UPSTREAM_VERSION" <<'PYVERSION'
+import re
+import sys
+
+def version(value: str) -> tuple[int, ...]:
+    parts = []
+    for token in value.strip().lstrip("vV").split("."):
+        match = re.match(r"(\d+)", token)
+        parts.append(int(match.group(1)) if match else 0)
+    return tuple((parts + [0, 0, 0])[:3])
+
+local = version(sys.argv[1])
+upstream = version(sys.argv[2])
+print("older" if upstream < local else "newer" if upstream > local else "same")
+PYVERSION
+)"
+if [[ "$ACTION" == "apply" && "$version_relation" == "older" && "${WF_ALLOW_WORKFLOW_DOWNGRADE:-0}" != "1" ]]; then
+  echo "ERROR: refusing workflow downgrade from v$LOCAL_VERSION to upstream v$UPSTREAM_VERSION." >&2
+  echo "Use a newer upstream release, or set WF_ALLOW_WORKFLOW_DOWNGRADE=1 only for an intentional rollback." >&2
+  exit 1
+fi
 
 FRAMEWORK_PATHS=(
   ".omp/AGENTS.md"
@@ -41,14 +68,18 @@ FRAMEWORK_PATHS=(
   "ponytail-review"
   "ponytail-audit"
   "ponytail-debt"
+  "ui-designer"
   "AI_Workflow_Kit/script"
   "AI_Workflow_Kit/vendor"
   "AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md"
   "AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md"
+  "AI_Workflow_Kit/docs/AI/MODELS.md"
   "AI_Workflow_Kit/docs/AI/METRICS.md"
   "AI_Workflow_Kit/docs/AI/ARCHITECT.md"
   "AI_Workflow_Kit/docs/AI/KICK_CODER.md"
   "AI_Workflow_Kit/docs/AI/KICK_REVIEWER.md"
+  "AI_Workflow_Kit/docs/AI/DESIGNER.md"
+  "AI_Workflow_Kit/docs/AI/KICK_DESIGNER.md"
   "PIPELINE.md"
   "ORCHESTRATOR_FIRST_PROMPT.md"
   "INSTALL.md"
@@ -57,8 +88,25 @@ FRAMEWORK_PATHS=(
   "CHANGELOG.md"
 )
 
+MODEL_ALIAS_DEFAULTS=(
+  "workflow_design_advisor: @workflow_reviewer"
+  "workflow_designer: @workflow_architect"
+  "workflow_design_advisor_backup: @workflow_reviewer_backup"
+  "workflow_designer_backup: @workflow_architect_backup"
+)
+
 printf 'Upstream: %s · version %s · commit %s\n\n' "$UPSTREAM_BRANCH" "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
 cd "$PROJECT_ROOT"
+
+missing_model_aliases() {
+  local config="$PROJECT_ROOT/.omp/config.yml"
+  [[ -f "$config" ]] || return 0
+  local entry alias
+  for entry in "${MODEL_ALIAS_DEFAULTS[@]}"; do
+    alias="${entry%%:*}"
+    grep -q "^[[:space:]]*$alias:" "$config" || printf '%s\n' "$alias"
+  done
+}
 
 if [[ "$ACTION" == "check" ]]; then
   echo "=== Workflow Update Check (read-only) ==="
@@ -77,6 +125,14 @@ if [[ "$ACTION" == "check" ]]; then
     fi
   done
   [[ -e .graphifyignore ]] || { printf '[NEW]      .graphifyignore\n'; changed=1; }
+  while IFS= read -r alias; do
+    [[ -n "$alias" ]] || continue
+    printf '[ADD ALIAS] .omp/config.yml -> %s\n' "$alias"
+    changed=1
+  done < <(missing_model_aliases)
+  if [[ -f .graphifyignore ]] && ! grep -qxF '/ui-designer/' .graphifyignore; then
+    printf '[ADD]       .graphifyignore -> /ui-designer/\n'; changed=1
+  fi
   (( changed == 0 )) && echo "Already up to date."
   exit 0
 fi
@@ -119,14 +175,89 @@ copy_exact_dir() {
   printf 'OK   replaced managed %s/\n' "$path"
 }
 
+merge_model_aliases() {
+  local config="$PROJECT_ROOT/.omp/config.yml"
+  if [[ ! -f "$config" ]]; then
+    copy_file ".omp/config.yml"
+    return
+  fi
+  backup_path ".omp/config.yml"
+  python3 - "$config" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+defaults = [
+    ("workflow_design_advisor", "@workflow_reviewer"),
+    ("workflow_designer", "@workflow_architect"),
+    ("workflow_design_advisor_backup", "@workflow_reviewer_backup"),
+    ("workflow_designer_backup", "@workflow_architect_backup"),
+]
+missing = [(key, value) for key, value in defaults if not any(
+    line.lstrip().startswith(f"{key}:") for line in source.splitlines()
+)]
+if not missing:
+    print("KEEP existing .omp/config.yml model aliases")
+    raise SystemExit(0)
+lines = source.splitlines()
+try:
+    start = next(i for i, line in enumerate(lines) if line.strip() == "modelRoles:")
+except StopIteration:
+    block = ["modelRoles:", *[f"  {key}: {value}" for key, value in missing], ""]
+    lines = block + lines
+else:
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if line and not line.startswith((" ", "\t", "#")):
+            end = i
+            break
+    lines[end:end] = [f"  {key}: {value}" for key, value in missing]
+path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+print("OK   added optional Designer model aliases: " + ", ".join(key for key, _ in missing))
+PY
+}
+
+run_with_timeout() {
+  local seconds="$1"; shift
+  python3 - "$seconds" "$@" <<'PYTIMEOUT'
+import os
+import signal
+import subprocess
+import sys
+
+seconds = float(sys.argv[1])
+command = sys.argv[2:]
+process = subprocess.Popen(command, start_new_session=True)
+try:
+    raise SystemExit(process.wait(timeout=seconds))
+except subprocess.TimeoutExpired:
+    print(f"WARN: timed out after {seconds:g}s: {' '.join(command)}", file=sys.stderr)
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+    raise SystemExit(124)
+PYTIMEOUT
+}
+
+
 echo "=== Applying Workflow v$UPSTREAM_VERSION ==="
 for item in "${FRAMEWORK_PATHS[@]}"; do
   [[ -e "$TEMP_CLONE/$item" ]] || continue
   if [[ -d "$TEMP_CLONE/$item" ]]; then
     case "$item" in
-      ponytail|ponytail-review|ponytail-audit|ponytail-debt|AI_Workflow_Kit/vendor)
-        copy_exact_dir "$item"
-        ;;
+      ponytail|ponytail-review|ponytail-audit|ponytail-debt|ui-designer|AI_Workflow_Kit/vendor)
+        copy_exact_dir "$item" ;;
       *) copy_overlay_dir "$item" ;;
     esac
   else
@@ -134,9 +265,15 @@ for item in "${FRAMEWORK_PATHS[@]}"; do
   fi
 done
 
+merge_model_aliases
+
 if [[ ! -e "$PROJECT_ROOT/.graphifyignore" ]]; then
   cp "$TEMP_CLONE/.graphifyignore" "$PROJECT_ROOT/.graphifyignore"
   echo "OK   installed .graphifyignore"
+elif ! grep -qxF '/ui-designer/' "$PROJECT_ROOT/.graphifyignore"; then
+  backup_path ".graphifyignore"
+  printf '\n/ui-designer/\n' >> "$PROJECT_ROOT/.graphifyignore"
+  echo "OK   extended .graphifyignore for ui-designer/"
 else
   echo "KEEP existing .graphifyignore"
 fi
@@ -146,15 +283,23 @@ chmod +x "$PROJECT_ROOT"/AI_Workflow_Kit/script/*.sh 2>/dev/null || true
 printf '\n=== Migrating durable state ===\n'
 bash AI_Workflow_Kit/script/workflow_migrate.sh apply || true
 
-if command -v graphify >/dev/null 2>&1; then
-  printf '\n=== Refreshing Graphify (fast/local) ===\n'
-  bash AI_Workflow_Kit/script/graphify_rebuild.sh fast || true
+if [[ "$REFRESH_GRAPHIFY" != "1" ]]; then
+  printf '\n=== Graphify refresh deferred (default) ===\n'
+  printf 'The existing graph was preserved. Refresh later with:\n'
+  printf '  bash AI_Workflow_Kit/script/graphify_rebuild.sh fast\n'
+elif command -v graphify >/dev/null 2>&1; then
+  printf '\n=== Refreshing Graphify (fast/local, timeout %ss) ===\n' "$GRAPHIFY_TIMEOUT"
+  if ! run_with_timeout "$GRAPHIFY_TIMEOUT" bash AI_Workflow_Kit/script/graphify_rebuild.sh fast; then
+    echo "WARN: Graphify refresh did not finish successfully; update continues with the last valid graph/source tools." >&2
+  fi
+else
+  echo "WARN: Graphify refresh requested, but graphify is not on PATH; update continues." >&2
 fi
 
 printf '\n=== Running workflow doctor ===\n'
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 printf '\nWorkflow updated to v%s (%s).\n' "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
-printf 'Live state and .omp/config.yml were preserved.\n'
+printf 'Live state and existing model selections were preserved.\n'
 printf 'Framework backup: %s\n' "$BACKUP_ROOT"
 printf 'Restart OMP so updated extensions, agents, and skills are discovered.\n'

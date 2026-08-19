@@ -1,7 +1,8 @@
-# Pipeline — Pavan's Workflow v3
+# Pipeline — Pavan's Workflow v3.1
 
 A file-backed, multi-model OMP development loop with fresh specialized workers,
-Main-owned state, conditional Graphify navigation, and Coder-only Ponytail.
+Main-owned state, conditional Graphify, Coder-only Ponytail, a live plan cursor,
+and optional Human-requested design escalation.
 
 ## Start
 
@@ -9,10 +10,7 @@ Main-owned state, conditional Graphify navigation, and Coder-only Ponytail.
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Main completes progressive onboarding, validates the next required role model,
-and reconciles any interrupted runtime before dispatch.
-
-## Step loop
+## Default step loop — unchanged
 
 ```text
 Human <-> Main
@@ -20,26 +18,57 @@ Human <-> Main
   -> Main verifies source, diff, stable IDs, and Objective evidence
   -> fresh Reviewer checks Judgment Gates and material complexity
   -> Main verifies findings
-  -> fresh Tester runs runtime/QA Objective Gates and gap-hunts coverage
+  -> fresh Tester runs runtime/QA gates and gap-hunts coverage
   -> Main verifies tests/reports
   -> green: close step and continue
   -> red: persist compact verified retry memory and start a fresh Coder
 ```
 
-Workers never write workflow state, route, spawn another worker, commit, or
-push. Main never infers success from a worker exit.
+Designer is never inserted automatically.
+
+## Optional visual-quality loop
+
+### Advisory
+
+```text
+Human visual feedback
+  -> Main captures exact complaint and target surface
+  -> Design Advisor (read-only)
+  -> Main verifies the brief
+  -> ordinary Coder implements
+  -> Reviewer -> Tester -> Human visual acceptance when required
+```
+
+### Direct implementation
+
+```text
+Human explicitly authorizes Designer edits
+  -> Main confirms target files, preserve-list, visual evidence, gates
+  -> Designer edits only presentation/UI scope
+  -> Main verifies real diff and captures
+  -> Reviewer -> Tester -> Human visual acceptance
+```
+
+Designer may not silently change backend behavior, API/schema, persistence,
+security, business logic, routing, localization meaning, or unrelated screens.
+
+## Live plan cursor
+
+Alt+W distinguishes selected (`*`) and live (`>`) steps. Auto-follow uses strong
+runtime evidence when canonical state is stale:
+
+```text
+current_work_item_id -> active Todo -> active worker -> STATE current_step
+```
+
+Arrow navigation pauses follow. `c` resumes live follow. Runtime recovery is
+read-only and surfaces state drift for Main reconciliation.
 
 ## Ponytail
 
-Only Coder and backup Coder autoload `ponytail`. Main assigns
-`ponytail_mode: off|lite|full`, default `full`. The skill minimizes only among
-implementations that already satisfy confirmed scope, target files, gates,
-security, validation, accessibility, compatibility, data integrity, and the
-structured handoff.
-
-Reviewer remains correctness-first. Tester and Security do not load Ponytail.
-Architect uses the smallest reversible confirmed design while retaining the
-full Grilling contract.
+Only Coder and backup Coder autoload `ponytail`. Designer/Advisor autoload
+`ui-designer`; they preserve meaningful visual, responsive, interaction, and
+accessibility behavior rather than minimizing it away.
 
 ## Graphify
 
@@ -48,51 +77,37 @@ non-trivial discovery -> Graphify -> focused real source -> verify
 known exact local symbol -> focused source tools -> verify
 ```
 
-Main owns graph freshness. Default refresh:
-
-```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
-```
-
-`deep` adds clustering, `semantic` is an explicit docs/media pass, and `force`
-performs full local recovery. A graph failure is advisory, not a product gate.
+Main owns freshness. Graphify failure is advisory. Update/install bounds its
+refresh time when `--refresh-graphify` is explicitly requested.
 
 ## Gates
 
 - Objective Gates: deterministic commands/artifacts.
-- Judgment Gates: Reviewer-owned semantic engineering assessment.
-- Reviewer: on by default.
-- Tester: recommended unless explicitly skipped.
-- Security: offered once near release.
-
-Main alone checks/reopens stable IDs `<step>.D<n>`, `.O<n>`, and `.J<n>` after
-verification. OMP Todo is separate runtime memory.
+- Reviewer Judgment Gates: correctness, contracts, scope, architecture.
+- Human visual gate: final aesthetic acceptance after a direct redesign.
+- Reviewer is on by default; Tester is recommended; Security is optional near release.
 
 ## Failure and recovery
 
-A retry receives only verified approach, observed result, evidence, and rejection
-reason. Three materially identical no-progress failures stop. Runtime
-interruption and provider/model failure do not increment product attempts.
-Backups require explicit Human authorization.
+Three materially identical no-progress failures stop. Runtime interruption and
+provider/model failure do not count as product attempts. Every backup—including
+Advisor and Designer—requires explicit Human authorization.
 
 ## Dashboard and observability
 
-- `Alt+W`: plan, current step, dual Todo, gates, blockers, metrics, session tokens,
-  and the copyable Stats URL.
-- `Alt+A`: worker transcripts and intervention.
-- `Alt+M`: model roles.
-- `/workflow metrics`: passive local telemetry outside the worktree.
-- `/workflow-stats` or `o` in Alt+W: explicit OMP Stats start/sync/open.
-
-OMP Stats never starts automatically and never places a persistent widget below
-the editor.
+- `Alt+W`: plan, selected/live cursor, dual Todo, gates, workers, metrics, tokens,
+  and manual Stats URL.
+- `Alt+A`: transcripts and intervention.
+- `Alt+M`: core and optional design model roles.
+- `/workflow-stats`: explicit Stats start/sync/open only.
 
 ## Update
 
 ```bash
-tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rm -rf "$tmp_dir"
+( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 ```
 
-The updater preserves live project memory and model mappings, backs up framework
-files, migrates stable IDs, refreshes Graphify, and runs the doctor. Restart OMP
-afterward.
+Graphify refresh is deferred by default; use `--refresh-graphify` for an
+explicit bounded refresh. The updater preserves live project
+memory and model selections, adds only missing design aliases, stores a framework
+backup, runs migration/doctor, and requires an OMP restart.

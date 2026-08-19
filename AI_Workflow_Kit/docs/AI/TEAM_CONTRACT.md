@@ -1,4 +1,4 @@
-# AI Team Contract — Workflow v3
+# AI Team Contract — Workflow v3.1
 
 Human process control goes through Main. Workers return structured evidence only.
 
@@ -11,68 +11,75 @@ Human process control goes through Main. Workers return structured evidence only
 5. `PROJECT_CONTEXT.md`
 6. `PIPELINE.md`
 
-Higher wins. A material plan/code conflict routes to Architect before large
-implementation.
+Higher wins. A material system-design conflict routes to Architect before large
+implementation. A visual preference conflict routes to Human clarification or
+the optional design path, not silent Coder taste.
 
 ## Roles and write boundaries
 
 | Role | Product writes | Boundary |
 |---|---:|---|
 | Main | No | State, plans, reports, checkpoints, routing, passive metrics |
-| Coder | Yes | Assignment `target_files` only; Ponytail policy autoloaded |
-| Reviewer | No | Read-only correctness/Judgment verdict plus bounded complexity check |
+| Coder | Yes | Assignment target files only; Ponytail autoloaded |
+| Reviewer | No | Correctness/Judgment verdict and bounded complexity check |
 | Tester | Tests only | Approved test/QA paths and runtime evidence |
-| Architect | No | Advice, design, questions, Architecture Package |
+| Architect | No | System advice, design, Grilling, Architecture Package |
 | Security | No | Optional evidence-grounded vulnerability audit |
-| Human | — | Context, preferences, authorization, intervention |
+| Design Advisor | No | Concrete implementation-ready visual/UX brief |
+| Designer | UI scope only | Assigned presentation, style, asset, and UI-test files |
+| Human | — | Context, taste, authorization, intervention, final visual acceptance |
 
 Workers never commit, push, route, spawn another worker, or write canonical
 workflow memory.
 
+The v3.1 passive metrics event schema remains core-role-only. Optional design
+runs are recorded in normal feedback/state and current-session usage; Main does
+not emit unsupported Designer metrics events.
+
 ## Gate contract
 
-- **Objective Gates** are deterministic commands/artifacts. Coder runs assigned
-  implementation gates; Tester owns runtime/QA gates.
-- **Judgment Gates** cover semantics, accepted architecture, scope, contracts,
-  failure behavior, maintainability, and trust boundaries. Reviewer owns them.
+- Objective Gates are deterministic commands/artifacts.
+- Judgment Gates cover semantics, architecture, scope, contracts, failure
+  behavior, maintainability, trust boundaries, and assigned visual criteria.
+- Reviewer owns engineering Judgment Gates; Human owns final aesthetic
+  acceptance after a direct redesign.
 - `waiting_review` is not completion. Main closes a step only after verified
-  objective evidence, Reviewer judgment, and enabled QA.
-- Reviewer is on by default; Tester is recommended; Security is offered near
-  release. Every Human skip and reason is persisted.
+  objective evidence, Reviewer judgment, enabled QA, and any explicitly required
+  Human visual acceptance.
+- Designer is optional and never an automatic release gate.
+
+## Designer contract
+
+Main may dispatch design roles only after explicit Human feedback/request.
+
+- Advisory mode is read-only and lower-cost. It returns exact changes by
+  component/file plus measurable acceptance criteria for Coder.
+- Implementation mode may edit only explicit presentation/UI/test targets.
+- Both modes receive the Human's feedback verbatim, target surface, preserve
+  list, current visual evidence, non-goals, and assigned gates.
+- Designer may not change backend behavior, API/schema, persistence,
+  authentication, security, business logic, routing, localization meaning, or
+  unrelated screens.
+- New UI frameworks, dependencies, and broad design systems require explicit
+  authorization.
+- Implementation mode must render/capture/inspect when project tooling permits;
+  tests alone do not prove visual quality.
+- Designer and Advisor autoload only `ui-designer`, never Ponytail.
 
 ## Ponytail contract
 
-Ponytail reduces the implementation only after the problem and real code flow
-are understood.
-
-Precedence:
-
-1. role and structured-output contracts;
-2. confirmed requirement, target files, stable IDs, and gates;
-3. security, validation, accessibility, compatibility, and data integrity;
-4. real source evidence;
-5. simplification.
-
-Only primary and backup Coder autoload Ponytail. Main sets assignment-local
-`ponytail_mode: off|lite|full`, default `full`. It never persists across fresh
-workers and never authorizes changing confirmed scope.
-
-Reviewer may block a complexity issue only when it is material and has a
-specific behavior-preserving replacement: existing repository reuse, stdlib,
-native platform behavior, an already-installed dependency, deletion of
-speculative configuration/layers, or removal of duplicated logic. Shorter style
-alone is not a finding.
-
-Tester and Security never reduce required coverage or controls for brevity.
-Architect seeks the smallest reversible confirmed design without loading the
-full implementation skill over Grilling.
+Only primary and backup Coder autoload Ponytail. Role/output contracts,
+confirmed requirements, target files, stable IDs, gates, security, validation,
+accessibility, compatibility, data integrity, and real source evidence outrank
+simplification. Reviewer may block only material complexity with a concrete
+behavior-preserving replacement. Other roles never reduce their coverage or
+controls for brevity.
 
 ## Graphify contract
 
-Use Graphify for non-trivial discovery and blast-radius work. For an exact known
-local symbol, focused LSP/grep/read may be cheaper. The real source is always
-verified before edits or consequential claims. Main owns freshness; workers
-report stale/unavailable graphs. Graphify is advisory and never a release gate.
+Use Graphify for non-trivial discovery and blast radius. An exact known local
+symbol may use focused LSP/grep/read. Real source is always verified. Main owns
+freshness; workers report stale graphs. Graphify is advisory.
 
 ## Hard rules
 
@@ -80,14 +87,14 @@ report stale/unavailable graphs. Graphify is advisory and never a release gate.
 2. Product edits stay inside assignment target files.
 3. Worker output returns only to Main.
 4. Main alone changes workflow files and canonical checkboxes.
-5. No silent architecture redesign, fake data, or fake green.
+5. No silent architecture, product, or visual-scope redesign.
 6. Fresh worker context for every role and retry.
-7. Main verifies repository/test evidence before every transition.
+7. Main verifies repository/test/visual evidence before every transition.
 8. Stop three materially identical failures; new evidence or approach is progress.
 9. Runtime disappearance and model failure are not product attempts.
 10. Automatic backup model selection is forbidden.
 11. Passive metrics and OMP Stats never control routing or gates.
-12. OMP Stats is manual and must not install a startup widget or notification.
+12. Dashboard live-step recovery is display-only and never writes state.
 
 ## Stable IDs and handoff
 
@@ -96,4 +103,5 @@ reopens them after verification. Runtime Todo remains separate and uses the
 parent ID prefix for dashboard linkage.
 
 Retry assignments carry only verified approach, observed result, evidence, and
-rejection reason. They never carry transcripts or hidden reasoning.
+rejection reason. Design retries also carry exact Human visual feedback and the
+last verified artifacts, never vague taste summaries or hidden reasoning.
