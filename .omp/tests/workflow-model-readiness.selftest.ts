@@ -12,9 +12,9 @@ const catalog = [
 	{ provider: "google", id: "gemini-3.6-flash" },
 	{ provider: "anthropic", id: "claude-opus-5" },
 	{ provider: "zai", id: "glm-5.2" },
+	{ provider: "moonshot", id: "kimi-k3" },
 ];
 
-// 1. Quick Start: only @default configured, all roles point to orchestrator
 const quickConfig: ModelRoleConfig = {
 	roles: {
 		workflow_orchestrator: "@default",
@@ -23,6 +23,8 @@ const quickConfig: ModelRoleConfig = {
 		workflow_tester: "@workflow_orchestrator",
 		workflow_architect: "@workflow_orchestrator",
 		workflow_security: "@workflow_orchestrator",
+		workflow_design_advisor: "@workflow_reviewer",
+		workflow_designer: "@workflow_architect",
 	},
 	availableModels: catalog,
 };
@@ -32,12 +34,14 @@ assert.equal(quickEval.mainReady, true);
 assert.equal(quickEval.executionReady, true);
 assert.equal(quickEval.qualityReady, true);
 assert.equal(quickEval.fullTeamReady, true);
-assert.equal(quickEval.fullyResilient, false); // No backups configured
-assert.equal(quickEval.sharedWithMainCount, 5); // 5 workers share main
+assert.equal(quickEval.fullyResilient, false);
+assert.equal(quickEval.designAdvisoryReady, true);
+assert.equal(quickEval.designImplementationReady, true);
+assert.equal(quickEval.sharedWithMainCount, 7);
 assert.equal(quickEval.configuredBackupsCount, 0);
-assert.equal(quickEval.configuredPrimaryCount, 6);
+assert.equal(quickEval.configuredPrimaryCount, 8);
+assert.equal(quickEval.totalRoles, 8);
 
-// 2. Alias resolution with effort override
 const effortConfig: ModelRoleConfig = {
 	roles: {
 		workflow_orchestrator: "openai/gpt-5.6-sol:medium",
@@ -45,10 +49,8 @@ const effortConfig: ModelRoleConfig = {
 	},
 	availableModels: catalog,
 };
-const coderResolved = resolveConcreteRole("workflow_coder", effortConfig.roles);
-assert.equal(coderResolved, "openai/gpt-5.6-sol:high");
+assert.equal(resolveConcreteRole("workflow_coder", effortConfig.roles), "openai/gpt-5.6-sol:high");
 
-// 3. Alias cycle detection returns undefined without hanging
 const cyclicConfig: ModelRoleConfig = {
 	roles: {
 		workflow_orchestrator: "@workflow_coder",
@@ -57,10 +59,8 @@ const cyclicConfig: ModelRoleConfig = {
 	availableModels: catalog,
 };
 assert.equal(resolveConcreteRole("workflow_orchestrator", cyclicConfig.roles), undefined);
-const cyclicEval = evaluateModelSetup(cyclicConfig);
-assert.equal(cyclicEval.mainReady, false);
+assert.equal(evaluateModelSetup(cyclicConfig).mainReady, false);
 
-// 4. Full diverse configuration with backups
 const diverseConfig: ModelRoleConfig = {
 	roles: {
 		workflow_orchestrator: "openai/gpt-5.6-sol:medium",
@@ -75,45 +75,41 @@ const diverseConfig: ModelRoleConfig = {
 		workflow_architect_backup: "anthropic/claude-opus-5:high",
 		workflow_security: "zai/glm-5.2:max",
 		workflow_security_backup: "openai/gpt-5.6-sol:max",
+		workflow_design_advisor: "google/gemini-3.6-flash:high",
+		workflow_design_advisor_backup: "openai/gpt-5.6-sol:high",
+		workflow_designer: "moonshot/kimi-k3:max",
+		workflow_designer_backup: "anthropic/claude-opus-5:high",
 	},
 	availableModels: catalog,
 };
 
 const diverseEval = evaluateModelSetup(diverseConfig);
-assert.equal(diverseEval.mainReady, true);
-assert.equal(diverseEval.executionReady, true);
-assert.equal(diverseEval.qualityReady, true);
 assert.equal(diverseEval.fullTeamReady, true);
 assert.equal(diverseEval.fullyResilient, true);
+assert.equal(diverseEval.designAdvisoryReady, true);
+assert.equal(diverseEval.designImplementationReady, true);
 assert.equal(diverseEval.sharedWithMainCount, 0);
-assert.equal(diverseEval.configuredBackupsCount, 6);
-assert.equal(diverseEval.configuredPrimaryCount, 6);
+assert.equal(diverseEval.configuredBackupsCount, 8);
+assert.equal(diverseEval.configuredPrimaryCount, 8);
 
-// 5. Same-provider warning detected
-const sameProviderConfig: ModelRoleConfig = {
+const sameProviderEval = evaluateModelSetup({
 	roles: {
 		workflow_orchestrator: "openai/gpt-5.6-sol",
 		workflow_orchestrator_backup: "openai/gpt-5.6-luna",
 	},
 	availableModels: catalog,
-};
-const sameProviderEval = evaluateModelSetup(sameProviderConfig);
+});
 assert.equal(sameProviderEval.roles.orchestrator.sameProvider, true);
 assert.match(sameProviderEval.roles.orchestrator.status, /same-provider warning/);
 
-// 6. Unavailable model identity detected
-const unavailableConfig: ModelRoleConfig = {
-	roles: {
-		workflow_orchestrator: "nonexistent/fake-model",
-	},
+const unavailableEval = evaluateModelSetup({
+	roles: { workflow_orchestrator: "nonexistent/fake-model" },
 	availableModels: catalog,
-};
-const unavailableEval = evaluateModelSetup(unavailableConfig);
+});
 assert.equal(unavailableEval.roles.orchestrator.primaryOk, false);
 assert.match(unavailableEval.roles.orchestrator.status, /primary unavailable/);
 
 console.log("workflow model readiness selftest: PASS");
-console.log("  quick: @default and alias chains to orchestrator");
-console.log("  resolution: effort override, cycle detection");
-console.log("  levels: main, execution, quality, full team, fully resilient");
-console.log("  diagnostics: same-provider warning, unavailable model detection");
+console.log("  core readiness remains independent of optional design roles");
+console.log("  optional: advisor and edit-capable Designer aliases resolve independently");
+console.log("  resolution: effort override, cycle detection, provider warnings");

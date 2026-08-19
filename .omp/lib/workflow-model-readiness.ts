@@ -22,6 +22,7 @@ export type RoleEvaluation = {
 	primaryOk: boolean;
 	backupOk: boolean;
 	sameProvider: boolean;
+	optional: boolean;
 	status: string;
 };
 
@@ -31,6 +32,8 @@ export type ModelSetupSummary = {
 	qualityReady: boolean;
 	fullTeamReady: boolean;
 	fullyResilient: boolean;
+	designAdvisoryReady: boolean;
+	designImplementationReady: boolean;
 	sharedWithMainCount: number;
 	configuredBackupsCount: number;
 	configuredPrimaryCount: number;
@@ -38,7 +41,9 @@ export type ModelSetupSummary = {
 	roles: Record<string, RoleEvaluation>;
 };
 
-export const ORDERED_ROLES = ["orchestrator", "coder", "reviewer", "tester", "architect", "security"] as const;
+export const CORE_ROLES = ["orchestrator", "coder", "reviewer", "tester", "architect", "security"] as const;
+export const OPTIONAL_ROLES = ["design_advisor", "designer"] as const;
+export const ORDERED_ROLES = [...CORE_ROLES, ...OPTIONAL_ROLES] as const;
 
 export const ROLE_LABELS: Record<string, string> = {
 	orchestrator: "Main",
@@ -47,6 +52,8 @@ export const ROLE_LABELS: Record<string, string> = {
 	tester: "Tester",
 	architect: "Architect",
 	security: "Security",
+	design_advisor: "Design Advisor",
+	designer: "Designer",
 };
 
 const EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max", "auto"]);
@@ -68,7 +75,6 @@ export function resolveConcreteRole(
 	if (target === "default") {
 		resolved = defaultModel;
 	} else if (stack.includes(target)) {
-		// Cycle detected
 		return undefined;
 	} else {
 		resolved = resolveConcreteRole(target, roles, defaultModel, [...stack, name]);
@@ -102,7 +108,7 @@ export function providerOf(selector: string | undefined): string | undefined {
 }
 
 export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
-	const availableSet = new Set(config.availableModels.map(m => `${m.provider}/${m.id}`));
+	const availableSet = new Set(config.availableModels.map(model => `${model.provider}/${model.id}`));
 	const defaultSelector =
 		config.defaultModel ??
 		(config.availableModels.length > 0
@@ -113,7 +119,6 @@ export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
 	let sharedWithMain = 0;
 	let backupsCount = 0;
 	let primariesCount = 0;
-
 	const mainPrimary = resolveConcreteRole("workflow_orchestrator", config.roles, defaultSelector);
 
 	for (const key of ORDERED_ROLES) {
@@ -125,15 +130,14 @@ export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
 		const primaryOk = isSelectorAvailable(primary, availableSet);
 		const backupOk = isSelectorAvailable(backup, availableSet);
 		const sameProvider = Boolean(primaryOk && backupOk && providerOf(primary) === providerOf(backup));
+		const optional = OPTIONAL_ROLES.includes(key as (typeof OPTIONAL_ROLES)[number]);
 
 		if (primaryOk) primariesCount += 1;
 		if (backupOk) backupsCount += 1;
-		if (key !== "orchestrator" && primary && mainPrimary && primary === mainPrimary) {
-			sharedWithMain += 1;
-		}
+		if (key !== "orchestrator" && primary && mainPrimary && primary === mainPrimary) sharedWithMain += 1;
 
 		const notes: string[] = [];
-		if (!primary) notes.append = notes.push("primary missing");
+		if (!primary) notes.push(optional ? "primary missing (optional)" : "primary missing");
 		else if (!primaryOk) notes.push("primary unavailable");
 		if (!backup) notes.push("backup missing (optional)");
 		else if (!backupOk) notes.push("backup unavailable");
@@ -149,6 +153,7 @@ export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
 			primaryOk,
 			backupOk,
 			sameProvider,
+			optional,
 			status: notes.length > 0 ? notes.join(", ") : "ready",
 		};
 	}
@@ -157,7 +162,7 @@ export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
 	const executionReady = mainReady && roleEvals.coder.primaryOk;
 	const qualityReady = executionReady && roleEvals.reviewer.primaryOk && roleEvals.tester.primaryOk;
 	const fullTeamReady = qualityReady && roleEvals.architect.primaryOk && roleEvals.security.primaryOk;
-	const fullyResilient = fullTeamReady && ORDERED_ROLES.every(k => roleEvals[k].backupOk);
+	const fullyResilient = fullTeamReady && CORE_ROLES.every(key => roleEvals[key].backupOk);
 
 	return {
 		mainReady,
@@ -165,6 +170,8 @@ export function evaluateModelSetup(config: ModelRoleConfig): ModelSetupSummary {
 		qualityReady,
 		fullTeamReady,
 		fullyResilient,
+		designAdvisoryReady: roleEvals.design_advisor.primaryOk,
+		designImplementationReady: roleEvals.designer.primaryOk,
 		sharedWithMainCount: sharedWithMain,
 		configuredBackupsCount: backupsCount,
 		configuredPrimaryCount: primariesCount,
