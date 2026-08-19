@@ -6,13 +6,18 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
 Human-requested Product Designer path.
 
-> **Workflow v3.1.0 is live.** Update an installed project from its root:
+> **Workflow v3.1.1 is live.** Update an installed project from its root:
 >
 > ```bash
 > ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 > ```
 >
 > Inside OMP, run `/work-update` or `/workflow-update`, then restart OMP.
+>
+> **v3.1.0 config hotfix:** if OMP moved `.omp/config.yml` to a
+> `.omp/config.yml.broken-*` file, run the same updater command. v3.1.1 restores
+> the newest project-specific role mapping automatically and writes YAML-safe
+> quoted `@workflow_*` aliases before the doctor runs.
 
 ## v3.1 highlights
 
@@ -28,7 +33,8 @@ Human-requested Product Designer path.
   accessibility, security, and unrelated scope; direct edits still pass Main,
   Reviewer, Tester, and final Human acceptance.
 - **Safe project updates:** missing design aliases are added without overwriting
-  existing model selections or live project memory.
+  existing model selections or live project memory. v3.1.1 also repairs the
+  malformed v3.1.0 role-alias YAML regression automatically.
 - **Non-blocking updates:** existing Graphify output is preserved and refresh is
   deferred by default; an explicit refresh is bounded by a portable timeout.
 - **v3 foundations remain:** Coder-only Ponytail, conditional Graphify, manual OMP
@@ -244,13 +250,20 @@ Close that project's OMP process first, then run from the project root:
 ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 ```
 
+If v3.1.0 already caused OMP to rename `.omp/config.yml` to
+`.omp/config.yml.broken-*`, do **not** delete that backup. The v3.1.1 updater
+uses it to recover your existing role selections, quotes all bare `@workflow_*`
+role references safely, adds only missing design aliases, then validates the
+result before continuing.
+
 To refresh Graphify during the same update, append `--refresh-graphify`; the
 refresh is terminated after the configured timeout and cannot block the updater
 indefinitely.
 
 The updater preserves:
 
-- `.omp/config.yml` selections, adding only missing optional design aliases;
+- `.omp/config.yml` selections, recovering them from the newest project backup
+  when necessary and adding only missing optional design aliases;
 - `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, decisions, feedback, and reports;
 - product code and tests;
 - custom `.graphifyignore` rules, while appending the new control-plane exclusion.
