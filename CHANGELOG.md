@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.1.1 — 2026-08-19
+
+### Fixed
+
+- Quoted project model-role aliases such as `"@workflow_architect"` so OMP's YAML parser accepts the v3.1 Designer defaults.
+- Added automatic recovery when OMP already moved an invalid `.omp/config.yml` to `.omp/config.yml.broken-*`.
+- Updater now prefers the newest recoverable project config, then workflow update backups, and only falls back to template defaults when no project-specific mapping can be recovered.
+- Existing custom model selections are preserved while missing Designer/Design Advisor aliases are added safely.
+- Update `check` reports a config repair before mutating anything, and `workflow_doctor.sh` validates the model-role config before launch.
+- Added deterministic regression coverage for both broken-config recovery and workflow-backup recovery.
+
+### Recovery
+
+Existing projects affected by v3.1.0 can simply run the normal fresh updater again. v3.1.1 restores the project model-role map before the final doctor runs; no manual editing of `.broken-*` files is required.
+
 ## 3.1.0 — 2026-08-19
 
 ### Added

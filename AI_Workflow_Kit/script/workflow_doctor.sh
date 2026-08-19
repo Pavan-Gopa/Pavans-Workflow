@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.1 installation without invoking a model.
+# Validate a Pavan's Workflow v3.1.1 installation without invoking a model.
 
 set -euo pipefail
 
@@ -43,20 +43,33 @@ for path in \
   AI_Workflow_Kit/vendor/dependencies.lock AI_Workflow_Kit/vendor/ponytail.LICENSE \
   AI_Workflow_Kit/docs/AI/STATE.yaml AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md \
   AI_Workflow_Kit/docs/AI/METRICS.md AI_Workflow_Kit/docs/AI/MODELS.md \
-  AI_Workflow_Kit/docs/AI/DESIGNER.md \
-  AI_Workflow_Kit/docs/AI/KICK_DESIGNER.md; do
+  AI_Workflow_Kit/docs/AI/DESIGNER.md AI_Workflow_Kit/docs/AI/KICK_DESIGNER.md \
+  AI_Workflow_Kit/script/workflow_config_repair.py \
+  AI_Workflow_Kit/script/workflow_config_repair.selftest.py; do
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.0" ]]; then
-  ok "workflow version: 3.1.0"
+if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.1" ]]; then
+  ok "workflow version: 3.1.1"
 else
-  fail "VERSION must be 3.1.0"
+  fail "VERSION must be 3.1.1"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
   check_script "AI_Workflow_Kit/script/$script.sh"
 done
+
+if python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml >/dev/null; then
+  ok "project model-role YAML guard"
+else
+  fail ".omp/config.yml is invalid or missing workflow design role aliases"
+fi
+
+if python3 AI_Workflow_Kit/script/workflow_config_repair.selftest.py >/dev/null; then
+  ok "workflow config repair deterministic selftest"
+else
+  fail "workflow config repair deterministic selftest"
+fi
 
 for role in coder reviewer tester architect security design-advisor designer; do
   check_path ".omp/agents/workflow-$role.md"
@@ -240,5 +253,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.1.0\n'
+printf 'Version: 3.1.1\n'
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'

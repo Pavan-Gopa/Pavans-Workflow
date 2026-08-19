@@ -30,20 +30,27 @@ is controlled through project aliases in `.omp/config.yml` and **Alt+M -> Roles*
 | Designer | `@workflow_designer` | `@workflow_designer_backup` |
 
 For backward-compatible upgrades, v3.1 adds missing design aliases as references
-to existing roles:
+to existing roles. **Role-alias values beginning with `@` must be quoted in
+YAML**:
 
 ```yaml
-workflow_design_advisor: @workflow_reviewer
-workflow_designer: @workflow_architect
-workflow_design_advisor_backup: @workflow_reviewer_backup
-workflow_designer_backup: @workflow_architect_backup
+workflow_design_advisor: "@workflow_reviewer"
+workflow_designer: "@workflow_architect"
+workflow_design_advisor_backup: "@workflow_reviewer_backup"
+workflow_designer_backup: "@workflow_architect_backup"
 ```
 
-That makes the optional path immediately usable without overwriting any existing
-selection. Assign a dedicated model later through Alt+M. For example, select the
-available Kimi K3 catalogue entry for `workflow_designer` and optionally a
-cheaper model for `workflow_design_advisor`. The workflow intentionally does not
-hard-code a provider-specific Kimi selector because catalogue IDs vary.
+v3.1.1 also repairs the v3.1.0 regression where these four values could be
+written without quotes. If OMP already moved the invalid project configuration
+to `.omp/config.yml.broken-*`, the normal updater restores the newest project
+mapping automatically before the doctor runs.
+
+The aliases make the optional path immediately usable without overwriting any
+existing selection. Assign a dedicated model later through Alt+M. For example,
+select the available Kimi K3 catalogue entry for `workflow_designer` and
+optionally a cheaper model for `workflow_design_advisor`. The workflow
+intentionally does not hard-code a provider-specific Kimi selector because
+catalogue IDs vary.
 
 ## Readiness levels
 
