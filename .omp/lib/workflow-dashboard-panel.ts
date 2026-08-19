@@ -1,9 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { Component, TUI } from "@oh-my-pi/pi-tui";
-import { Key, matchesKey } from "@oh-my-pi/pi-tui";
+import { Key, matchesKey, routeSgrMouseInput, ScrollView } from "@oh-my-pi/pi-tui";
 import {
 	deriveDashboardViewModel,
-	renderDashboard,
 	type DashboardData,
 	type TextLine,
 	type TodoViewMode,
@@ -12,6 +11,7 @@ import { checkWorkflowConsistency, type ConsistencyFinding } from "./workflow-co
 import { applyLiveStep, type LiveStepResolution } from "./workflow-live-step.ts";
 import { linkRuntimeTodo, readRuntimeTodo } from "./workflow-runtime-todo.ts";
 import { getStatsRuntime } from "./workflow-stats-runtime.ts";
+import { renderExpandedDashboard } from "./workflow-dashboard-viewport.ts";
 import {
 	hubActiveAgentConsistent,
 	makeDashboardData,
@@ -23,6 +23,7 @@ import {
 } from "./workflow-dashboard-data.ts";
 
 const LIVE_REFRESH_MS = 1_000;
+const MOUSE_SCROLL_LINES = 3;
 type ThemeTone = "accent" | "muted" | "warning";
 type ThemeLike = { fg: (tone: ThemeTone, text: string) => string };
 type KeybindingsLike = { matches: (data: string, action: string) => boolean };
@@ -44,8 +45,7 @@ class WorkflowDashboard implements Component {
 	private selectedStepId?: string;
 	private liveStepId?: string;
 	private followLive = true;
-	private detailScroll = 0;
-	private maxDetailScroll = 0;
+	private revealSelection = true;
 	private timer?: Timer;
 	private refreshingFiles = false;
 	private refreshingMetrics = false;
@@ -53,6 +53,7 @@ class WorkflowDashboard implements Component {
 	private todoMode?: TodoViewMode;
 	private layout: "wide" | "medium" | "narrow" = "wide";
 	private showHelp = false;
+	private readonly viewport: ScrollView;
 
 	constructor(
 		private readonly pi: ExtensionAPI,
@@ -62,6 +63,15 @@ class WorkflowDashboard implements Component {
 		private readonly keybindings: KeybindingsLike,
 		private readonly done: (value: undefined) => void,
 	) {
+		this.viewport = new ScrollView([], {
+			height: Math.max(6, tui.terminal.rows - 1),
+			scrollbar: "auto",
+			fastScrollLines: 5,
+			theme: {
+				track: text => theme.fg("muted", text),
+				thumb: text => theme.fg("accent", text),
+			},
+		});
 		this.timer = ctx.setInterval(() => this.refresh(false), LIVE_REFRESH_MS);
 		this.refresh(true);
 	}
@@ -71,8 +81,13 @@ class WorkflowDashboard implements Component {
 		const live = this.liveStepId ?? fallback ?? this.data.state.currentStep;
 		const hasLive = this.data.steps.some(step => step.id === live);
 		const hasSelected = this.data.steps.some(step => step.id === this.selectedStepId);
-		if (this.followLive && hasLive) this.selectedStepId = live;
-		else if (!hasSelected) this.selectedStepId = hasLive ? live : this.data.steps[0]?.id;
+		if (this.followLive && hasLive) {
+			if (this.selectedStepId !== live) this.revealSelection = true;
+			this.selectedStepId = live;
+		} else if (!hasSelected) {
+			this.selectedStepId = hasLive ? live : this.data.steps[0]?.id;
+			this.revealSelection = true;
+		}
 	}
 
 	private publish(files: DashboardFiles): void {
@@ -122,17 +137,44 @@ class WorkflowDashboard implements Component {
 		const index = Math.min(this.data.steps.length - 1, Math.max(0, (current < 0 ? 0 : current) + delta));
 		this.selectedStepId = this.data.steps[index].id;
 		this.followLive = false;
-		this.detailScroll = 0;
+		this.revealSelection = true;
 	}
 
 	private boundary(last: boolean): void {
 		if (!this.data?.steps.length) return;
 		this.selectedStepId = this.data.steps[last ? this.data.steps.length - 1 : 0].id;
 		this.followLive = false;
-		this.detailScroll = 0;
+		this.revealSelection = true;
+	}
+
+	private manualScroll(action: () => void): void {
+		this.followLive = false;
+		this.revealSelection = false;
+		action();
+		this.requestRender();
+	}
+
+	private revealSelected(lines: TextLine[], viewportHeight: number): void {
+		if (!this.revealSelection || !this.selectedStepId) return;
+		const needle = ` ${this.selectedStepId} `;
+		const row = lines.findIndex(line => line.text.includes(needle));
+		if (row >= 0) {
+			const margin = Math.min(3, Math.max(0, Math.floor(viewportHeight / 4)));
+			const top = this.viewport.getScrollOffset();
+			const bottom = top + viewportHeight - 1;
+			if (row < top + margin) this.viewport.setScrollOffset(Math.max(0, row - margin));
+			else if (row > bottom - margin) this.viewport.setScrollOffset(row - viewportHeight + margin + 1);
+		}
+		this.revealSelection = false;
 	}
 
 	handleInput(data: string): void {
+		if (data.startsWith("\x1b[<")) {
+			routeSgrMouseInput(data, event => {
+				if (event.wheel !== null) this.manualScroll(() => this.viewport.scroll(event.wheel * MOUSE_SCROLL_LINES));
+			});
+			return;
+		}
 		if (
 			this.keybindings.matches(data, "app.interrupt") ||
 			matchesKey(data, Key.escape) ||
@@ -161,23 +203,26 @@ class WorkflowDashboard implements Component {
 			if (live && this.data?.steps.some(step => step.id === live)) {
 				this.selectedStepId = live;
 				this.followLive = true;
-				this.detailScroll = 0;
+				this.revealSelection = true;
 			}
 		} else if (matchesKey(data, Key.up)) this.move(-1);
 		else if (matchesKey(data, Key.down)) this.move(1);
 		else if (matchesKey(data, Key.home)) this.boundary(false);
 		else if (matchesKey(data, Key.end)) this.boundary(true);
-		else if (matchesKey(data, Key.pageUp)) {
-			this.detailScroll = Math.max(0, this.detailScroll - Math.max(4, Math.floor(this.tui.terminal.rows / 3)));
-		} else if (matchesKey(data, Key.pageDown)) {
-			this.detailScroll = Math.min(this.maxDetailScroll, this.detailScroll + Math.max(4, Math.floor(this.tui.terminal.rows / 3)));
-		} else return;
+		else if (matchesKey(data, "shift+up")) return this.manualScroll(() => this.viewport.scroll(-5));
+		else if (matchesKey(data, "shift+down")) return this.manualScroll(() => this.viewport.scroll(5));
+		else if (matchesKey(data, Key.pageUp)) return this.manualScroll(() => this.viewport.page(-1));
+		else if (matchesKey(data, Key.pageDown)) return this.manualScroll(() => this.viewport.page(1));
+		else if (matchesKey(data, "g")) return this.manualScroll(() => this.viewport.scrollToTop());
+		else if (matchesKey(data, "shift+g")) return this.manualScroll(() => this.viewport.scrollToBottom());
+		else return;
 		this.requestRender();
 	}
 
 	render(width: number): readonly string[] {
 		const panelWidth = Math.max(20, width);
-		const bodyHeight = Math.max(8, this.tui.terminal.rows - 9);
+		const viewportHeight = Math.max(6, this.tui.terminal.rows - 1);
+		const naturalBodyHeight = Math.max(8, this.tui.terminal.rows - 9);
 		let lines: TextLine[];
 		if (!this.data) {
 			const border = `+${"-".repeat(panelWidth - 2)}+`;
@@ -216,28 +261,33 @@ class WorkflowDashboard implements Component {
 				consistency: findings,
 			};
 			const view = deriveDashboardViewModel(liveData, runtime, this.selectedStepId, this.todoMode);
-			const result = renderDashboard(
+			const result = renderExpandedDashboard(
 				view,
 				panelWidth,
-				bodyHeight,
-				this.detailScroll,
+				naturalBodyHeight,
 				getStatsRuntime(this.ctx.cwd).footerInfo(),
 			);
 			this.layout = result.layout;
-			this.maxDetailScroll = result.maxDetailScroll;
-			this.detailScroll = Math.min(this.detailScroll, this.maxDetailScroll);
-			lines = result.lines;
+			lines = result.lines.map(line => ({
+				...line,
+				text: line.text.replace("PgUp/PgDn details", "wheel/PgUp/PgDn scroll"),
+			}));
 			if (this.showHelp) {
-				const help = "HELP: ↑/↓ inspect · c follow live · t todo view · r refresh · o Stats · PgUp/PgDn · ? toggle";
+				const help = "HELP: ↑/↓ step · wheel/PgUp/PgDn scroll · Shift+↑/↓ fast · g/G top/bottom · c live · t todo · r refresh · o Stats";
 				lines.splice(2, 0, { text: `|${help.slice(0, panelWidth - 2).padEnd(panelWidth - 2)}|`, tone: "accent" });
 			}
 		}
-		return lines.map(line => {
+
+		const styled = lines.map(line => {
 			if (line.tone === "warning" || line.tone === "accent" || line.tone === "muted") {
 				return this.theme.fg(line.tone, line.text);
 			}
 			return line.text;
 		});
+		this.viewport.setHeight(viewportHeight);
+		this.viewport.setLines(styled);
+		this.revealSelected(lines, viewportHeight);
+		return this.viewport.render(panelWidth);
 	}
 
 	invalidate(): void {}

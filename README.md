@@ -6,7 +6,7 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
 Human-requested Product Designer path.
 
-> **Workflow v3.1.1 is live.** Update an installed project from its root:
+> **Workflow v3.1.2 is live.** Update an installed project from its root:
 >
 > ```bash
 > ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
@@ -15,12 +15,16 @@ Human-requested Product Designer path.
 > Inside OMP, run `/work-update` or `/workflow-update`, then restart OMP.
 >
 > **v3.1.0 config hotfix:** if OMP moved `.omp/config.yml` to a
-> `.omp/config.yml.broken-*` file, run the same updater command. v3.1.1 restores
-> the newest project-specific role mapping automatically and writes YAML-safe
-> quoted `@workflow_*` aliases before the doctor runs.
+> `.omp/config.yml.broken-*` file, run the same updater command. v3.1.1+
+> restores the newest project-specific role mapping automatically and writes
+> YAML-safe quoted `@workflow_*` aliases before the doctor runs.
 
 ## v3.1 highlights
 
+- **Scrollable Alt+W:** v3.1.2 expands long plan/checklist/RUN TODO content and
+  places the complete dashboard in one vertical viewport. A scrollbar appears
+  only when content is taller than the terminal; mouse wheel, PageUp/PageDown,
+  Shift+Up/Down, and `g`/`G` navigate it.
 - **Live plan cursor restored:** Alt+W follows actual current work even when
   canonical `current_step` is temporarily stale. Arrow navigation pauses follow;
   `c` returns to the live step.
@@ -196,8 +200,24 @@ Markers:
 ○ = planned
 ```
 
-When the Human has not navigated away, the plan automatically follows `>`.
-Up/Down switches to manual inspection; `c` resumes live follow.
+The dashboard now has one vertical viewport over the **complete logical board**.
+When all content fits, it behaves like the compact dashboard and shows no
+scrollbar. When plan/checklist/Todo content is taller than the terminal, no data
+is replaced with `N more detail lines`; scroll to it instead:
+
+```text
+mouse wheel        scroll 3 lines
+PageUp/PageDown    scroll one page
+Shift+Up/Down      fast vertical scroll
+g / G              top / bottom
+Up/Down            inspect previous/next workflow step (existing behavior)
+Home/End            first/last workflow step (existing behavior)
+c                   return to live step and resume live-follow
+```
+
+Manual vertical scrolling pauses live-follow so runtime updates do not yank the
+viewport away while you inspect older content. Press `c` to resume following the
+current step.
 
 If runtime evidence proves a different live step than `STATE.yaml`, the dashboard
 uses the runtime step for display and shows a drift warning. It never writes
@@ -251,7 +271,7 @@ Close that project's OMP process first, then run from the project root:
 ```
 
 If v3.1.0 already caused OMP to rename `.omp/config.yml` to
-`.omp/config.yml.broken-*`, do **not** delete that backup. The v3.1.1 updater
+`.omp/config.yml.broken-*`, do **not** delete that backup. The v3.1.1+ updater
 uses it to recover your existing role selections, quotes all bare `@workflow_*`
 role references safely, adds only missing design aliases, then validates the
 result before continuing.
@@ -283,6 +303,7 @@ tells you to restart OMP.
 | Designer advice | `/workflow designer advise <surface>` |
 | Designer edits | `/workflow designer redesign <surface>` |
 | Live dashboard | `Alt+W` |
+| Dashboard scroll | mouse wheel / PgUp/PgDn / Shift+Up/Down / `g`/`G` |
 | Agent Hub | `Alt+A` |
 | Model roles | `Alt+M` |
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
