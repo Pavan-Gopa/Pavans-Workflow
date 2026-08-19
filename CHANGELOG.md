@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.1.2 — 2026-08-19
+
+### Fixed
+
+- Alt+W no longer hides long step checklists or native OMP Todo content behind `N more detail lines` placeholders.
+- Long plans are expanded before display so every step remains reachable instead of being permanently clipped to one terminal height.
+
+### Added
+
+- One vertical ScrollView around the complete Alt+W dashboard. A scrollbar appears only when the logical dashboard is taller than the terminal.
+- Mouse-wheel scrolling, PageUp/PageDown paging, Shift+Up/Down fast scrolling, and `g`/`G` top/bottom navigation.
+- Manual vertical scrolling pauses live-follow so the dashboard does not jump while the Human is inspecting history; `c` returns to the live step and resumes follow.
+- Deterministic regression coverage with a 48-step plan, 60-item step checklist, and 44-item native OMP Todo fixture.
+
+### Compatibility
+
+- Up/Down and Home/End retain their existing step-selection behavior.
+- Short dashboards remain compact and do not show a scrollbar when all content fits.
+- The dashboard remains read-only; workflow state, Todo state, and metrics are not modified by scrolling.
+
 ## 3.1.1 — 2026-08-19
 
 ### Fixed
