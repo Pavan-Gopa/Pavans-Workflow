@@ -1,11 +1,12 @@
 import type { DashboardData, RuntimeSnapshot, StepCard } from "./workflow-dashboard-core.ts";
 
-export type LiveStepSource = "state" | "work_item" | "runtime_todo" | "worker" | "none";
+export type LiveStepSource = "work_item" | "runtime_todo" | "worker" | "state" | "pending_todo" | "none";
 
 export type LiveStepResolution = {
 	id?: string;
 	source: LiveStepSource;
 	raw?: string;
+	stateId?: string;
 };
 
 function escapeRegExp(value: string): string {
@@ -39,7 +40,7 @@ function canonicalStepId(value: string | undefined, steps: StepCard[]): string |
 		if (matched.length === 1) return matched[0].id;
 	}
 
-	const leading = text.match(/^(?:current\s+)?(?:step|review|qa|security)?\s*[:#-]?\s*\[?([A-Za-z0-9][A-Za-z0-9._/-]*)\]?\b/i)?.[1];
+	const leading = text.match(/^(?:current\s+)?(?:step|review|qa|security|design)?\s*[:#-]?\s*\[?([A-Za-z0-9][A-Za-z0-9._/-]*)\]?\b/i)?.[1];
 	if (leading) {
 		const matched = steps.filter(step => step.id.toLowerCase() === leading.toLowerCase());
 		if (matched.length === 1) return matched[0].id;
@@ -61,45 +62,58 @@ function uniqueStep(values: Array<string | undefined>, steps: StepCard[]): strin
 	return ids.size === 1 ? [...ids][0] : undefined;
 }
 
-function runtimeTodoStep(data: DashboardData): string | undefined {
+function runtimeTodoStep(data: DashboardData, statuses: string[]): string | undefined {
 	const tasks = data.runtimeTodo?.phases.flatMap(phase => phase.tasks) ?? [];
-	for (const statuses of [["in_progress"], ["blocked"], ["pending"]]) {
-		const values = tasks.filter(task => statuses.includes(task.status)).map(task => task.content);
-		const id = uniqueStep(values, data.steps);
-		if (id) return id;
-	}
-	return undefined;
+	return uniqueStep(
+		tasks.filter(task => statuses.includes(task.status)).map(task => task.content),
+		data.steps,
+	);
 }
 
 function workerStep(runtime: RuntimeSnapshot, steps: StepCard[]): string | undefined {
 	const worker = runtime.worker;
-	if (!worker) return undefined;
+	if (!worker || (worker.status !== "running" && worker.status !== "pending")) return undefined;
 	const values = [worker.assignment, worker.task, worker.lastIntent];
 	const focused: string[] = [];
 	for (const value of values) {
 		if (!value) continue;
-		const match = value.match(/(?:^|\n)\s*(?:step|review|qa|security|current step)\s*:\s*([^\n]+)/i);
+		const match = value.match(/(?:^|\n)\s*(?:step|review|qa|security|design|current step)\s*:\s*([^\n]+)/i);
 		focused.push(match?.[1] ?? value);
 	}
 	return uniqueStep(focused, steps);
 }
 
+/**
+ * Resolve the step that is actually live in the current OMP process.
+ *
+ * Strong active evidence intentionally outranks a valid-but-stale
+ * STATE.yaml.current_step. This restores the moving plan cursor after a resumed
+ * session while keeping STATE.yaml authoritative whenever runtime evidence is
+ * absent or ambiguous.
+ */
 export function resolveLiveStep(data: DashboardData, runtime: RuntimeSnapshot): LiveStepResolution {
-	const stateStep = canonicalStepId(data.state.currentStep, data.steps);
-	if (stateStep) return { id: stateStep, source: "state", raw: data.state.currentStep };
+	const stateId = canonicalStepId(data.state.currentStep, data.steps);
 
-	const workItemStep = canonicalStepId(data.state.currentWorkItemId, data.steps);
-	if (workItemStep) return { id: workItemStep, source: "work_item", raw: data.state.currentWorkItemId };
+	const workItemId = canonicalStepId(data.state.currentWorkItemId, data.steps);
+	if (workItemId) {
+		return { id: workItemId, source: "work_item", raw: data.state.currentWorkItemId, stateId };
+	}
 
-	const todoStep = runtimeTodoStep(data);
-	if (todoStep) return { id: todoStep, source: "runtime_todo" };
+	const activeTodoId = runtimeTodoStep(data, ["in_progress", "blocked"]);
+	if (activeTodoId) return { id: activeTodoId, source: "runtime_todo", stateId };
 
-	const activeWorkerStep = workerStep(runtime, data.steps);
-	if (activeWorkerStep) return { id: activeWorkerStep, source: "worker" };
+	const activeWorkerId = workerStep(runtime, data.steps);
+	if (activeWorkerId) return { id: activeWorkerId, source: "worker", stateId };
+
+	if (stateId) return { id: stateId, source: "state", raw: data.state.currentStep, stateId };
+
+	const pendingTodoId = runtimeTodoStep(data, ["pending"]);
+	if (pendingTodoId) return { id: pendingTodoId, source: "pending_todo", stateId };
 
 	return {
 		source: "none",
 		raw: normalized(data.state.currentStep) || undefined,
+		stateId,
 	};
 }
 
