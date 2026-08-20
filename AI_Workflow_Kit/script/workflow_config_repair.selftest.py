@@ -17,12 +17,28 @@ modelRoles:
 
 retry:
   enabled: true
+
+task:
+  batch: true
+  maxRuntimeMs: 1800000
+  softRequestBudget: 120
+  maxConcurrency: 1
 '''
 normalized, notes = mod.normalize_config_text(base)
 assert "workflow_orchestrator: custom/main" in normalized
 assert "workflow_coder: custom/coder" in normalized
 assert 'workflow_designer: "@workflow_architect"' in normalized
+assert "maxRuntimeMs: 14400000" in normalized
+assert "softRequestBudget: 0" in normalized
+assert "maxConcurrency: 1" in normalized
 assert mod.validate_config_text(normalized) == []
+assert any("task policy" in note for note in notes)
+
+# "At least four hours": never lower a user-selected longer hard wall.
+long_runtime = normalized.replace("maxRuntimeMs: 14400000", "maxRuntimeMs: 28800000")
+long_runtime_repaired, _ = mod.normalize_config_text(long_runtime)
+assert "maxRuntimeMs: 28800000" in long_runtime_repaired
+assert mod.validate_config_text(long_runtime_repaired) == []
 
 broken = normalized.replace('"@workflow_architect"', '@workflow_architect').replace('"@workflow_reviewer"', '@workflow_reviewer')
 repaired, notes = mod.normalize_config_text(broken)
@@ -30,6 +46,17 @@ assert 'workflow_designer: "@workflow_architect"' in repaired
 assert 'workflow_design_advisor: "@workflow_reviewer"' in repaired
 assert any("quoted" in note for note in notes)
 assert mod.validate_config_text(repaired) == []
+
+missing_task = '''modelRoleStorage: project
+modelRoles:
+  workflow_orchestrator: custom/main
+  workflow_coder: custom/coder
+'''
+repaired_missing_task, _ = mod.normalize_config_text(missing_task)
+assert "task:" in repaired_missing_task
+assert "maxRuntimeMs: 14400000" in repaired_missing_task
+assert "softRequestBudget: 0" in repaired_missing_task
+assert mod.validate_config_text(repaired_missing_task) == []
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp) / "project"
@@ -44,6 +71,8 @@ with tempfile.TemporaryDirectory() as tmp:
     result = (omp / "config.yml").read_text(encoding="utf-8")
     assert label == "OMP broken backup"
     assert "provider/my-main" in result and "provider/my-coder" in result
+    assert "maxRuntimeMs: 14400000" in result
+    assert "softRequestBudget: 0" in result
     assert mod.validate_config_text(result) == []
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -59,6 +88,8 @@ with tempfile.TemporaryDirectory() as tmp:
     result = (root / ".omp/config.yml").read_text(encoding="utf-8")
     assert label == "workflow update backup"
     assert "backup/main" in result
+    assert "maxRuntimeMs: 14400000" in result
+    assert "softRequestBudget: 0" in result
     assert mod.validate_config_text(result) == []
 
 print("workflow config repair selftest: PASS")

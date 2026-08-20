@@ -33,8 +33,13 @@ task:
   enableLsp: true
   maxConcurrency: 1
   maxRecursionDepth: 1
-  maxRuntimeMs: 1800000
-  softRequestBudget: 120
+  # Long repository work may legitimately need hours. The Human can still abort
+  # a stalled worker explicitly from Agent Hub; OMP retains a four-hour hard wall.
+  maxRuntimeMs: 14400000
+  # Disable OMP's request-count forced-yield guard for workflow roles. The
+  # file-backed workflow has its own retry/stall controls, and the four-hour
+  # wall-clock ceiling remains the terminal runaway guard.
+  softRequestBudget: 0
   showResolvedModelBadge: true
 
 skills:

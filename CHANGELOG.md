@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.1.4 — 2026-08-20
+
+### Fixed
+
+- Manual OMP Stats now uses the official `@oh-my-pi/omp-stats` sync/server implementation after an explicit Human action instead of duplicating OMP's private dashboard security-header version. This fixes the case where the browser shell opened but every card failed to fetch after OMP advanced its dashboard security contract.
+- Long-running workflow agents are no longer killed by the old 30-minute default. The hard task wall-clock ceiling is now four hours (`maxRuntimeMs: 14400000`).
+- OMP's request-count forced-yield guard is disabled for workflow roles (`softRequestBudget: 0`) so large repositories, long test suites, or tool-heavy Coder runs are not stopped early by request count while still inside the four-hour wall.
+
+### Changed
+
+- Existing project `.omp/config.yml` files are migrated additively: model mappings and unrelated settings are preserved, while the two workflow-owned task guards are normalized to the v3.1.4 policy.
+- `workflow_doctor.sh` now fails when the four-hour runtime policy is missing or when Stats falls back to the copied legacy header/probe path.
+
+### Added
+
+- Deterministic config-repair coverage for upgrading old 30-minute / 120-request project configs to the v3.1.4 runtime policy.
+- Updated Stats wiring selftest for the explicit native OMP Stats launcher path.
+
+### Compatibility
+
+- Stats remains fully manual: nothing probes, syncs, starts, or installs a widget at OMP startup.
+- Human abort through Agent Hub remains available, and the workflow's own retry/stall controls remain unchanged.
+- Existing model selections, durable workflow state, project code, reports, Graphify output, Designer roles, Ponytail policy, and Alt+W behavior are preserved by update.
+
 ## 3.1.3 — 2026-08-20
 
 ### Fixed

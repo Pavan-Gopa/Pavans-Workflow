@@ -15,7 +15,11 @@ DESIGN_DEFAULTS = (
     ("workflow_designer_backup", "@workflow_architect_backup"),
 )
 
+MIN_RUNTIME_MS = 14_400_000  # 4 hours
+SOFT_REQUEST_BUDGET = 0      # disable request-count forced-yield guard
+
 MODEL_ROLES_HEADER = re.compile(r"^(?P<indent>[ \t]*)modelRoles:[ \t]*(?:#.*)?$")
+SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
 ROLE_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
 BARE_ALIAS_VALUE = re.compile(r"^(?P<space>[ \t]*)(?P<alias>@[^\s#]+)(?P<tail>[ \t]*(?:#.*)?)$")
 
@@ -24,10 +28,10 @@ def _indent_width(line: str) -> int:
     return len(line) - len(line.lstrip(" \t"))
 
 
-def _model_roles_bounds(lines: list[str]) -> tuple[int, int, str] | None:
+def _section_bounds(lines: list[str], section: str) -> tuple[int, int, str] | None:
     for start, line in enumerate(lines):
-        match = MODEL_ROLES_HEADER.match(line)
-        if not match:
+        match = SECTION_HEADER.match(line)
+        if not match or match.group("key") != section:
             continue
         base_width = len(match.group("indent"))
         end = len(lines)
@@ -41,12 +45,16 @@ def _model_roles_bounds(lines: list[str]) -> tuple[int, int, str] | None:
                 break
         child_indent = " " * (base_width + 2)
         for candidate in lines[start + 1:end]:
-            role_match = ROLE_LINE.match(candidate)
-            if role_match and _indent_width(candidate) > base_width:
-                child_indent = role_match.group("indent")
+            child_match = ROLE_LINE.match(candidate)
+            if child_match and _indent_width(candidate) > base_width:
+                child_indent = child_match.group("indent")
                 break
         return start, end, child_indent
     return None
+
+
+def _model_roles_bounds(lines: list[str]) -> tuple[int, int, str] | None:
+    return _section_bounds(lines, "modelRoles")
 
 
 def _quote_bare_aliases(lines: list[str], start: int, end: int) -> tuple[list[str], int]:
@@ -68,6 +76,82 @@ def _quote_bare_aliases(lines: list[str], start: int, end: int) -> tuple[list[st
     return repaired, count
 
 
+def _scalar(rest: str) -> str:
+    return rest.strip().split("#", 1)[0].strip()
+
+
+def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
+    bounds = _section_bounds(lines, "task")
+    if bounds is None:
+        lines.extend([
+            "",
+            "task:",
+            f"  maxRuntimeMs: {MIN_RUNTIME_MS}",
+            f"  softRequestBudget: {SOFT_REQUEST_BUDGET}",
+        ])
+        notes.append("created task policy block (minimum 4h runtime; request budget disabled)")
+        return lines
+
+    start, end, child_indent = bounds
+    positions: dict[str, list[int]] = {}
+    for index in range(start + 1, end):
+        match = ROLE_LINE.match(lines[index])
+        if match:
+            positions.setdefault(match.group("key"), []).append(index)
+
+    changed: list[str] = []
+
+    runtime_indexes = positions.get("maxRuntimeMs", [])
+    if not runtime_indexes:
+        lines[end:end] = [f"{child_indent}maxRuntimeMs: {MIN_RUNTIME_MS}"]
+        end += 1
+        changed.append("maxRuntimeMs:add")
+    else:
+        first = runtime_indexes[0]
+        match = ROLE_LINE.match(lines[first])
+        assert match is not None
+        raw = _scalar(match.group("rest"))
+        try:
+            current = int(raw)
+        except ValueError:
+            current = 0
+        if current < MIN_RUNTIME_MS:
+            lines[first] = f"{match.group('indent')}maxRuntimeMs: {MIN_RUNTIME_MS}"
+            changed.append("maxRuntimeMs:min4h")
+        for duplicate in reversed(runtime_indexes[1:]):
+            del lines[duplicate]
+            end -= 1
+            changed.append("dedup:maxRuntimeMs")
+
+    # Recalculate bounds after possible insertion/removal before handling budget.
+    bounds = _section_bounds(lines, "task")
+    assert bounds is not None
+    start, end, child_indent = bounds
+    budget_indexes: list[int] = []
+    for index in range(start + 1, end):
+        match = ROLE_LINE.match(lines[index])
+        if match and match.group("key") == "softRequestBudget":
+            budget_indexes.append(index)
+
+    if not budget_indexes:
+        lines[end:end] = [f"{child_indent}softRequestBudget: {SOFT_REQUEST_BUDGET}"]
+        changed.append("softRequestBudget:add")
+    else:
+        first = budget_indexes[0]
+        match = ROLE_LINE.match(lines[first])
+        assert match is not None
+        if _scalar(match.group("rest")) != str(SOFT_REQUEST_BUDGET):
+            lines[first] = f"{match.group('indent')}softRequestBudget: {SOFT_REQUEST_BUDGET}"
+            changed.append("softRequestBudget:disable")
+        for duplicate in reversed(budget_indexes[1:]):
+            del lines[duplicate]
+            changed.append("dedup:softRequestBudget")
+
+    if changed:
+        notes.append("task policy: " + ", ".join(changed))
+    return lines
+
+
 def normalize_config_text(source: str) -> tuple[str, list[str]]:
     lines = source.splitlines()
     notes: list[str] = []
@@ -76,26 +160,26 @@ def normalize_config_text(source: str) -> tuple[str, list[str]]:
         block = ["modelRoles:", *[f'  {key}: "{value}"' for key, value in DESIGN_DEFAULTS], ""]
         lines = block + lines
         notes.append("created modelRoles block")
-        return "\n".join(lines).rstrip() + "\n", notes
+    else:
+        start, end, child_indent = bounds
+        lines, repaired_count = _quote_bare_aliases(lines, start, end)
+        if repaired_count:
+            notes.append(f"quoted {repaired_count} bare @ role alias(es)")
 
-    start, end, child_indent = bounds
-    lines, repaired_count = _quote_bare_aliases(lines, start, end)
-    if repaired_count:
-        notes.append(f"quoted {repaired_count} bare @ role alias(es)")
+        start, end, child_indent = _model_roles_bounds(lines) or (start, end, child_indent)
+        existing: dict[str, int] = {}
+        for line in lines[start + 1:end]:
+            role_match = ROLE_LINE.match(line)
+            if role_match:
+                existing[role_match.group("key")] = existing.get(role_match.group("key"), 0) + 1
 
-    start, end, child_indent = _model_roles_bounds(lines) or (start, end, child_indent)
-    existing: dict[str, int] = {}
-    for line in lines[start + 1:end]:
-        role_match = ROLE_LINE.match(line)
-        if role_match:
-            existing[role_match.group("key")] = existing.get(role_match.group("key"), 0) + 1
+        missing = [(key, value) for key, value in DESIGN_DEFAULTS if key not in existing]
+        if missing:
+            insertion = [f'{child_indent}{key}: "{value}"' for key, value in missing]
+            lines[end:end] = insertion
+            notes.append("added " + ", ".join(key for key, _ in missing))
 
-    missing = [(key, value) for key, value in DESIGN_DEFAULTS if key not in existing]
-    if missing:
-        insertion = [f'{child_indent}{key}: "{value}"' for key, value in missing]
-        lines[end:end] = insertion
-        notes.append("added " + ", ".join(key for key, _ in missing))
-
+    lines = _normalize_task_policy(lines, notes)
     return "\n".join(lines).rstrip() + "\n", notes
 
 
@@ -104,22 +188,58 @@ def validate_config_text(source: str) -> list[str]:
     lines = source.splitlines()
     bounds = _model_roles_bounds(lines)
     if bounds is None:
-        return ["modelRoles block is missing"]
-    start, end, _ = bounds
-    counts: dict[str, int] = {}
-    for line in lines[start + 1:end]:
-        role_match = ROLE_LINE.match(line)
-        if not role_match:
-            continue
-        key = role_match.group("key")
-        counts[key] = counts.get(key, 0) + 1
-        if BARE_ALIAS_VALUE.match(role_match.group("rest")):
-            errors.append(f"{key} uses an unquoted @ role alias")
-    for key, _ in DESIGN_DEFAULTS:
-        if counts.get(key, 0) == 0:
-            errors.append(f"missing model role: {key}")
-        elif counts[key] > 1:
-            errors.append(f"duplicate model role: {key}")
+        errors.append("modelRoles block is missing")
+    else:
+        start, end, _ = bounds
+        counts: dict[str, int] = {}
+        for line in lines[start + 1:end]:
+            role_match = ROLE_LINE.match(line)
+            if not role_match:
+                continue
+            key = role_match.group("key")
+            counts[key] = counts.get(key, 0) + 1
+            if BARE_ALIAS_VALUE.match(role_match.group("rest")):
+                errors.append(f"{key} uses an unquoted @ role alias")
+        for key, _ in DESIGN_DEFAULTS:
+            if counts.get(key, 0) == 0:
+                errors.append(f"missing model role: {key}")
+            elif counts[key] > 1:
+                errors.append(f"duplicate model role: {key}")
+
+    task_bounds = _section_bounds(lines, "task")
+    if task_bounds is None:
+        errors.append("task block is missing")
+    else:
+        start, end, _ = task_bounds
+        values: dict[str, list[str]] = {}
+        for line in lines[start + 1:end]:
+            match = ROLE_LINE.match(line)
+            if not match:
+                continue
+            values.setdefault(match.group("key"), []).append(_scalar(match.group("rest")))
+
+        runtime_entries = values.get("maxRuntimeMs", [])
+        if not runtime_entries:
+            errors.append("missing task policy: maxRuntimeMs")
+        elif len(runtime_entries) > 1:
+            errors.append("duplicate task policy: maxRuntimeMs")
+        else:
+            try:
+                runtime_ms = int(runtime_entries[0])
+            except ValueError:
+                runtime_ms = 0
+            if runtime_ms < MIN_RUNTIME_MS:
+                errors.append(f"task policy maxRuntimeMs must be >= {MIN_RUNTIME_MS}, got {runtime_entries[0] or '<empty>'}")
+
+        budget_entries = values.get("softRequestBudget", [])
+        if not budget_entries:
+            errors.append("missing task policy: softRequestBudget")
+        elif len(budget_entries) > 1:
+            errors.append("duplicate task policy: softRequestBudget")
+        elif budget_entries[0] != str(SOFT_REQUEST_BUDGET):
+            errors.append(
+                f"task policy softRequestBudget must be {SOFT_REQUEST_BUDGET}, got {budget_entries[0] or '<empty>'}"
+            )
     return errors
 
 
@@ -210,7 +330,7 @@ def command_check(path: Path) -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    print(f"OK: workflow model config guard passed ({path})")
+    print(f"OK: workflow config guard passed ({path})")
     return 0
 
 
@@ -220,13 +340,13 @@ def command_repair(project_root: Path, upstream_config: Path, common_git_dir: Pa
     except (OSError, UnicodeError, RuntimeError) as error:
         print(f"ERROR: unable to repair .omp/config.yml: {error}", file=sys.stderr)
         return 1
-    note = "; ".join(notes) if notes else "no alias edits required"
-    print(f"OK   model config preserved/recovered from {source_label}; {note}")
+    note = "; ".join(notes) if notes else "no workflow-owned config edits required"
+    print(f"OK   config preserved/recovered from {source_label}; {note}")
     return command_check(project_root / ".omp" / "config.yml")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Repair/validate Pavan's Workflow project model-role YAML safely.")
+    parser = argparse.ArgumentParser(description="Repair/validate Pavan's Workflow project YAML safely.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     check = sub.add_parser("check")
