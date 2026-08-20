@@ -6,7 +6,7 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
 Human-requested Product Designer path.
 
-> **Workflow v3.1.3 is live.** Update an installed project from its root:
+> **Workflow v3.1.4 is live.** Update an installed project from its root:
 >
 > ```bash
 > ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
@@ -21,6 +21,14 @@ Human-requested Product Designer path.
 
 ## v3.1 highlights
 
+- **Long-running workers:** v3.1.4 raises the hard subagent wall-clock ceiling
+  from 30 minutes to 4 hours and disables OMP's request-count forced-yield
+  budget for workflow roles. Human abort through Agent Hub and workflow retry/
+  stall controls remain available. Existing projects receive this policy through
+  the normal updater without losing their model selections.
+- **Native manual OMP Stats:** v3.1.4 uses the official `@oh-my-pi/omp-stats`
+  sync/server implementation after an explicit `o` or `/workflow-stats` action,
+  instead of duplicating OMP's internal dashboard security-header protocol.
 - **Actually scrollable Alt+W:** v3.1.3 mounts the dashboard as a true fullscreen
   OMP overlay with mouse tracking enabled. The complete plan/checklist/RUN TODO
   board is reachable with the mouse wheel, PageUp/PageDown, Shift+Up/Down, and
@@ -237,7 +245,25 @@ OMP Stats · manual · http://127.0.0.1:3847
 ```
 
 Nothing starts at OMP launch, and there is no persistent widget. Press `o` in
-Alt+W or run `/workflow-stats` to explicitly start, sync, and open it.
+Alt+W or run `/workflow-stats` to explicitly sync, start/reuse the native OMP
+Stats server, and open it. The workflow does not copy OMP's private dashboard
+security-header version.
+
+## Long-running worker policy
+
+Workflow task agents may run for up to four hours:
+
+```yaml
+task:
+  maxRuntimeMs: 14400000
+  softRequestBudget: 0
+```
+
+The four-hour wall is the terminal runaway guard. `softRequestBudget: 0`
+disables OMP's request-count forced-yield mechanism for workflow roles, so a
+large repository or long test suite is not stopped just because it crossed a
+fixed request count. Human abort remains available through Alt+A, and the
+workflow's own repeated-failure/stall rules still apply.
 
 ## Install
 
@@ -281,14 +307,19 @@ uses it to recover your existing role selections, quotes all bare `@workflow_*`
 role references safely, adds only missing design aliases, then validates the
 result before continuing.
 
+The v3.1.4 updater also migrates the two workflow-owned task guards to the
+four-hour runtime policy while preserving model mappings and unrelated project
+configuration.
+
 To refresh Graphify during the same update, append `--refresh-graphify`; the
 refresh is terminated after the configured timeout and cannot block the updater
 indefinitely.
 
 The updater preserves:
 
-- `.omp/config.yml` selections, recovering them from the newest project backup
-  when necessary and adding only missing optional design aliases;
+- `.omp/config.yml` model selections and unrelated settings, recovering them from
+  the newest project backup when necessary; workflow-owned task guards are
+  migrated to the current runtime policy;
 - `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, decisions, feedback, and reports;
 - product code and tests;
 - custom `.graphifyignore` rules, while appending the new control-plane exclusion.
