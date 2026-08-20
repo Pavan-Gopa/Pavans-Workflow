@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.1.3 installation without invoking a model.
+# Validate a Pavan's Workflow v3.1.4 installation without invoking a model.
 
 set -euo pipefail
 
@@ -50,10 +50,10 @@ for path in \
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.3" ]]; then
-  ok "workflow version: 3.1.3"
+if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.4" ]]; then
+  ok "workflow version: 3.1.4"
 else
-  fail "VERSION must be 3.1.3"
+  fail "VERSION must be 3.1.4"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
@@ -61,9 +61,16 @@ for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_
 done
 
 if python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml >/dev/null; then
-  ok "project model-role YAML guard"
+  ok "project YAML/model-role/task-policy guard"
 else
-  fail ".omp/config.yml is invalid or missing workflow design role aliases"
+  fail ".omp/config.yml is invalid, missing workflow roles, or does not carry the v3.1.4 task policy"
+fi
+
+if grep -Eq '^[[:space:]]*maxRuntimeMs:[[:space:]]*14400000([[:space:]]|$)' .omp/config.yml \
+   && grep -Eq '^[[:space:]]*softRequestBudget:[[:space:]]*0([[:space:]]|$)' .omp/config.yml; then
+  ok "task runtime policy: 4h hard wall, request-count forced stop disabled"
+else
+  fail "task runtime policy must use maxRuntimeMs=14400000 and softRequestBudget=0"
 fi
 
 if python3 AI_Workflow_Kit/script/workflow_config_repair.selftest.py >/dev/null; then
@@ -153,14 +160,25 @@ else
 fi
 
 STATS_EXTENSION=.omp/extensions/workflow-stats.ts
+STATS_RUNTIME=.omp/lib/workflow-stats-runtime.ts
 if grep -Eq 'session_start|session_switch|turn_end|setWidget|task:subagent:lifecycle' "$STATS_EXTENSION"; then
   fail "OMP Stats must have no automatic startup/widget/lifecycle hooks"
 else
   ok "OMP Stats is explicit-only"
 fi
-grep -q 'status: snapshot.status === "idle" ? "manual"' .omp/lib/workflow-stats-runtime.ts \
-  && ok "Alt+W manual Stats footer" \
-  || fail "Alt+W must expose the manual Stats URL"
+if grep -q '@oh-my-pi/omp-stats' "$STATS_RUNTIME" \
+   && grep -q 'syncAllSessions' "$STATS_RUNTIME" \
+   && grep -q 'startServer' "$STATS_RUNTIME" \
+   && ! grep -q 'STATS_HEADER_VALUE' "$STATS_RUNTIME"; then
+  ok "OMP Stats uses native OMP package without copied security-header version"
+else
+  fail "OMP Stats must use @oh-my-pi/omp-stats directly"
+fi
+if grep -q 'state.status === "idle" ? "manual"' "$STATS_RUNTIME"; then
+  ok "Alt+W manual Stats footer"
+else
+  fail "Alt+W must expose the manual Stats URL"
+fi
 
 run_bounded() {
   local seconds="$1"; shift
@@ -272,5 +290,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.1.3\n'
+printf 'Version: 3.1.4\n'
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'
