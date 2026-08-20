@@ -34,6 +34,12 @@ assert "maxConcurrency: 1" in normalized
 assert mod.validate_config_text(normalized) == []
 assert any("task policy" in note for note in notes)
 
+# "At least four hours": never lower a user-selected longer hard wall.
+long_runtime = normalized.replace("maxRuntimeMs: 14400000", "maxRuntimeMs: 28800000")
+long_runtime_repaired, _ = mod.normalize_config_text(long_runtime)
+assert "maxRuntimeMs: 28800000" in long_runtime_repaired
+assert mod.validate_config_text(long_runtime_repaired) == []
+
 broken = normalized.replace('"@workflow_architect"', '@workflow_architect').replace('"@workflow_reviewer"', '@workflow_reviewer')
 repaired, notes = mod.normalize_config_text(broken)
 assert 'workflow_designer: "@workflow_architect"' in repaired
