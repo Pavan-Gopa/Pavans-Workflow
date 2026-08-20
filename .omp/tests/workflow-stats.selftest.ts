@@ -1,51 +1,40 @@
 import assert from "node:assert/strict";
 import workflowStats from "../extensions/workflow-stats.ts";
 import { STATS_DEFAULT_URL, setStatsRuntimeForTesting } from "../lib/workflow-stats-runtime.ts";
-import { formatStatsUrl } from "../lib/workflow-stats.ts";
 
-assert.equal(formatStatsUrl("127.0.0.1", 3847), STATS_DEFAULT_URL);
-assert.equal(formatStatsUrl("::1", 3847), "http://[::1]:3847");
-
-let status: "idle" | "ready" = "idle";
-let startCalls = 0;
-let syncCalls = 0;
+let status: "idle" | "starting" | "ready" | "unavailable" = "idle";
+let openCalls = 0;
 let shutdownCalls = 0;
 const opened: string[] = [];
 
 const fakeController = {
-	url: STATS_DEFAULT_URL,
+	get url() {
+		return STATS_DEFAULT_URL;
+	},
 	get snapshot() {
-		return { status, ...(status === "ready" ? { url: STATS_DEFAULT_URL } : {}) };
-	},
-	async ensureStarted() {
-		startCalls += 1;
-		status = "ready";
-		return { status: "ready", url: STATS_DEFAULT_URL };
-	},
-	async requestSync() {
-		syncCalls += 1;
-		return { status: "ready", url: STATS_DEFAULT_URL };
+		return { status, url: STATS_DEFAULT_URL };
 	},
 	shutdown() {
 		shutdownCalls += 1;
 		status = "idle";
-		return { status: "idle" };
+		return { status: "idle", url: STATS_DEFAULT_URL };
 	},
 };
 
 setStatsRuntimeForTesting({
-	controller: fakeController as never,
+	controller: fakeController,
 	subscribe: () => () => {},
 	openInBrowser: async url => {
-		await fakeController.ensureStarted();
-		await fakeController.requestSync();
-		opened.push(url);
+		openCalls += 1;
+		status = "starting";
+		status = "ready";
+		opened.push(url ?? STATS_DEFAULT_URL);
 		return true;
 	},
 	widgetLines: () => [],
 	footerInfo: () => ({
 		url: STATS_DEFAULT_URL,
-		status: status === "idle" ? "manual" : "ready",
+		status: status === "idle" ? "manual" : status,
 	}),
 });
 
@@ -75,7 +64,7 @@ assert.equal(handlers.turn_end, undefined);
 assert.equal(lifecycleListenerCount, 0);
 assert.ok(handlers.session_shutdown);
 assert.ok(commands["workflow-stats"]);
-assert.match(commands["workflow-stats"].description, /Explicitly start/);
+assert.match(commands["workflow-stats"].description, /native OMP Stats/i);
 
 const notifications: Array<{ text: string; level?: string }> = [];
 const ctx = {
@@ -91,12 +80,9 @@ const ctx = {
 	},
 };
 
-assert.equal(startCalls, 0, "loading the extension must not start Stats");
-assert.equal(syncCalls, 0, "loading the extension must not sync Stats");
-
+assert.equal(openCalls, 0, "loading the extension must not start or sync Stats");
 await commands["workflow-stats"].handler("", ctx);
-assert.equal(startCalls, 1);
-assert.equal(syncCalls, 1);
+assert.equal(openCalls, 1);
 assert.deepEqual(opened, [STATS_DEFAULT_URL]);
 assert.ok(notifications.some(note => note.text.includes("Starting OMP Stats")));
 assert.ok(notifications.some(note => note.text.includes("OMP Stats opened")));
@@ -107,6 +93,6 @@ assert.equal(status, "idle");
 
 setStatsRuntimeForTesting(undefined);
 console.log("workflow stats selftest: PASS");
-console.log("  startup: no probe, spawn, sync, notification, or below-editor widget");
+console.log("  startup: no probe, server, sync, notification, or below-editor widget");
 console.log("  dashboard: fixed copyable URL remains available in manual state");
-console.log("  command: explicit start, sync, browser open, and owned shutdown");
+console.log("  command: one explicit native OMP Stats action and shutdown");
