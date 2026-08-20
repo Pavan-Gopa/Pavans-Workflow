@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.3 — 2026-08-20
+
+### Fixed
+
+- Alt+W now mounts as a true fullscreen OMP overlay instead of ordinary custom editor content.
+- Fullscreen mouse tracking is explicitly enabled, so terminal wheel events reach the dashboard `ScrollView` instead of leaving a non-interactive scrollbar on screen.
+- The dashboard viewport height is now derived from the fullscreen terminal surface rather than the smaller editor-area mount.
+
+### Added
+
+- Deterministic regression coverage that guards the fullscreen overlay, mouse tracking, wheel routing, and ScrollView wiring.
+- `workflow_doctor.sh` now fails if Alt+W loses its fullscreen mouse-tracked mount contract.
+
+### Compatibility
+
+- Existing Up/Down step selection, PageUp/PageDown, Shift+Up/Down, `g`/`G`, `c` live-follow, Todo views, live cursor recovery, Designer roles, config recovery, and manual OMP Stats remain unchanged.
+- The dashboard remains read-only and closing Alt+W restores the normal OMP screen.
+
 ## 3.1.2 — 2026-08-19
 
 ### Fixed

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.1.2 installation without invoking a model.
+# Validate a Pavan's Workflow v3.1.3 installation without invoking a model.
 
 set -euo pipefail
 
@@ -35,7 +35,7 @@ for path in \
   .omp/lib/workflow-dashboard-extension.ts .omp/lib/workflow-dashboard-viewport.ts \
   .omp/lib/workflow-stats.ts .omp/lib/workflow-stats-runtime.ts \
   .omp/tests/workflow-live-step.selftest.ts .omp/tests/workflow-stats.selftest.ts \
-  .omp/tests/workflow-dashboard-viewport.selftest.ts \
+  .omp/tests/workflow-dashboard-viewport.selftest.ts .omp/tests/workflow-dashboard-mount.selftest.ts \
   grilling/SKILL.md ponytail/SKILL.md ponytail/UPSTREAM.md \
   ponytail-review/SKILL.md ponytail-audit/SKILL.md ponytail-debt/SKILL.md \
   ui-designer/SKILL.md ui-designer/references/visual-hierarchy.md \
@@ -50,10 +50,10 @@ for path in \
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.2" ]]; then
-  ok "workflow version: 3.1.2"
+if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.1.3" ]]; then
+  ok "workflow version: 3.1.3"
 else
-  fail "VERSION must be 3.1.2"
+  fail "VERSION must be 3.1.3"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
@@ -141,6 +141,15 @@ if grep -q 'ScrollView' .omp/lib/workflow-dashboard-panel.ts \
   ok "Alt+W full vertical viewport and mouse/page scrolling"
 else
   fail "Alt+W must expose long plan/checklist/Todo content through one scrollable viewport"
+fi
+
+if grep -q 'fullscreen: true' .omp/lib/workflow-dashboard-panel.ts \
+   && grep -q 'mouseTracking: true' .omp/lib/workflow-dashboard-panel.ts \
+   && grep -q 'overlay: true' .omp/lib/workflow-dashboard-panel.ts \
+   && grep -q 'overlayOptions: DASHBOARD_OVERLAY_OPTIONS' .omp/lib/workflow-dashboard-panel.ts; then
+  ok "Alt+W fullscreen mouse-tracked overlay mounting"
+else
+  fail "Alt+W must mount fullscreen with mouse tracking so wheel events reach ScrollView"
 fi
 
 STATS_EXTENSION=.omp/extensions/workflow-stats.ts
@@ -263,5 +272,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.1.2\n'
+printf 'Version: 3.1.3\n'
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'
