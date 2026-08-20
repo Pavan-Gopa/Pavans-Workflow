@@ -15,13 +15,8 @@ DESIGN_DEFAULTS = (
     ("workflow_designer_backup", "@workflow_architect_backup"),
 )
 
-# Workflow-owned task safety policy. Existing project model mappings remain
-# user-owned, but these two guards are framework behavior and therefore migrate
-# with workflow updates.
-TASK_POLICY = (
-    ("maxRuntimeMs", "14400000"),  # 4 hours
-    ("softRequestBudget", "0"),    # disable request-count forced-yield guard
-)
+MIN_RUNTIME_MS = 14_400_000  # 4 hours
+SOFT_REQUEST_BUDGET = 0      # disable request-count forced-yield guard
 
 MODEL_ROLES_HEADER = re.compile(r"^(?P<indent>[ \t]*)modelRoles:[ \t]*(?:#.*)?$")
 SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
@@ -81,12 +76,20 @@ def _quote_bare_aliases(lines: list[str], start: int, end: int) -> tuple[list[st
     return repaired, count
 
 
+def _scalar(rest: str) -> str:
+    return rest.strip().split("#", 1)[0].strip()
+
+
 def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
     bounds = _section_bounds(lines, "task")
     if bounds is None:
-        block = ["", "task:", *[f"  {key}: {value}" for key, value in TASK_POLICY]]
-        lines.extend(block)
-        notes.append("created task policy block (4h runtime; request budget disabled)")
+        lines.extend([
+            "",
+            "task:",
+            f"  maxRuntimeMs: {MIN_RUNTIME_MS}",
+            f"  softRequestBudget: {SOFT_REQUEST_BUDGET}",
+        ])
+        notes.append("created task policy block (minimum 4h runtime; request budget disabled)")
         return lines
 
     start, end, child_indent = bounds
@@ -97,29 +100,52 @@ def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
             positions.setdefault(match.group("key"), []).append(index)
 
     changed: list[str] = []
-    missing: list[tuple[str, str]] = []
-    for key, value in TASK_POLICY:
-        indexes = positions.get(key, [])
-        if not indexes:
-            missing.append((key, value))
-            continue
-        first = indexes[0]
+
+    runtime_indexes = positions.get("maxRuntimeMs", [])
+    if not runtime_indexes:
+        lines[end:end] = [f"{child_indent}maxRuntimeMs: {MIN_RUNTIME_MS}"]
+        end += 1
+        changed.append("maxRuntimeMs:add")
+    else:
+        first = runtime_indexes[0]
         match = ROLE_LINE.match(lines[first])
         assert match is not None
-        desired = f"{match.group('indent')}{key}: {value}"
-        if lines[first].strip() != f"{key}: {value}":
-            lines[first] = desired
-            changed.append(key)
-        # Remove duplicate workflow-owned guard entries so OMP sees one value.
-        for duplicate in reversed(indexes[1:]):
+        raw = _scalar(match.group("rest"))
+        try:
+            current = int(raw)
+        except ValueError:
+            current = 0
+        if current < MIN_RUNTIME_MS:
+            lines[first] = f"{match.group('indent')}maxRuntimeMs: {MIN_RUNTIME_MS}"
+            changed.append("maxRuntimeMs:min4h")
+        for duplicate in reversed(runtime_indexes[1:]):
             del lines[duplicate]
             end -= 1
-            changed.append(f"dedup:{key}")
+            changed.append("dedup:maxRuntimeMs")
 
-    if missing:
-        insertion = [f"{child_indent}{key}: {value}" for key, value in missing]
-        lines[end:end] = insertion
-        changed.extend(key for key, _ in missing)
+    # Recalculate bounds after possible insertion/removal before handling budget.
+    bounds = _section_bounds(lines, "task")
+    assert bounds is not None
+    start, end, child_indent = bounds
+    budget_indexes: list[int] = []
+    for index in range(start + 1, end):
+        match = ROLE_LINE.match(lines[index])
+        if match and match.group("key") == "softRequestBudget":
+            budget_indexes.append(index)
+
+    if not budget_indexes:
+        lines[end:end] = [f"{child_indent}softRequestBudget: {SOFT_REQUEST_BUDGET}"]
+        changed.append("softRequestBudget:add")
+    else:
+        first = budget_indexes[0]
+        match = ROLE_LINE.match(lines[first])
+        assert match is not None
+        if _scalar(match.group("rest")) != str(SOFT_REQUEST_BUDGET):
+            lines[first] = f"{match.group('indent')}softRequestBudget: {SOFT_REQUEST_BUDGET}"
+            changed.append("softRequestBudget:disable")
+        for duplicate in reversed(budget_indexes[1:]):
+            del lines[duplicate]
+            changed.append("dedup:softRequestBudget")
 
     if changed:
         notes.append("task policy: " + ", ".join(changed))
@@ -190,15 +216,30 @@ def validate_config_text(source: str) -> list[str]:
             match = ROLE_LINE.match(line)
             if not match:
                 continue
-            values.setdefault(match.group("key"), []).append(match.group("rest").strip().split("#", 1)[0].strip())
-        for key, expected in TASK_POLICY:
-            entries = values.get(key, [])
-            if not entries:
-                errors.append(f"missing task policy: {key}")
-            elif len(entries) > 1:
-                errors.append(f"duplicate task policy: {key}")
-            elif entries[0] != expected:
-                errors.append(f"task policy {key} must be {expected}, got {entries[0] or '<empty>'}")
+            values.setdefault(match.group("key"), []).append(_scalar(match.group("rest")))
+
+        runtime_entries = values.get("maxRuntimeMs", [])
+        if not runtime_entries:
+            errors.append("missing task policy: maxRuntimeMs")
+        elif len(runtime_entries) > 1:
+            errors.append("duplicate task policy: maxRuntimeMs")
+        else:
+            try:
+                runtime_ms = int(runtime_entries[0])
+            except ValueError:
+                runtime_ms = 0
+            if runtime_ms < MIN_RUNTIME_MS:
+                errors.append(f"task policy maxRuntimeMs must be >= {MIN_RUNTIME_MS}, got {runtime_entries[0] or '<empty>'}")
+
+        budget_entries = values.get("softRequestBudget", [])
+        if not budget_entries:
+            errors.append("missing task policy: softRequestBudget")
+        elif len(budget_entries) > 1:
+            errors.append("duplicate task policy: softRequestBudget")
+        elif budget_entries[0] != str(SOFT_REQUEST_BUDGET):
+            errors.append(
+                f"task policy softRequestBudget must be {SOFT_REQUEST_BUDGET}, got {budget_entries[0] or '<empty>'}"
+            )
     return errors
 
 
