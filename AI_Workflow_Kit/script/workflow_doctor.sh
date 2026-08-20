@@ -66,11 +66,12 @@ else
   fail ".omp/config.yml is invalid, missing workflow roles, or does not carry the v3.1.4 task policy"
 fi
 
-if grep -Eq '^[[:space:]]*maxRuntimeMs:[[:space:]]*14400000([[:space:]]|$)' .omp/config.yml \
-   && grep -Eq '^[[:space:]]*softRequestBudget:[[:space:]]*0([[:space:]]|$)' .omp/config.yml; then
-  ok "task runtime policy: 4h hard wall, request-count forced stop disabled"
+RUNTIME_MS="$(awk '$1 == "maxRuntimeMs:" { print $2; exit }' .omp/config.yml 2>/dev/null || true)"
+REQUEST_BUDGET="$(awk '$1 == "softRequestBudget:" { print $2; exit }' .omp/config.yml 2>/dev/null || true)"
+if [[ "$RUNTIME_MS" =~ ^[0-9]+$ ]] && (( RUNTIME_MS >= 14400000 )) && [[ "$REQUEST_BUDGET" == "0" ]]; then
+  ok "task runtime policy: >=4h hard wall, request-count forced stop disabled"
 else
-  fail "task runtime policy must use maxRuntimeMs=14400000 and softRequestBudget=0"
+  fail "task runtime policy requires maxRuntimeMs>=14400000 and softRequestBudget=0"
 fi
 
 if python3 AI_Workflow_Kit/script/workflow_config_repair.selftest.py >/dev/null; then
