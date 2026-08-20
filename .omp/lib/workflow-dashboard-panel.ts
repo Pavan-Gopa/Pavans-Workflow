@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import type { Component, TUI } from "@oh-my-pi/pi-tui";
+import type { Component, OverlayOptions, TUI } from "@oh-my-pi/pi-tui";
 import { Key, matchesKey, routeSgrMouseInput, ScrollView } from "@oh-my-pi/pi-tui";
 import {
 	deriveDashboardViewModel,
@@ -24,6 +24,20 @@ import {
 
 const LIVE_REFRESH_MS = 1_000;
 const MOUSE_SCROLL_LINES = 3;
+
+/**
+ * Alt+W must be a real fullscreen overlay. OMP enables SGR mouse reporting only
+ * for fullscreen overlays, so mounting this dashboard as ordinary custom editor
+ * content would draw a scrollbar without ever receiving wheel events.
+ */
+export const DASHBOARD_OVERLAY_OPTIONS: OverlayOptions = {
+	fullscreen: true,
+	mouseTracking: true,
+	anchor: "top-left",
+	width: "100%",
+	height: "100%",
+};
+
 type ThemeTone = "accent" | "muted" | "warning";
 type ThemeLike = { fg: (tone: ThemeTone, text: string) => string };
 type KeybindingsLike = { matches: (data: string, action: string) => boolean };
@@ -64,7 +78,7 @@ class WorkflowDashboard implements Component {
 		private readonly done: (value: undefined) => void,
 	) {
 		this.viewport = new ScrollView([], {
-			height: Math.max(6, tui.terminal.rows - 1),
+			height: Math.max(6, tui.terminal.rows),
 			scrollbar: "auto",
 			fastScrollLines: 5,
 			theme: {
@@ -171,7 +185,11 @@ class WorkflowDashboard implements Component {
 	handleInput(data: string): void {
 		if (data.startsWith("\x1b[<")) {
 			routeSgrMouseInput(data, event => {
-				if (event.wheel !== null) this.manualScroll(() => this.viewport.scroll(event.wheel * MOUSE_SCROLL_LINES));
+				if (event.wheel !== null) {
+					this.manualScroll(() => this.viewport.scroll(event.wheel * MOUSE_SCROLL_LINES));
+					return true;
+				}
+				return false;
 			});
 			return;
 		}
@@ -221,8 +239,8 @@ class WorkflowDashboard implements Component {
 
 	render(width: number): readonly string[] {
 		const panelWidth = Math.max(20, width);
-		const viewportHeight = Math.max(6, this.tui.terminal.rows - 1);
-		const naturalBodyHeight = Math.max(8, this.tui.terminal.rows - 9);
+		const viewportHeight = Math.max(6, this.tui.terminal.rows);
+		const naturalBodyHeight = Math.max(8, viewportHeight - 8);
 		let lines: TextLine[];
 		if (!this.data) {
 			const border = `+${"-".repeat(panelWidth - 2)}+`;
@@ -296,9 +314,15 @@ class WorkflowDashboard implements Component {
 
 export async function showDashboard(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) return;
-	await ctx.ui.custom<undefined>((tui, theme, keybindings, done) => {
-		const panel = new WorkflowDashboard(pi, ctx, tui, theme, keybindings, done);
-		activePanel = panel;
-		return panel;
-	});
+	await ctx.ui.custom<undefined>(
+		(tui, theme, keybindings, done) => {
+			const panel = new WorkflowDashboard(pi, ctx, tui, theme, keybindings, done);
+			activePanel = panel;
+			return panel;
+		},
+		{
+			overlay: true,
+			overlayOptions: DASHBOARD_OVERLAY_OPTIONS,
+		},
+	);
 }
