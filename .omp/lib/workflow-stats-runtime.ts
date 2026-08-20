@@ -1,29 +1,50 @@
-// Real-environment wiring for the StatsController.
+// Native OMP Stats integration for Pavan's Workflow.
 //
-// v3 keeps the runtime lazy: constructing it performs no probe, spawn, sync, UI
-// update, or browser action. The dashboard may always display the known local
-// URL, while an explicit Human action starts the service.
+// Construction is deliberately side-effect free. The official
+// @oh-my-pi/omp-stats package is touched only after an explicit Human action
+// (`o` in Alt+W or `/workflow-stats`). This keeps startup quiet while avoiding
+// any duplicated knowledge of OMP's dashboard security/probe protocol.
 
 import { spawn } from "node:child_process";
 import {
-	browserCommands,
-	defaultLaunchCandidates,
-	statsStatusLabel,
-	StatsController,
-	type ChildExit,
-	type ChildLike,
-	type StatsState,
-} from "./workflow-stats.ts";
+	closeDb,
+	formatStatsDashboardUrl,
+	startServer,
+	syncAllSessions,
+} from "@oh-my-pi/omp-stats";
+import { browserCommands } from "./workflow-stats.ts";
 
 /** Legacy key retained for source compatibility; v3 never installs the widget. */
 export const STATS_WIDGET_KEY = "workflow-stats";
-export const STATS_DEFAULT_URL = "http://127.0.0.1:3847";
+export const STATS_DEFAULT_HOST = "127.0.0.1";
+export const STATS_DEFAULT_PORT = 3847;
+export const STATS_DEFAULT_URL = `http://${STATS_DEFAULT_HOST}:${STATS_DEFAULT_PORT}`;
+
+export type NativeStatsStatus = "idle" | "starting" | "ready" | "unavailable";
+export type NativeStatsState = {
+	status: NativeStatsStatus;
+	url: string;
+	error?: string;
+	lastSyncSummary?: string;
+};
+
+type NativeServer = {
+	hostname: string;
+	port: number;
+	stop(): void;
+};
+
+type StatsControllerCompat = {
+	readonly url: string;
+	readonly snapshot: NativeStatsState;
+	shutdown(): NativeStatsState;
+};
 
 export type StatsRuntime = {
-	controller: StatsController;
-	subscribe(listener: (state: StatsState) => void): () => void;
-	/** Explicit action: ensure Stats is running, sync once, then open the URL. */
-	openInBrowser(url: string): Promise<boolean>;
+	controller: StatsControllerCompat;
+	subscribe(listener: (state: NativeStatsState) => void): () => void;
+	/** Explicit action: native sync + native server start/reuse + browser open. */
+	openInBrowser(url?: string): Promise<boolean>;
 	/** Always empty: v3 has no persistent below-editor Stats widget. */
 	widgetLines(): string[];
 	/** Always available so Alt+W can show a copyable URL while Stats is idle. */
@@ -31,35 +52,6 @@ export type StatsRuntime = {
 };
 
 let runtime: StatsRuntime | undefined;
-
-function spawnDetached(command: string, args: string[], options: { cwd?: string }): ChildLike {
-	const child = spawn(command, args, { cwd: options.cwd, detached: true, stdio: "ignore" });
-	child.unref();
-	const { promise, resolve } = Promise.withResolvers<ChildExit>();
-	let settled = false;
-	const settle = (result: ChildExit): void => {
-		if (settled) return;
-		settled = true;
-		resolve(result);
-	};
-	child.once("error", error => settle({ ok: false, error: error.message }));
-	child.once("exit", (code, signal) =>
-		settle(code === 0 || signal !== null ? { ok: true } : { ok: false, error: `exit code ${code}` }),
-	);
-	return {
-		pid: child.pid,
-		kill: signal => {
-			if (child.pid === undefined) return;
-			try {
-				child.kill((signal ?? "SIGTERM") as NodeJS.Signals);
-			} catch {
-				// Process already gone.
-			}
-		},
-		wait: () => promise,
-	};
-}
-
 const BROWSER_OPEN_TIMEOUT_MS = 4_000;
 
 async function openUrlInBrowser(url: string): Promise<boolean> {
@@ -91,47 +83,89 @@ async function openUrlInBrowser(url: string): Promise<boolean> {
 	return false;
 }
 
-export function getStatsRuntime(cwd?: string): StatsRuntime {
+export function getStatsRuntime(_cwd?: string): StatsRuntime {
 	if (runtime) return runtime;
-	const listeners = new Set<(state: StatsState) => void>();
-	const controller = new StatsController({
-		fetch: (url, init) => fetch(url, init as RequestInit),
-		spawn: spawnDetached,
-		launchCandidates: defaultLaunchCandidates,
-		cwd,
-	});
-	controller.onChange = state => {
+
+	const listeners = new Set<(state: NativeStatsState) => void>();
+	let state: NativeStatsState = { status: "idle", url: STATS_DEFAULT_URL };
+	let server: NativeServer | undefined;
+	let opening: Promise<boolean> | undefined;
+
+	const publish = (patch: Partial<NativeStatsState>): NativeStatsState => {
+		state = { ...state, ...patch };
 		for (const listener of [...listeners]) {
 			try {
-				listener(state);
+				listener({ ...state });
 			} catch {
-				// One broken dashboard listener must not blind the others.
+				// One dashboard listener must never break Stats.
 			}
 		}
+		return { ...state };
 	};
+
+	const shutdown = (): NativeStatsState => {
+		try {
+			server?.stop();
+		} catch {
+			// Server may already be gone or may be a reused external no-op handle.
+		}
+		server = undefined;
+		try {
+			closeDb();
+		} catch {
+			// Shutdown is best-effort and never affects workflow state.
+		}
+		return publish({ status: "idle", url: STATS_DEFAULT_URL, error: undefined });
+	};
+
+	const controller: StatsControllerCompat = {
+		get url() {
+			return state.url;
+		},
+		get snapshot() {
+			return { ...state };
+		},
+		shutdown,
+	};
+
 	runtime = {
 		controller,
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
 		},
-		async openInBrowser(url) {
-			let state = controller.snapshot;
-			if (state.status !== "ready" && state.status !== "sync-warning") {
-				state = await controller.ensureStarted(true);
-			}
-			if (state.status !== "ready" && state.status !== "sync-warning") return false;
-			await controller.requestSync(true);
-			return openUrlInBrowser(url);
+		async openInBrowser(requestedUrl = STATS_DEFAULT_URL) {
+			if (opening) return opening;
+			opening = (async () => {
+				publish({ status: "starting", error: undefined });
+				try {
+					const sync = await syncAllSessions();
+					if (!server) server = await startServer(STATS_DEFAULT_PORT, STATS_DEFAULT_HOST);
+					const url = formatStatsDashboardUrl(server.hostname, server.port);
+					publish({
+						status: "ready",
+						url,
+						error: undefined,
+						lastSyncSummary: `Synced ${sync.processed} new entries from ${sync.files} files`,
+					});
+					return openUrlInBrowser(url || requestedUrl);
+				} catch (error) {
+					publish({
+						status: "unavailable",
+						error: error instanceof Error ? error.message : String(error),
+					});
+					return false;
+				} finally {
+					opening = undefined;
+				}
+			})();
+			return opening;
 		},
 		widgetLines: () => [],
-		footerInfo: () => {
-			const snapshot = controller.snapshot;
-			return {
-				url: controller.url,
-				status: snapshot.status === "idle" ? "manual" : statsStatusLabel(snapshot.status),
-			};
-		},
+		footerInfo: () => ({
+			url: state.url,
+			status: state.status === "idle" ? "manual" : state.status,
+		}),
 	};
 	return runtime;
 }
