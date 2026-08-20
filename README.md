@@ -6,7 +6,7 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
 Human-requested Product Designer path.
 
-> **Workflow v3.1.2 is live.** Update an installed project from its root:
+> **Workflow v3.1.3 is live.** Update an installed project from its root:
 >
 > ```bash
 > ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
@@ -21,10 +21,12 @@ Human-requested Product Designer path.
 
 ## v3.1 highlights
 
-- **Scrollable Alt+W:** v3.1.2 expands long plan/checklist/RUN TODO content and
-  places the complete dashboard in one vertical viewport. A scrollbar appears
-  only when content is taller than the terminal; mouse wheel, PageUp/PageDown,
-  Shift+Up/Down, and `g`/`G` navigate it.
+- **Actually scrollable Alt+W:** v3.1.3 mounts the dashboard as a true fullscreen
+  OMP overlay with mouse tracking enabled. The complete plan/checklist/RUN TODO
+  board is reachable with the mouse wheel, PageUp/PageDown, Shift+Up/Down, and
+  `g`/`G`; closing Alt+W restores the normal OMP screen.
+- **Full logical board:** v3.1.2 expands long plan/checklist/RUN TODO content
+  before viewport rendering instead of replacing it with `N more detail lines`.
 - **Live plan cursor restored:** Alt+W follows actual current work even when
   canonical `current_step` is temporarily stale. Arrow navigation pauses follow;
   `c` returns to the live step.
@@ -186,9 +188,11 @@ bash AI_Workflow_Kit/script/workflow_update.sh apply --refresh-graphify
 
 ## Alt+W live dashboard
 
-Alt+W shows plan, selected/current step, Main-verified `STEP CHECKLIST`, native
-`RUN TODO`, active worker/model/tool, gates, blockers, passive metrics, session
-tokens, and the copyable Stats URL.
+Alt+W opens a **fullscreen read-only inspector** showing plan,
+selected/current step, Main-verified `STEP CHECKLIST`, native `RUN TODO`, active
+worker/model/tool, gates, blockers, passive metrics, session tokens, and the
+copyable Stats URL. The normal OMP transcript is restored when the dashboard
+closes.
 
 Markers:
 
@@ -200,10 +204,11 @@ Markers:
 ○ = planned
 ```
 
-The dashboard now has one vertical viewport over the **complete logical board**.
-When all content fits, it behaves like the compact dashboard and shows no
-scrollbar. When plan/checklist/Todo content is taller than the terminal, no data
-is replaced with `N more detail lines`; scroll to it instead:
+The dashboard has one vertical viewport over the **complete logical board**.
+When all content fits, it shows no scrollbar. When plan/checklist/Todo content
+is taller than the terminal, no data is replaced with `N more detail lines`;
+scroll to it instead. Because Alt+W is mounted as a fullscreen mouse-tracked OMP
+overlay, terminal wheel events are delivered to its ScrollView.
 
 ```text
 mouse wheel        scroll 3 lines
