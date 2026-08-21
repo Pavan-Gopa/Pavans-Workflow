@@ -1,44 +1,41 @@
 #!/usr/bin/env bash
-# Bootstrap the packaged context-economy overlay onto an existing workflow project.
+# Install or repair the additive context-economy v2 experiment.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 TARGET="${1:-$PWD}"
 TARGET="$(cd "$TARGET" && pwd)"
-TEMP_ROOT="$(mktemp -d -t pavans-context-economy-bootstrap.XXXXXX)"
+TEMP_ROOT="$(mktemp -d -t pavans-context-economy-v2.XXXXXX)"
 trap 'rm -rf "$TEMP_ROOT"' EXIT
-ARCHIVE="$TEMP_ROOT/overlay.tar.bz2"
-SOURCE="$TEMP_ROOT/source"
+ARCHIVE="$TEMP_ROOT/context-economy-v2.tar.bz2"
+EXTRACTED="$TEMP_ROOT/source"
+CHECKSUM_FILE="$SCRIPT_DIR/context-economy-v2.sha256"
 
 command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required." >&2; exit 1; }
 command -v tar >/dev/null 2>&1 || { echo "ERROR: tar is required." >&2; exit 1; }
+[[ -f "$CHECKSUM_FILE" ]] || { echo "ERROR: v2 checksum file is missing." >&2; exit 1; }
 
-python3 - "$SCRIPT_DIR" "$SCRIPT_DIR/overlay.sha256" "$ARCHIVE" <<'PY'
-from __future__ import annotations
-
+python3 - "$SCRIPT_DIR" "$CHECKSUM_FILE" "$ARCHIVE" <<'PY'
 import base64
 import hashlib
 import pathlib
 import sys
 
-parts_dir = pathlib.Path(sys.argv[1])
-expected_path = pathlib.Path(sys.argv[2])
-out_path = pathlib.Path(sys.argv[3])
-parts = sorted(parts_dir.glob("overlay.tar.bz2.b64.part-*"))
+root = pathlib.Path(sys.argv[1])
+expected = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").strip().split()[0]
+parts = sorted(root.glob("context-economy-v2.tar.bz2.b64.part-*.txt"))
 if not parts:
-    raise SystemExit("ERROR: packaged overlay chunks are missing")
+    raise SystemExit("ERROR: context-economy v2 package chunks are missing")
 raw = base64.b64decode(b"".join(part.read_bytes() for part in parts), validate=False)
-expected = expected_path.read_text(encoding="utf-8").strip().split()[0]
 actual = hashlib.sha256(raw).hexdigest()
 if actual != expected:
-    raise SystemExit(f"ERROR: experiment overlay checksum mismatch: expected {expected}, got {actual}")
-out_path.write_bytes(raw)
+    raise SystemExit(f"ERROR: v2 package checksum mismatch: expected {expected}, got {actual}")
+pathlib.Path(sys.argv[3]).write_bytes(raw)
 PY
 
-mkdir -p "$SOURCE"
-tar -xjf "$ARCHIVE" -C "$SOURCE"
-
-bash "$SOURCE/AI_Workflow_Kit/script/workflow_experiment.selftest.sh"
-WF_EXPERIMENT_SOURCE_ROOT="$SOURCE" \
-  bash "$SOURCE/AI_Workflow_Kit/script/workflow_experiment.sh" _apply-source "$TARGET"
+mkdir -p "$EXTRACTED"
+tar -xjf "$ARCHIVE" -C "$EXTRACTED"
+WF_CONTEXT_ECONOMY_SOURCE_ROOT="$SOURCE_ROOT" \
+  exec bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v2/apply.sh" "$TARGET"
