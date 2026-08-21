@@ -3,56 +3,60 @@
 A reusable **multi-model, multi-agent development workflow** for
 [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with scoped
 [Graphify](https://github.com/Graphify-Labs/graphify) navigation, Coder-only
-[Ponytail](https://github.com/DietrichGebert/ponytail), and an optional
-Human-requested Product Designer path.
+[Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
+and optional Human-requested Product Designer roles.
 
-> **Workflow v3.1.4 is live.** Update an installed project from its root:
+> **Workflow v3.2.0 is live.**
+>
+> Update an installed workflow project from its root:
 >
 > ```bash
-> ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
+> (
+>   set -Eeuo pipefail
+>   tmp_dir="$(mktemp -d)"
+>   trap 'rm -rf "$tmp_dir"' EXIT
+>   git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
+>   bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply "$PWD"
+> )
 > ```
 >
-> Inside OMP, run `/work-update` or `/workflow-update`, then restart OMP.
->
-> **v3.1.0 config hotfix:** if OMP moved `.omp/config.yml` to a
-> `.omp/config.yml.broken-*` file, run the same updater command. v3.1.1+
-> restores the newest project-specific role mapping automatically and writes
-> YAML-safe quoted `@workflow_*` aliases before the doctor runs.
+> Then restart OMP. Inside OMP you can also run `/work-update` or
+> `/workflow-update`, then restart the session.
 
-## v3.1 highlights
+## v3.2 highlights
 
-- **Long-running workers:** v3.1.4 raises the hard subagent wall-clock ceiling
-  from 30 minutes to 4 hours and disables OMP's request-count forced-yield
-  budget for workflow roles. Human abort through Agent Hub and workflow retry/
-  stall controls remain available. Existing projects receive this policy through
-  the normal updater without losing their model selections.
-- **Native manual OMP Stats:** v3.1.4 uses the official `@oh-my-pi/omp-stats`
-  sync/server implementation after an explicit `o` or `/workflow-stats` action,
-  instead of duplicating OMP's internal dashboard security-header protocol.
-- **Actually scrollable Alt+W:** v3.1.3 mounts the dashboard as a true fullscreen
-  OMP overlay with mouse tracking enabled. The complete plan/checklist/RUN TODO
-  board is reachable with the mouse wheel, PageUp/PageDown, Shift+Up/Down, and
-  `g`/`G`; closing Alt+W restores the normal OMP screen.
-- **Full logical board:** v3.1.2 expands long plan/checklist/RUN TODO content
-  before viewport rendering instead of replacing it with `N more detail lines`.
-- **Live plan cursor restored:** Alt+W follows actual current work even when
-  canonical `current_step` is temporarily stale. Arrow navigation pauses follow;
-  `c` returns to the live step.
-- **Separate selected and live states:** `*` marks what the Human is inspecting;
-  `>` marks what the workflow is actually executing.
-- **Optional Design Advisor:** lower-cost read-only UI/UX brief for ordinary Coder.
-- **Optional Designer:** a strong visual model such as Kimi may directly redesign
-  one bounded presentation-layer surface.
-- **Visual safety:** Designer preserves behavior, APIs, data flow, localization,
-  accessibility, security, and unrelated scope; direct edits still pass Main,
-  Reviewer, Tester, and final Human acceptance.
-- **Safe project updates:** missing design aliases are added without overwriting
-  existing model selections or live project memory. v3.1.1 also repairs the
-  malformed v3.1.0 role-alias YAML regression automatically.
-- **Non-blocking updates:** existing Graphify output is preserved and refresh is
-  deferred by default; an explicit refresh is bounded by a portable timeout.
-- **v3 foundations remain:** Coder-only Ponytail, conditional Graphify, manual OMP
-  Stats, stable IDs, dual Todo, passive metrics, fresh workers, and manual failover.
+- **Main-only Context Economy.** Automatic context maintenance is scoped to the
+  top-level interactive Main session. Workers are excluded from Main compaction.
+  Main warns near 23%, waits for active work to reach a safe boundary, and can
+  perform `shake -> soft` maintenance around the 28% upper target.
+- **Quick Worker Focus.** With an empty composer, press `Tab` in Main to jump
+  directly into the currently running workflow worker. While viewing that worker,
+  press `Tab` or `Esc` to return to Main. If the composer contains text,
+  autocomplete is open, an overlay owns focus, or no worker is running, Tab keeps
+  normal OMP completion behavior.
+- **DEFAULT is the Main model source of truth.** `workflow_orchestrator` aliases
+  `@default`, and the live Main model is reconciled with the persisted role
+  selection. This synchronization is explicitly disabled in task/headless worker
+  sessions.
+- **Stable update path.** Context Economy is no longer a separate experiment to
+  install manually. Fresh installs and normal workflow updates install/repair the
+  v3.2 runtime automatically while preserving project state and model choices.
+- **Long-running workers.** Workflow task agents have a minimum four-hour hard
+  wall (`maxRuntimeMs: 14400000`), while OMP's request-count forced-yield guard is
+  disabled for workflow roles (`softRequestBudget: 0`). Human abort remains
+  available through Agent Hub.
+- **Fullscreen Alt+W dashboard.** The full plan, step checklist, native RUN TODO,
+  active worker, gates, failures, model usage, and Stats URL live in one scrollable
+  fullscreen inspector with mouse-wheel and keyboard navigation.
+- **Native manual OMP Stats.** Stats starts only after an explicit `o` or
+  `/workflow-stats` action and delegates to OMP's own Stats implementation instead
+  of copying its private dashboard security protocol.
+- **Optional Product Design path.** Design Advisor can return a read-only visual
+  brief; Designer can make bounded presentation-layer edits when explicitly
+  requested by the Human. Normal review, QA, and final Human acceptance still
+  apply.
+
+Full release history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Architecture
 
@@ -78,7 +82,7 @@ flowchart LR
 All routing goes through Main. Workers never route, invoke another worker,
 commit, push, or write canonical workflow state.
 
-The default loop is unchanged:
+The normal engineering loop is:
 
 ```text
 Main -> Coder -> Main verification
@@ -87,16 +91,39 @@ Main -> Coder -> Main verification
      -> next step
 ```
 
-Designer is not automatic. It is used only after explicit Human feedback or a
-direct request.
+Designer is not automatic. It is entered only after explicit Human intent.
 
-## Multi-model role pairs
+## Quick Worker Focus
 
-Configure through **Alt+M → Roles**:
+The fast path for inspecting the worker currently doing the job:
+
+```text
+Main + empty composer + running worker
+                Tab
+                 ↓
+        live worker session
+
+live worker + empty composer
+          Tab or Esc
+              ↓
+             Main
+```
+
+Quick Focus is contextual, not a global Tab rebind. Normal autocomplete keeps
+Tab whenever Quick Focus conditions are not satisfied. Agent Hub (`Alt+A`)
+remains the full roster, history, intervention, abort, and recovery surface.
+
+## Main model and role pairs
+
+Configure roles through **Alt+M → Roles**.
+
+`DEFAULT` is the authoritative Main model slot in v3.2. The Orchestrator role is
+kept synchronized with it rather than maintaining a second independent Main
+selection.
 
 | Role | Primary | Human-authorized backup |
 |---|---|---|
-| Orchestrator | `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
+| Orchestrator | `@workflow_orchestrator` (`@default`) | `@workflow_orchestrator_backup` |
 | Coder | `@workflow_coder` | `@workflow_coder_backup` |
 | Reviewer | `@workflow_reviewer` | `@workflow_reviewer_backup` |
 | Tester | `@workflow_tester` | `@workflow_tester_backup` |
@@ -105,56 +132,59 @@ Configure through **Alt+M → Roles**:
 | Design Advisor | `@workflow_design_advisor` | `@workflow_design_advisor_backup` |
 | Designer | `@workflow_designer` | `@workflow_designer_backup` |
 
-The two design roles are optional. By default they alias existing Reviewer and
-Architect models so upgrades remain immediately valid. Assign Kimi or another
-strong visual model to `workflow_designer` when desired. Missing design roles do
-not block ordinary development.
+Persistent model/provider failure pauses the workflow. Main does not silently
+switch to a backup; the Human authorizes fallback.
 
-Persistent model/provider failure pauses. Main never switches to a backup
-automatically; the Human must explicitly authorize the recorded role.
+## Context Economy
+
+v3.2 promotes the experimental Context Economy line into the stable workflow.
+The policy is deliberately **Main-only**:
+
+```text
+worker/task session
+    -> no Main context-maintenance loop
+
+interactive Main
+    -> warn near 23%
+    -> wait while worker is active
+    -> maintain context at a safe idle boundary
+    -> shake -> soft around the 28% upper target
+```
+
+This keeps Main responsive on long projects without letting inherited project
+extensions retarget or compact Coder/Reviewer/Tester sessions as though they
+were the Orchestrator.
 
 ## Optional Designer path
 
-### Lower-cost advice
+### Read-only design advice
 
 ```text
 /workflow designer advise settings panel
 ```
 
-or:
+or simply ask Main to consult Designer without allowing direct edits. The Design
+Advisor returns a concrete implementation brief tied to files/components,
+responsive and accessibility constraints, non-goals, implementation order, and
+observable acceptance criteria.
 
-```text
-Consult the designer, but let ordinary Coder implement the result.
-```
-
-`workflow-design-advisor` returns a concrete brief: problems tied to evidence,
-precise changes by file/component, responsive/accessibility requirements,
-non-goals, implementation order, and observable visual acceptance.
-
-### Direct redesign
+### Direct presentation-layer redesign
 
 ```text
 /workflow designer redesign settings panel
 ```
 
-or:
-
-```text
-The feature works, but the UI looks bad. Let Designer rewrite this component.
-```
-
-Main confirms target files and preserved behavior, then dispatches
-`workflow-designer`. The role may edit assigned components, styles, approved
-assets, and UI tests only. It must render/capture/inspect when project tooling
-supports it. The result goes through normal engineering review and QA, then the
-Human makes final visual acceptance.
+Main confirms the target surface and preserved behavior, then dispatches the
+Designer. The role may edit only the approved presentation-layer scope and
+associated UI tests/assets. The result still passes Main verification, Reviewer,
+enabled Tester, and final Human visual acceptance.
 
 ## Ponytail without role leakage
 
-Only primary and backup Coder autoload `ponytail`. Confirmed scope, target files,
-stable IDs, gates, validation, security, accessibility, compatibility, and data
-integrity outrank simplification. Designer and Advisor load `ui-designer`, not
-Ponytail.
+Only primary and backup Coder autoload `ponytail`. Confirmed scope, stable IDs,
+gates, validation, security, accessibility, compatibility, and data integrity
+outrank simplification. Designer and Advisor use the UI design skill rather than
+Coder's simplification policy.
 
 Manual one-shot skills remain available:
 
@@ -181,26 +211,16 @@ bash AI_Workflow_Kit/script/graphify_rebuild.sh force
 ```
 
 Graphify is advisory. Workflow updates preserve the existing graph and defer
-refresh by default, so updating cannot appear frozen on a large repository.
-Refresh afterward:
-
-```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
-```
-
-Or request a bounded refresh as part of the update:
-
-```bash
-bash AI_Workflow_Kit/script/workflow_update.sh apply --refresh-graphify
-```
+refresh by default so a framework update cannot appear frozen on a large repo.
+Use `--refresh-graphify` when you explicitly want a bounded refresh during the
+update.
 
 ## Alt+W live dashboard
 
-Alt+W opens a **fullscreen read-only inspector** showing plan,
-selected/current step, Main-verified `STEP CHECKLIST`, native `RUN TODO`, active
-worker/model/tool, gates, blockers, passive metrics, session tokens, and the
-copyable Stats URL. The normal OMP transcript is restored when the dashboard
-closes.
+`Alt+W` opens a **fullscreen read-only inspector** showing the complete workflow
+board: plan, selected/live step, Main-verified `STEP CHECKLIST`, native `RUN TODO`,
+active worker/model/tool, gates, blockers, passive metrics, session tokens, and
+the copyable Stats URL.
 
 Markers:
 
@@ -212,46 +232,37 @@ Markers:
 ○ = planned
 ```
 
-The dashboard has one vertical viewport over the **complete logical board**.
-When all content fits, it shows no scrollbar. When plan/checklist/Todo content
-is taller than the terminal, no data is replaced with `N more detail lines`;
-scroll to it instead. Because Alt+W is mounted as a fullscreen mouse-tracked OMP
-overlay, terminal wheel events are delivered to its ScrollView.
+The dashboard has one vertical viewport over the complete logical board. Long
+plans and Todo lists are scrolled rather than replaced with `N more detail lines`.
 
 ```text
-mouse wheel        scroll 3 lines
-PageUp/PageDown    scroll one page
+mouse wheel        scroll
+PageUp/PageDown    one page
 Shift+Up/Down      fast vertical scroll
 g / G              top / bottom
-Up/Down            inspect previous/next workflow step (existing behavior)
-Home/End            first/last workflow step (existing behavior)
-c                   return to live step and resume live-follow
+Up/Down            inspect previous/next workflow step
+Home/End            first/last workflow step
+c                   return to live step / resume follow
 ```
 
-Manual vertical scrolling pauses live-follow so runtime updates do not yank the
-viewport away while you inspect older content. Press `c` to resume following the
-current step.
-
-If runtime evidence proves a different live step than `STATE.yaml`, the dashboard
-uses the runtime step for display and shows a drift warning. It never writes
-state itself.
+Manual scrolling pauses live-follow so runtime updates do not yank the viewport
+away while older content is being inspected.
 
 ## OMP Stats is manual
 
-The footer always exposes:
+The dashboard exposes the local Stats URL, normally:
 
 ```text
-OMP Stats · manual · http://127.0.0.1:3847
+http://127.0.0.1:3847
 ```
 
-Nothing starts at OMP launch, and there is no persistent widget. Press `o` in
-Alt+W or run `/workflow-stats` to explicitly sync, start/reuse the native OMP
-Stats server, and open it. The workflow does not copy OMP's private dashboard
-security-header version.
+Nothing starts at OMP launch. Press `o` in Alt+W or run `/workflow-stats` to
+explicitly sync, start/reuse native OMP Stats, and open it in the browser.
 
 ## Long-running worker policy
 
-Workflow task agents may run for up to four hours:
+Workflow agents may legitimately spend hours on large repositories, migrations,
+long test suites, and tool-heavy implementation work:
 
 ```yaml
 task:
@@ -259,11 +270,9 @@ task:
   softRequestBudget: 0
 ```
 
-The four-hour wall is the terminal runaway guard. `softRequestBudget: 0`
-disables OMP's request-count forced-yield mechanism for workflow roles, so a
-large repository or long test suite is not stopped just because it crossed a
-fixed request count. Human abort remains available through Alt+A, and the
-workflow's own repeated-failure/stall rules still apply.
+Four hours is the workflow's minimum hard wall; the updater does not reduce a
+larger project-specific runtime that was already configured. Human abort remains
+available through Agent Hub and workflow retry/stall rules still apply.
 
 ## Install
 
@@ -284,8 +293,8 @@ bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
 rm -rf "$tmp_dir"
 ```
 
-Use the updater—not the installer—for projects already running v2 or v3.
-Full notes: [INSTALL.md](INSTALL.md).
+Use the updater, not the installer, for projects already running an earlier
+Pavan's Workflow release. Full notes: [INSTALL.md](INSTALL.md).
 
 ## Start
 
@@ -298,50 +307,49 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 Close that project's OMP process first, then run from the project root:
 
 ```bash
-( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
+(
+  set -Eeuo pipefail
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
+  bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply "$PWD"
+)
 ```
 
-If v3.1.0 already caused OMP to rename `.omp/config.yml` to
-`.omp/config.yml.broken-*`, do **not** delete that backup. The v3.1.1+ updater
-uses it to recover your existing role selections, quotes all bare `@workflow_*`
-role references safely, adds only missing design aliases, then validates the
-result before continuing.
+The v3.2 updater automatically installs/repairs the stable Context Economy
+payload, preserves durable workflow state, keeps project model selections,
+maintains the four-hour-or-longer runtime policy, restores the canonical Main
+control plane, and runs the workflow doctor before declaring the project ready.
 
-The v3.1.4 updater also migrates the two workflow-owned task guards to the
-four-hour runtime policy while preserving model mappings and unrelated project
-configuration.
-
-To refresh Graphify during the same update, append `--refresh-graphify`; the
-refresh is terminated after the configured timeout and cannot block the updater
-indefinitely.
+Legacy v3.1.0 projects whose invalid YAML caused OMP to rename `.omp/config.yml`
+to `.omp/config.yml.broken-*` are still recovered automatically from the newest
+usable project-specific config/backup.
 
 The updater preserves:
 
-- `.omp/config.yml` model selections and unrelated settings, recovering them from
-  the newest project backup when necessary; workflow-owned task guards are
-  migrated to the current runtime policy;
+- project model selections and unrelated `.omp/config.yml` settings;
 - `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, decisions, feedback, and reports;
 - product code and tests;
-- custom `.graphifyignore` rules, while appending the new control-plane exclusion.
+- custom `.graphifyignore` rules and existing Graphify output by default.
 
-It backs up replaced framework paths under Git's private common directory, runs
-migration and doctor, preserves the existing Graphify index by default, and
-tells you to restart OMP.
+To refresh Graphify during the same update, append `--refresh-graphify`.
 
 ## Useful controls
 
 | Action | Control |
 |---|---|
+| Quick focus active worker | `Tab` on empty Main composer |
+| Return from focused worker | `Tab` on empty worker composer or `Esc` |
+| Agent Hub / full roster | `Alt+A` |
+| Live workflow dashboard | `Alt+W` |
+| Dashboard scroll | mouse wheel / PgUp/PgDn / Shift+Up/Down / `g`/`G` |
+| Model roles | `Alt+M` |
 | Update framework | `/work-update` or `/workflow-update` |
 | Dry-run update | `/work-update check` |
 | Reconcile and continue | `/workflow status` |
 | Explain routing | `/workflow why` |
 | Designer advice | `/workflow designer advise <surface>` |
 | Designer edits | `/workflow designer redesign <surface>` |
-| Live dashboard | `Alt+W` |
-| Dashboard scroll | mouse wheel / PgUp/PgDn / Shift+Up/Down / `g`/`G` |
-| Agent Hub | `Alt+A` |
-| Model roles | `Alt+M` |
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
 | Diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |
 
