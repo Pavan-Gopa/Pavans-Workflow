@@ -42,15 +42,12 @@ WF_CONTEXT_ECONOMY_SOURCE_ROOT="$EXTRACTED" \
 WF_CONTEXT_ECONOMY_BASE_ROOT="$SOURCE_ROOT" \
   bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v3/apply.sh" "$TARGET"
 
-# The context-economy package is allowed to change compaction, model cycling,
-# worker prompts, and its own experiment helpers, but it must never fork the
-# workflow control plane. v3's historical overlay carried a shadow Alt+W panel
-# that could show 0/0 progress while the real file-backed workflow was already
-# running. Re-apply the canonical dashboard/statistics/Main-model stack from the
-# branch after the experiment overlay so Alt+W, live-step tracking, runtime TODO,
-# manual OMP Stats, and DEFAULT <-> Orchestrator synchronization stay aligned
-# with the production workflow.
+# The context-economy package may change compaction, model cycling, worker
+# prompts, and experiment helpers, but it must never fork the canonical Main
+# control plane. Re-apply the production contract and dashboard/statistics stack
+# from this branch after the overlay.
 CONTROL_PLANE_FILES=(
+  ".omp/AGENTS.md"
   ".omp/extensions/workflow-dashboard.ts"
   ".omp/extensions/workflow-stats.ts"
   ".omp/extensions/workflow-main-model-sync.ts"
@@ -81,8 +78,7 @@ done
 
 # Existing v3 installs may carry an explicit workflow_orchestrator assignment.
 # DEFAULT is the authoritative Main slot; retain the user's selected DEFAULT and
-# only turn the orchestrator role into an alias. The live extension then keeps
-# both Alt+M editing directions synchronized in-process.
+# only turn the orchestrator role into an alias.
 python3 - "$TARGET/.omp/config.yml" <<'PY'
 from pathlib import Path
 import re
@@ -136,4 +132,9 @@ grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|
   exit 1
 }
 
-printf '%s\n' "Context-economy v3 installed with canonical Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
+grep -q '^## Canonical state-transition transaction$' "$TARGET/.omp/AGENTS.md" || {
+  echo "ERROR: strict Main state-transition contract is missing after install." >&2
+  exit 1
+}
+
+printf '%s\n' "Context-economy v3 installed with canonical Main contract, Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
