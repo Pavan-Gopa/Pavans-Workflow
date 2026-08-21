@@ -1,6 +1,6 @@
 import type { DashboardData, RuntimeSnapshot, StepCard } from "./workflow-dashboard-core.ts";
 
-export type LiveStepSource = "state" | "work_item" | "runtime_todo" | "worker" | "session" | "none";
+export type LiveStepSource = "state" | "work_item" | "runtime_todo" | "worker" | "none";
 
 export type LiveStepResolution = {
 	id?: string;
@@ -46,7 +46,7 @@ function canonicalStepId(value: string | undefined, steps: StepCard[]): string |
 	}
 
 	const leading = text.match(
-		/^(?:current\s+)?(?:step|phase|review|qa|security|design|designer)?\s*[:#-]?\s*\[?([A-Za-z0-9][A-Za-z0-9._/-]*)\]?\b/i,
+		/^(?:current\s+)?(?:step|review|qa|security|design|designer)?\s*[:#-]?\s*\[?([A-Za-z0-9][A-Za-z0-9._/-]*)\]?\b/i,
 	)?.[1];
 	if (leading) {
 		const matched = steps.filter(step => step.id.toLowerCase() === leading.toLowerCase());
@@ -87,44 +87,25 @@ function workerStep(runtime: RuntimeSnapshot, steps: StepCard[]): string | undef
 	for (const value of values) {
 		if (!value) continue;
 		const match = value.match(
-			/(?:^|\n)\s*(?:step|phase|review|qa|security|design|designer|current step)\s*:\s*([^\n]+)/i,
+			/(?:^|\n)\s*(?:step|review|qa|security|design|designer|current step)\s*:\s*([^\n]+)/i,
 		);
 		focused.push(match?.[1] ?? value);
 	}
 	return uniqueStep(focused, steps);
 }
 
-function sessionStep(values: string[] | undefined, steps: StepCard[]): string | undefined {
-	if (!values?.length) return undefined;
-	// Newest evidence wins, but only when a single canonical plan ID is present
-	// in that message. This avoids guessing from long historical summaries that
-	// happen to mention several phases.
-	for (const value of values) {
-		const id = uniqueStep([value], steps);
-		if (id) return id;
-	}
-	return undefined;
-}
-
 /**
  * Resolve the step that is actually live in the OMP session.
  *
  * Strong runtime evidence intentionally outranks a stale but syntactically
- * valid STATE.yaml current_step. Recent Main/Human session text is a final
- * read-only recovery path for experimental plans that have started a P-phase
- * before durable state has been migrated. Dashboard recovery never writes
- * canonical state.
+ * valid STATE.yaml current_step. The dashboard remains read-only and surfaces
+ * the recovery source as a drift warning so Main can reconcile canonical state.
  */
-export function resolveLiveStep(
-	data: DashboardData,
-	runtime: RuntimeSnapshot,
-	sessionEvidence?: string[],
-): LiveStepResolution {
+export function resolveLiveStep(data: DashboardData, runtime: RuntimeSnapshot): LiveStepResolution {
 	const stateStep = canonicalStepId(data.state.currentStep, data.steps);
 	const workItemStep = canonicalStepId(data.state.currentWorkItemId, data.steps);
 	const todo = runtimeTodoStep(data);
 	const activeWorkerStep = workerStep(runtime, data.steps);
-	const recentSessionStep = sessionStep(sessionEvidence, data.steps);
 
 	if (workItemStep) {
 		return { id: workItemStep, source: "work_item", raw: data.state.currentWorkItemId };
@@ -138,10 +119,6 @@ export function resolveLiveStep(
 		return { id: activeWorkerStep, source: "worker" };
 	}
 
-	if (recentSessionStep && recentSessionStep !== stateStep) {
-		return { id: recentSessionStep, source: "session" };
-	}
-
 	if (stateStep) {
 		return { id: stateStep, source: "state", raw: data.state.currentStep };
 	}
@@ -150,25 +127,17 @@ export function resolveLiveStep(
 		return { id: todo.id, source: "runtime_todo" };
 	}
 
-	if (recentSessionStep) {
-		return { id: recentSessionStep, source: "session" };
-	}
-
 	return {
 		source: "none",
 		raw: normalized(data.state.currentStep) || undefined,
 	};
 }
 
-export function applyLiveStep(
-	data: DashboardData,
-	runtime: RuntimeSnapshot,
-	sessionEvidence?: string[],
-): {
+export function applyLiveStep(data: DashboardData, runtime: RuntimeSnapshot): {
 	data: DashboardData;
 	resolution: LiveStepResolution;
 } {
-	const resolution = resolveLiveStep(data, runtime, sessionEvidence);
+	const resolution = resolveLiveStep(data, runtime);
 	if (!resolution.id || resolution.id === data.state.currentStep) return { data, resolution };
 	return {
 		data: {
