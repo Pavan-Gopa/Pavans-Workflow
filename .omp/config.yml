@@ -1,7 +1,10 @@
 modelRoleStorage: project
 
 modelRoles:
-  workflow_orchestrator: openai-codex/gpt-5.6-sol:medium
+  # Main has one logical model slot: DEFAULT is authoritative, while the
+  # workflow orchestrator resolves through it. Alt+M synchronization keeps
+  # both directions locked together at runtime.
+  workflow_orchestrator: "@default"
   workflow_coder: openai-codex/gpt-5.6-luna:max
   workflow_reviewer: google-antigravity/gemini-3.6-flash:high
   workflow_tester: openai-codex/gpt-5.6-terra:max
