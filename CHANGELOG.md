@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.2.0 — 2026-08-21
+
+### Added
+
+- **Main-only Context Economy** is promoted from the experimental v3 branch into the normal workflow install/update path. Shared automatic compaction is disabled for task sessions; only the top-level interactive Main maintains context, warns near 23%, waits while a worker is active, and performs `shake -> soft` at a safe Main idle boundary around the 28% upper target.
+- **Quick Worker Focus:** with an empty composer, `Tab` jumps directly from Main into the currently running workflow worker. While viewing that worker, empty-composer `Tab` returns to Main; native `Esc` continues to return to Main as well. Typed drafts, autocomplete popups, overlays, and sessions without a running worker keep OMP's normal Tab behavior.
+- Deterministic selftests cover the Quick Focus decision matrix and Main-only model-sync scope.
+
+### Changed
+
+- `DEFAULT` is now the authoritative Main model slot and `workflow_orchestrator` aliases `@default`. Changing either supported Main role path is reconciled so the live Main model and persisted role selection do not drift apart.
+- Main model synchronization is explicitly disabled in headless/task sessions, preventing Coder/Reviewer/Tester workers from inheriting Orchestrator live-model reconciliation.
+- The normal `workflow_update.sh` and fresh `install.sh` now install/repair the Context Economy payload automatically; users no longer need the experimental installer command to receive v3.2 behavior.
+- The v3.2 doctor validates Main-only context policy, DEFAULT/Orchestrator synchronization, Quick Worker Focus, the >=4h worker runtime policy, fullscreen Alt+W, and explicit native `omp stats` delegation.
+
+### Compatibility
+
+- Existing project model selections, live workflow state, plans, reports, Graphify output, Designer roles, Ponytail policy, four-hour-or-longer worker runtimes, fullscreen Alt+W, and manual Stats behavior are preserved during update.
+- `Tab` is intentionally contextual rather than globally rebound: when Quick Focus conditions are not satisfied, OMP's built-in context-aware completion receives the key unchanged.
+- Agent Hub (`Alt+A`) remains the full roster/intervention surface; Quick Focus is only the fast path to the one running workflow worker.
+
 ## 3.1.4 — 2026-08-20
 
 ### Fixed
@@ -67,7 +88,7 @@
 ### Fixed
 
 - Quoted project model-role aliases such as `"@workflow_architect"` so OMP's YAML parser accepts the v3.1 Designer defaults.
-- Added automatic recovery when OMP already moved an invalid `.omp/config.yml` to `.omp/config.yml.broken-*`.
+- Added automatic recovery when OMP already moved an invalid `.omp/config.yml` to a `.omp/config.yml.broken-*` file.
 - Updater now prefers the newest recoverable project config, then workflow update backups, and only falls back to template defaults when no project-specific mapping can be recovered.
 - Existing custom model selections are preserved while missing Designer/Design Advisor aliases are added safely.
 - Update `check` reports a config repair before mutating anything, and `workflow_doctor.sh` validates the model-role config before launch.

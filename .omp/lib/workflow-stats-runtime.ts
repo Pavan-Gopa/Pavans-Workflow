@@ -1,17 +1,11 @@
-// Native OMP Stats integration for Pavan's Workflow.
+// Manual OMP Stats integration for Pavan's Workflow.
 //
-// Construction is deliberately side-effect free. The official
-// @oh-my-pi/omp-stats package is touched only after an explicit Human action
-// (`o` in Alt+W or `/workflow-stats`). This keeps startup quiet while avoiding
-// any duplicated knowledge of OMP's dashboard security/probe protocol.
+// Project extensions must not import @oh-my-pi/omp-stats directly: that package
+// is an internal dependency of the OMP CLI and is not guaranteed to be exposed
+// through the runtime extension resolver. The supported boundary for a project
+// extension is therefore the native `omp stats` command itself.
 
-import { spawn } from "node:child_process";
-import {
-	closeDb,
-	formatStatsDashboardUrl,
-	startServer,
-	syncAllSessions,
-} from "@oh-my-pi/omp-stats";
+import { spawn, type ChildProcess } from "node:child_process";
 import { browserCommands } from "./workflow-stats.ts";
 
 /** Legacy key retained for source compatibility; v3 never installs the widget. */
@@ -28,12 +22,6 @@ export type NativeStatsState = {
 	lastSyncSummary?: string;
 };
 
-type NativeServer = {
-	hostname: string;
-	port: number;
-	stop(): void;
-};
-
 type StatsControllerCompat = {
 	readonly url: string;
 	readonly snapshot: NativeStatsState;
@@ -43,7 +31,7 @@ type StatsControllerCompat = {
 export type StatsRuntime = {
 	controller: StatsControllerCompat;
 	subscribe(listener: (state: NativeStatsState) => void): () => void;
-	/** Explicit action: native sync + native server start/reuse + browser open. */
+	/** Explicit action: delegate sync/server/browser lifecycle to `omp stats`. */
 	openInBrowser(url?: string): Promise<boolean>;
 	/** Always empty: v3 has no persistent below-editor Stats widget. */
 	widgetLines(): string[];
@@ -53,6 +41,11 @@ export type StatsRuntime = {
 
 let runtime: StatsRuntime | undefined;
 const BROWSER_OPEN_TIMEOUT_MS = 4_000;
+const CLI_START_GRACE_MS = 750;
+
+function childRunning(child: ChildProcess | undefined): child is ChildProcess {
+	return !!child && child.exitCode === null && child.signalCode === null && !child.killed;
+}
 
 async function openUrlInBrowser(url: string): Promise<boolean> {
 	const env = process.env as Record<string, string | undefined>;
@@ -83,13 +76,35 @@ async function openUrlInBrowser(url: string): Promise<boolean> {
 	return false;
 }
 
-export function getStatsRuntime(_cwd?: string): StatsRuntime {
+function waitForCliStart(child: ChildProcess): Promise<{ ok: true } | { ok: false; error: string }> {
+	return new Promise(resolve => {
+		let settled = false;
+		const finish = (result: { ok: true } | { ok: false; error: string }) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve(result);
+		};
+		const timer = setTimeout(() => finish({ ok: true }), CLI_START_GRACE_MS);
+		timer.unref?.();
+		child.once("error", error => finish({ ok: false, error: error.message }));
+		child.once("exit", (code, signal) => {
+			finish({
+				ok: false,
+				error: signal ? `omp stats exited on ${signal}` : `omp stats exited with code ${code ?? "unknown"}`,
+			});
+		});
+	});
+}
+
+export function getStatsRuntime(cwd = process.cwd()): StatsRuntime {
 	if (runtime) return runtime;
 
 	const listeners = new Set<(state: NativeStatsState) => void>();
 	let state: NativeStatsState = { status: "idle", url: STATS_DEFAULT_URL };
-	let server: NativeServer | undefined;
+	let child: ChildProcess | undefined;
 	let opening: Promise<boolean> | undefined;
+	let shuttingDown = false;
 
 	const publish = (patch: Partial<NativeStatsState>): NativeStatsState => {
 		state = { ...state, ...patch };
@@ -104,17 +119,16 @@ export function getStatsRuntime(_cwd?: string): StatsRuntime {
 	};
 
 	const shutdown = (): NativeStatsState => {
-		try {
-			server?.stop();
-		} catch {
-			// Server may already be gone or may be a reused external no-op handle.
+		shuttingDown = true;
+		if (childRunning(child)) {
+			try {
+				child.kill("SIGTERM");
+			} catch {
+				// Best effort only.
+			}
 		}
-		server = undefined;
-		try {
-			closeDb();
-		} catch {
-			// Shutdown is best-effort and never affects workflow state.
-		}
+		child = undefined;
+		shuttingDown = false;
 		return publish({ status: "idle", url: STATS_DEFAULT_URL, error: undefined });
 	};
 
@@ -136,19 +150,47 @@ export function getStatsRuntime(_cwd?: string): StatsRuntime {
 		},
 		async openInBrowser(requestedUrl = STATS_DEFAULT_URL) {
 			if (opening) return opening;
+			if (childRunning(child)) {
+				publish({ status: "ready", url: requestedUrl, error: undefined });
+				return openUrlInBrowser(requestedUrl);
+			}
+
 			opening = (async () => {
-				publish({ status: "starting", error: undefined });
+				publish({ status: "starting", url: requestedUrl, error: undefined });
 				try {
-					const sync = await syncAllSessions();
-					if (!server) server = await startServer(STATS_DEFAULT_PORT, STATS_DEFAULT_HOST);
-					const url = formatStatsDashboardUrl(server.hostname, server.port);
+					child = spawn(
+						"omp",
+						["stats", "--port", String(STATS_DEFAULT_PORT), "--host", STATS_DEFAULT_HOST],
+						{
+							cwd,
+							stdio: "ignore",
+							env: process.env,
+						},
+					);
+					child.unref();
+					const owned = child;
+					owned.once("exit", (code, signal) => {
+						if (shuttingDown || child !== owned) return;
+						child = undefined;
+						publish({
+							status: "unavailable",
+							error: signal ? `omp stats exited on ${signal}` : `omp stats exited with code ${code ?? "unknown"}`,
+						});
+					});
+					const started = await waitForCliStart(owned);
+					if (!started.ok) {
+						if (child === owned) child = undefined;
+						publish({ status: "unavailable", error: started.error });
+						return false;
+					}
 					publish({
 						status: "ready",
-						url,
+						url: requestedUrl,
 						error: undefined,
-						lastSyncSummary: `Synced ${sync.processed} new entries from ${sync.files} files`,
+						lastSyncSummary: "Native OMP CLI owns Stats sync, server security, and browser lifecycle",
 					});
-					return openUrlInBrowser(url || requestedUrl);
+					// `omp stats` opens the browser itself after synchronizing sessions.
+					return true;
 				} catch (error) {
 					publish({
 						status: "unavailable",

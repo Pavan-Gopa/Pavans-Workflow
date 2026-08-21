@@ -44,6 +44,55 @@ prove success.
 6. Stop after three materially identical failures of the same approach. New
    evidence, a new approach, or a different failure is progress.
 
+## Canonical state-transition transaction
+
+Main MUST treat every workflow transition as an ordered transaction. Never
+launch work first and repair `STATE.yaml` afterward.
+
+Before dispatching any worker or beginning work on a new step:
+
+1. Read the current `STEPS.md` and identify the exact canonical step card ID.
+   Use the real card ID (`P3A`, `S31`, etc.), never an informal parent label such
+   as `P3` when `P3A` is the actual card.
+2. Write `STATE.yaml.current_step` to that exact ID.
+3. Write `STATE.yaml.current_work_item_id` to the exact stable checklist ID
+   (`<step>.D<n>`, `.O<n>`, or `.J<n>`) when one item is active, plus a readable
+   `current_work_item`. Do not invent an ID that is absent from `STEPS.md`.
+4. Reconcile `completed_steps` against the CURRENT plan. Old train IDs may be
+   retained as history/notes, but must not masquerade as completion state for
+   the active plan.
+5. Persist the transition to disk and reread `STATE.yaml` + `STEPS.md`. Do not
+   continue if `current_step` is missing from the current plan or the active
+   work-item ID does not exist in that step.
+6. Only after durable state is valid, create/update native OMP Todo. Prefix
+   linked runtime tasks with the same stable ID, e.g. `[P3A.D2] ...`.
+7. Only after state + Todo linkage is coherent may Main dispatch a worker.
+
+After a worker result, Main verifies evidence first, then performs the reverse
+transaction: update checklist/gates and statuses, update `completed_steps` when
+the card is truly closed, clear/advance `current_work_item_id`, set the next
+`current_step`, persist, reread, and only then route again.
+
+A dashboard drift warning is evidence that this transaction was missed. Main
+must repair canonical files immediately; never rely on the dashboard to infer or
+write state on Main's behalf.
+
+## Repository/workspace boundary
+
+The workflow root and the product Git repository may be different directories.
+Main must discover and report that boundary explicitly before claiming a push is
+complete.
+
+- Pushing a nested product repository does NOT mean file-backed workflow state
+  was pushed.
+- Never say "everything is pushed" unless every intended repository/worktree
+  and the canonical workflow files are actually included in the reported push.
+- If `STATE.yaml`, `STEPS.md`, feedback, or other workflow memory lives outside
+  the product repository, say so explicitly and report whether it is local-only,
+  committed in another repository, or intentionally not versioned.
+- A product-code push never substitutes for the durable state-transition
+  transaction above; Alt+W reads the local workflow root currently running OMP.
+
 Default flow remains unchanged:
 
 ```text

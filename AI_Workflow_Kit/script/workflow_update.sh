@@ -72,6 +72,7 @@ FRAMEWORK_PATHS=(
   "ui-designer"
   "AI_Workflow_Kit/script"
   "AI_Workflow_Kit/vendor"
+  "AI_Workflow_Kit/experiments/context-economy"
   "AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md"
   "AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md"
   "AI_Workflow_Kit/docs/AI/MODELS.md"
@@ -113,8 +114,14 @@ if [[ "$ACTION" == "check" ]]; then
     printf '[REPAIR]   .omp/config.yml missing; updater will recover the newest workflow config backup\n'
     changed=1
   elif ! python3 "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_config_repair.py" check .omp/config.yml >/dev/null 2>&1; then
-    printf '[REPAIR]   .omp/config.yml needs workflow role/YAML repair\n'
+    printf '[REPAIR]   .omp/config.yml needs workflow role/YAML/task-policy repair\n'
     changed=1
+  fi
+  if ! grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|$)' .omp/config.yml 2>/dev/null; then
+    printf '[MIGRATE]  Main model slot -> DEFAULT / workflow_orchestrator alias\n'; changed=1
+  fi
+  if [[ ! -f .omp/workflow-context-policy.json || ! -f .omp/lib/workflow-context-economy.ts ]]; then
+    printf '[MIGRATE]  Main-only context economy v3\n'; changed=1
   fi
   if [[ -f .graphifyignore ]] && ! grep -qxF '/ui-designer/' .graphifyignore; then
     printf '[ADD]       .graphifyignore -> /ui-designer/\n'; changed=1
@@ -203,7 +210,7 @@ for item in "${FRAMEWORK_PATHS[@]}"; do
   [[ -e "$TEMP_CLONE/$item" ]] || continue
   if [[ -d "$TEMP_CLONE/$item" ]]; then
     case "$item" in
-      ponytail|ponytail-review|ponytail-audit|ponytail-debt|ui-designer|AI_Workflow_Kit/vendor)
+      ponytail|ponytail-review|ponytail-audit|ponytail-debt|ui-designer|AI_Workflow_Kit/vendor|AI_Workflow_Kit/experiments/context-economy)
         copy_exact_dir "$item" ;;
       *) copy_overlay_dir "$item" ;;
     esac
@@ -214,6 +221,9 @@ done
 
 printf '\n=== Preserving / repairing project model roles ===\n'
 repair_model_config
+
+printf '\n=== Installing Workflow v3.2 Main context policy ===\n'
+bash "$TEMP_CLONE/AI_Workflow_Kit/experiments/context-economy/install.sh" "$PROJECT_ROOT"
 
 if [[ ! -e "$PROJECT_ROOT/.graphifyignore" ]]; then
   cp "$TEMP_CLONE/.graphifyignore" "$PROJECT_ROOT/.graphifyignore"
@@ -249,5 +259,6 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 printf '\nWorkflow updated to v%s (%s).\n' "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
 printf 'Live state and existing model selections were preserved/recovered.\n'
+printf 'Main context economy and Quick Worker Focus are installed as stable v3.2 features.\n'
 printf 'Framework backup: %s\n' "$BACKUP_ROOT"
 printf 'Restart OMP so updated extensions, agents, and skills are discovered.\n'
