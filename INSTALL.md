@@ -1,7 +1,8 @@
-# Install Pavan's Workflow v3.1
+# Install Pavan's Workflow v3.2
 
-Version 3.1 restores the Alt+W live cursor and adds optional Design Advisor and
-Designer roles without changing the default Coder → Reviewer → Tester flow.
+Version 3.2 promotes the Main-only Context Economy experiment into the normal
+workflow and adds Quick Worker Focus while preserving the v3.1 dashboard,
+Designer path, long-worker runtime policy, and manual OMP Stats.
 
 ## Update an existing v2/v3 project
 
@@ -11,13 +12,17 @@ First close OMP for that project. From its root:
 ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 ```
 
+The v3.2 updater automatically installs/repairs the stable Main context policy,
+keeps task/headless workers out of Main compaction, binds
+`workflow_orchestrator` to the authoritative `DEFAULT` Main model slot, and
+installs Quick Worker Focus. Existing project model selections and live workflow
+state are preserved.
+
 Workflow updates preserve the existing Graphify index and do not rebuild it by
 default. To request a bounded refresh during the same update, append
 `--refresh-graphify`.
 
-The updater preserves `.omp/config.yml`, live state, steps, project context,
-decisions, feedback, reports, product code, and tests. It adds only missing
-optional design aliases to the existing model map and creates a backup under:
+Framework backups are stored under:
 
 ```text
 <git-common-dir>/pavans-workflow/update-backups/<timestamp>/
@@ -66,6 +71,32 @@ rm -rf "$tmp_dir"
 The installer refuses to overwrite an existing workflow; use the updater for
 existing installations.
 
+## Main context economy
+
+Context maintenance is Main-only. Worker/task sessions do not inherit automatic
+compaction. Main warns near 23% context use, waits while a worker is active, and
+performs the configured `shake -> soft` maintenance at the next safe Main idle
+boundary around the 28% upper target.
+
+The Main model has one authoritative slot: `DEFAULT`. The
+`workflow_orchestrator` role aliases `@default`, so changing the Main model does
+not leave the live session and workflow role mapping out of sync.
+
+## Quick Worker Focus
+
+With an empty composer and one running workflow worker:
+
+```text
+Main   -- Tab --> Worker
+Worker -- Tab --> Main
+Worker -- Esc --> Main
+```
+
+Tab remains normal OMP context-aware completion when text is present, an
+autocomplete popup/overlay owns input, or no running worker exists. Agent Hub
+(`Alt+A`) remains available for the full roster, history, abort, and intervention
+controls.
+
 ## Graphify
 
 Tested version:
@@ -93,47 +124,23 @@ bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Use **Alt+M → Roles** for the six core role pairs. Version 3.1 also adds:
-
-```text
-workflow_design_advisor
-workflow_design_advisor_backup
-workflow_designer
-workflow_designer_backup
-```
-
-They are optional. Existing upgrades receive aliases to Reviewer/Architect
-models so nothing breaks. Assign Kimi or another strong visual model to
-`workflow_designer` when you want direct redesign work.
-
-## Designer usage
-
-Read-only advice:
-
-```text
-/workflow designer advise <surface>
-```
-
-Direct scoped implementation:
-
-```text
-/workflow designer redesign <surface>
-```
-
-Main passes exact Human feedback, target files, preserve-list, visual evidence,
-and acceptance gates. Direct Designer edits still pass Reviewer, Tester, and
-final Human visual acceptance.
+Use **Alt+M → Roles** for the workflow role pairs. Design Advisor and Designer
+remain optional. Existing upgrades receive aliases to Reviewer/Architect models
+so nothing breaks; assign Kimi or another strong visual model to
+`workflow_designer` when desired.
 
 ## Alt+W behavior
 
 The plan uses separate selected and live markers. It auto-follows live work until
-you navigate with Up/Down. Press `c` to return to the live step. Runtime evidence
-can recover display from stale state, but the dashboard never writes state.
+you navigate with Up/Down. Press `c` to return to the live step. The dashboard is
+a fullscreen mouse-tracked vertical viewport, so long plans/checklists/native
+Todo lists remain reachable by wheel, PageUp/PageDown, Shift+Up/Down, and `g/G`.
 
 ## OMP Stats
 
 Still manual. Alt+W shows `http://127.0.0.1:3847`; press `o` or run
-`/workflow-stats`. No startup server or persistent widget is installed.
+`/workflow-stats`. No startup server or persistent widget is installed. The
+workflow delegates sync/security/server behavior to the native `omp stats` CLI.
 
 ## Verify
 
@@ -145,5 +152,5 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.1.0
+3.2.0
 ```
