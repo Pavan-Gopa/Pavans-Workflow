@@ -37,6 +37,43 @@ PY
 
 mkdir -p "$EXTRACTED"
 tar -xjf "$ARCHIVE" -C "$EXTRACTED"
+
 WF_CONTEXT_ECONOMY_SOURCE_ROOT="$EXTRACTED" \
 WF_CONTEXT_ECONOMY_BASE_ROOT="$SOURCE_ROOT" \
-  exec bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v3/apply.sh" "$TARGET"
+  bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v3/apply.sh" "$TARGET"
+
+# The context-economy package is allowed to change compaction, model cycling,
+# worker prompts, and its own experiment helpers, but it must never fork the
+# workflow control plane. v3's historical overlay carried a shadow Alt+W panel
+# that could show 0/0 progress while the real file-backed workflow was already
+# running. Re-apply the canonical dashboard/statistics stack from the branch
+# after the experiment overlay so Alt+W, live-step tracking, runtime TODO, and
+# manual OMP Stats stay exactly aligned with the production workflow.
+CONTROL_PLANE_FILES=(
+  ".omp/extensions/workflow-dashboard.ts"
+  ".omp/extensions/workflow-stats.ts"
+  ".omp/lib/workflow-consistency.ts"
+  ".omp/lib/workflow-dashboard-core.ts"
+  ".omp/lib/workflow-dashboard-data.ts"
+  ".omp/lib/workflow-dashboard-extension.ts"
+  ".omp/lib/workflow-dashboard-panel.ts"
+  ".omp/lib/workflow-dashboard-viewport.ts"
+  ".omp/lib/workflow-live-step.ts"
+  ".omp/lib/workflow-routing.ts"
+  ".omp/lib/workflow-runtime-todo.ts"
+  ".omp/lib/workflow-stats-runtime.ts"
+  ".omp/lib/workflow-stats.ts"
+)
+
+for rel in "${CONTROL_PLANE_FILES[@]}"; do
+  src="$SOURCE_ROOT/$rel"
+  dst="$TARGET/$rel"
+  [[ -f "$src" ]] || { echo "ERROR: canonical control-plane file is missing: $rel" >&2; exit 1; }
+  mkdir -p "$(dirname "$dst")"
+  if [[ ! -e "$dst" || ! "$src" -ef "$dst" ]]; then
+    cp "$src" "$dst"
+  fi
+  cmp -s "$src" "$dst" || { echo "ERROR: failed to restore canonical control-plane file: $rel" >&2; exit 1; }
+done
+
+printf '%s\n' "Context-economy v3 installed with canonical Alt+W dashboard and OMP Stats control plane."
