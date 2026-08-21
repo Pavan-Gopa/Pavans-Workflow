@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install/repair the Main-only context-economy v3 experiment.
+# Install/repair the Main-only context-economy v3 payload used by Workflow v3.2.
 
 set -euo pipefail
 
@@ -42,15 +42,16 @@ WF_CONTEXT_ECONOMY_SOURCE_ROOT="$EXTRACTED" \
 WF_CONTEXT_ECONOMY_BASE_ROOT="$SOURCE_ROOT" \
   bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v3/apply.sh" "$TARGET"
 
-# The context-economy package may change compaction, model cycling, worker
-# prompts, and experiment helpers, but it must never fork the canonical Main
-# control plane. Re-apply the production contract and dashboard/statistics stack
-# from this branch after the overlay.
+# The packaged context-economy payload may change compaction, model cycling,
+# worker prompts, and helper files, but it must never fork the canonical Main
+# control plane. Re-apply production-owned files from the release branch after
+# the payload so stable hotfixes always win.
 CONTROL_PLANE_FILES=(
   ".omp/AGENTS.md"
   ".omp/extensions/workflow-dashboard.ts"
   ".omp/extensions/workflow-stats.ts"
   ".omp/extensions/workflow-main-model-sync.ts"
+  ".omp/extensions/workflow-quick-focus.ts"
   ".omp/lib/workflow-consistency.ts"
   ".omp/lib/workflow-dashboard-core.ts"
   ".omp/lib/workflow-dashboard-data.ts"
@@ -63,6 +64,7 @@ CONTROL_PLANE_FILES=(
   ".omp/lib/workflow-stats-runtime.ts"
   ".omp/lib/workflow-stats.ts"
   ".omp/tests/workflow-main-model-sync.selftest.ts"
+  ".omp/tests/workflow-quick-focus.selftest.ts"
 )
 
 for rel in "${CONTROL_PLANE_FILES[@]}"; do
@@ -76,7 +78,7 @@ for rel in "${CONTROL_PLANE_FILES[@]}"; do
   cmp -s "$src" "$dst" || { echo "ERROR: failed to restore canonical control-plane file: $rel" >&2; exit 1; }
 done
 
-# Existing v3 installs may carry an explicit workflow_orchestrator assignment.
+# Existing installs may carry an explicit workflow_orchestrator assignment.
 # DEFAULT is the authoritative Main slot; retain the user's selected DEFAULT and
 # only turn the orchestrator role into an alias.
 python3 - "$TARGET/.omp/config.yml" <<'PY'
@@ -137,4 +139,4 @@ grep -q '^## Canonical state-transition transaction$' "$TARGET/.omp/AGENTS.md" |
   exit 1
 }
 
-printf '%s\n' "Context-economy v3 installed with canonical Main contract, Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
+printf '%s\n' "Context economy installed with canonical Main contract, Quick Focus, Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
