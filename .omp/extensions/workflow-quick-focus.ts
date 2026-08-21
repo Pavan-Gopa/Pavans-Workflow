@@ -4,11 +4,9 @@ import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/typ
 import { matchesKey } from "@oh-my-pi/pi-tui";
 import { currentWorker } from "../lib/workflow-dashboard-data.ts";
 
-const PATCH_MARK = Symbol.for("pavans-workflow.quick-focus.v3.2");
-const LISTENER_MARK = Symbol.for("pavans-workflow.quick-focus.listener.v3.2");
+const patchedPrototypes = new WeakSet<object>();
+const patchedContexts = new WeakSet<object>();
 
-type PatchedPrototype = InputController["prototype"] & { [PATCH_MARK]?: boolean };
-type PatchedContext = InteractiveModeContext & { [LISTENER_MARK]?: boolean };
 type ControllerWithContext = InputController & { ctx: InteractiveModeContext };
 
 export type QuickFocusDecision = "focus-worker" | "return-main" | "passthrough";
@@ -32,16 +30,16 @@ export function decideQuickFocus(options: {
 }
 
 function installInputControllerPatch(): void {
-	const prototype = InputController.prototype as PatchedPrototype;
-	if (prototype[PATCH_MARK]) return;
-	prototype[PATCH_MARK] = true;
+	const prototype = InputController.prototype as object & { setupKeyHandlers(): void };
+	if (patchedPrototypes.has(prototype)) return;
+	patchedPrototypes.add(prototype);
 
 	const original = prototype.setupKeyHandlers;
 	prototype.setupKeyHandlers = function patchedSetupKeyHandlers(this: InputController): void {
 		original.call(this);
-		const ctx = (this as ControllerWithContext).ctx as PatchedContext;
-		if (ctx[LISTENER_MARK]) return;
-		ctx[LISTENER_MARK] = true;
+		const ctx = (this as ControllerWithContext).ctx;
+		if (patchedContexts.has(ctx)) return;
+		patchedContexts.add(ctx);
 
 		ctx.ui.addInputListener(data => {
 			const worker = currentWorker();
