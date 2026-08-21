@@ -46,12 +46,14 @@ WF_CONTEXT_ECONOMY_BASE_ROOT="$SOURCE_ROOT" \
 # worker prompts, and its own experiment helpers, but it must never fork the
 # workflow control plane. v3's historical overlay carried a shadow Alt+W panel
 # that could show 0/0 progress while the real file-backed workflow was already
-# running. Re-apply the canonical dashboard/statistics stack from the branch
-# after the experiment overlay so Alt+W, live-step tracking, runtime TODO, and
-# manual OMP Stats stay exactly aligned with the production workflow.
+# running. Re-apply the canonical dashboard/statistics/Main-model stack from the
+# branch after the experiment overlay so Alt+W, live-step tracking, runtime TODO,
+# manual OMP Stats, and DEFAULT <-> Orchestrator synchronization stay aligned
+# with the production workflow.
 CONTROL_PLANE_FILES=(
   ".omp/extensions/workflow-dashboard.ts"
   ".omp/extensions/workflow-stats.ts"
+  ".omp/extensions/workflow-main-model-sync.ts"
   ".omp/lib/workflow-consistency.ts"
   ".omp/lib/workflow-dashboard-core.ts"
   ".omp/lib/workflow-dashboard-data.ts"
@@ -63,6 +65,7 @@ CONTROL_PLANE_FILES=(
   ".omp/lib/workflow-runtime-todo.ts"
   ".omp/lib/workflow-stats-runtime.ts"
   ".omp/lib/workflow-stats.ts"
+  ".omp/tests/workflow-main-model-sync.selftest.ts"
 )
 
 for rel in "${CONTROL_PLANE_FILES[@]}"; do
@@ -76,4 +79,61 @@ for rel in "${CONTROL_PLANE_FILES[@]}"; do
   cmp -s "$src" "$dst" || { echo "ERROR: failed to restore canonical control-plane file: $rel" >&2; exit 1; }
 done
 
-printf '%s\n' "Context-economy v3 installed with canonical Alt+W dashboard and OMP Stats control plane."
+# Existing v3 installs may carry an explicit workflow_orchestrator assignment.
+# DEFAULT is the authoritative Main slot; retain the user's selected DEFAULT and
+# only turn the orchestrator role into an alias. The live extension then keeps
+# both Alt+M editing directions synchronized in-process.
+python3 - "$TARGET/.omp/config.yml" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(f"ERROR: project config is missing: {path}")
+text = path.read_text(encoding="utf-8")
+lines = text.splitlines()
+header = None
+for index, line in enumerate(lines):
+    if re.match(r"^\s*modelRoles\s*:\s*(?:#.*)?$", line):
+        header = index
+        break
+if header is None:
+    raise SystemExit(f"ERROR: modelRoles block is missing in {path}")
+base_indent = len(lines[header]) - len(lines[header].lstrip(" "))
+end = len(lines)
+for index in range(header + 1, len(lines)):
+    stripped = lines[index].strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    indent = len(lines[index]) - len(lines[index].lstrip(" "))
+    if indent <= base_indent:
+        end = index
+        break
+role_index = None
+child_indent = " " * (base_indent + 2)
+for index in range(header + 1, end):
+    match = re.match(r"^(\s+)([A-Za-z0-9_.-]+)\s*:", lines[index])
+    if not match:
+        continue
+    child_indent = match.group(1)
+    if match.group(2) == "workflow_orchestrator":
+        role_index = index
+        break
+replacement = f'{child_indent}workflow_orchestrator: "@default"'
+if role_index is None:
+    lines.insert(header + 1, replacement)
+else:
+    comment = ""
+    if " #" in lines[role_index]:
+        comment = " #" + lines[role_index].split(" #", 1)[1]
+    lines[role_index] = replacement + comment
+path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+PY
+
+grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|$)' "$TARGET/.omp/config.yml" || {
+  echo "ERROR: workflow_orchestrator is not bound to @default after install." >&2
+  exit 1
+}
+
+printf '%s\n' "Context-economy v3 installed with canonical Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
