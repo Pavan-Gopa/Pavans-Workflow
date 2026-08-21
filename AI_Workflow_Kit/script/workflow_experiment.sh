@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Distribution bridge for the context-economy experiment branch.
-# Installed projects carry the full workflow_experiment.sh from the verified bundle.
+# Distribution bridge for the Main-only context-economy experiment branch.
+# Installed projects carry the full manager from the verified v3 package.
 
 set -euo pipefail
 
