@@ -7,8 +7,6 @@ import { currentWorker } from "../lib/workflow-dashboard-data.ts";
 const patchedPrototypes = new WeakSet<object>();
 const patchedContexts = new WeakSet<object>();
 
-type ControllerWithContext = InputController & { ctx: InteractiveModeContext };
-
 export type QuickFocusDecision = "focus-worker" | "return-main" | "passthrough";
 
 export function decideQuickFocus(options: {
@@ -37,7 +35,9 @@ function installInputControllerPatch(): void {
 	const original = prototype.setupKeyHandlers;
 	prototype.setupKeyHandlers = function patchedSetupKeyHandlers(this: InputController): void {
 		original.call(this);
-		const ctx = (this as ControllerWithContext).ctx;
+		// InputController intentionally keeps ctx private. This compatibility hook
+		// is bounded to the OMP 17.x controller seam and doctor/selftests guard it.
+		const ctx = (this as unknown as { ctx: InteractiveModeContext }).ctx;
 		if (patchedContexts.has(ctx)) return;
 		patchedContexts.add(ctx);
 
@@ -72,12 +72,12 @@ function installInputControllerPatch(): void {
 	};
 }
 
-// Extensions are loaded into the session before InteractiveMode.init() wires
-// InputController, so installing this guarded prototype hook here gives the
-// workflow one pre-editor Tab listener without changing OMP's global keymap.
+// Project extensions are loaded before InteractiveMode.init() wires
+// InputController. The guarded pre-editor listener consumes Tab only for the
+// explicit Quick Focus cases; every other Tab reaches OMP's normal completion.
 installInputControllerPatch();
 
 export default function workflowQuickFocus(_pi: ExtensionAPI): void {
-	// Runtime behavior is installed at module load; no worker/headless hooks are
-	// registered, so task sessions retain normal input behavior.
+	// Runtime behavior is installed at module load. No task/headless event hooks
+	// are registered, so worker sessions do not receive a separate input policy.
 }
