@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Pavan's Workflow v3.1 into an existing project or prepare a template clone.
+# Install Pavan's Workflow v3.2 into an existing project or prepare a template clone.
 
 set -euo pipefail
 
@@ -73,7 +73,7 @@ if ! command -v graphify >/dev/null 2>&1; then
 else
   actual="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
   if [[ "$actual" != "$EXPECTED_GRAPHIFY" ]]; then
-    echo "WARN: Graphify $actual is installed; workflow v3.1 was validated with $EXPECTED_GRAPHIFY." >&2
+    echo "WARN: Graphify $actual is installed; workflow v3.2 was validated with $EXPECTED_GRAPHIFY." >&2
   fi
 fi
 
@@ -108,8 +108,10 @@ except subprocess.TimeoutExpired:
 PYTIMEOUT
 }
 
-
 cd "$TARGET_ROOT"
+printf '\n=== Installing Workflow v3.2 Main context policy ===\n'
+bash AI_Workflow_Kit/experiments/context-economy/install.sh "$TARGET_ROOT"
+
 if [[ "${WF_INSTALL_SKIP_GRAPHIFY:-0}" != "1" ]]; then
   if ! run_with_timeout "${WF_GRAPHIFY_INSTALL_TIMEOUT:-120}" bash AI_Workflow_Kit/script/graphify_rebuild.sh fast; then
     echo "WARN: initial product graph was not built; source tools remain available." >&2
@@ -119,15 +121,18 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 cat <<'MESSAGE'
 
-Pavan's Workflow v3.1 is installed.
+Pavan's Workflow v3.2 is installed.
 
 Next:
   1. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh
-  2. Complete onboarding and core model-role setup.
+  2. Complete onboarding and model-role setup through Alt+M -> Roles.
   3. Use Alt+W for the live workflow dashboard; its live cursor follows current work.
-  4. OMP Stats remains manual: press o in Alt+W or run /workflow-stats.
-  5. Optional: assign workflow_designer to Kimi or another strong visual model in Alt+M.
+  4. With an empty composer, Tab jumps from Main directly into the running worker; Tab or Esc returns to Main.
+  5. OMP Stats remains manual: press o in Alt+W or run /workflow-stats.
+  6. Optional: assign workflow_designer to Kimi or another strong visual model in Alt+M.
 
-Coder agents load Ponytail automatically. Design Advisor and Designer load the
-project-local ui-designer skill only when the Human explicitly requests them.
+Main-only context economy keeps worker sessions uncompacted while preserving the
+Orchestrator across long runs. Coder agents load Ponytail automatically. Design
+Advisor and Designer load the project-local ui-designer skill only when the Human
+explicitly requests them.
 MESSAGE
