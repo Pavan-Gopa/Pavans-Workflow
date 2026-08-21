@@ -48,6 +48,15 @@ export function planMainRoleMutation(
 	};
 }
 
+/**
+ * Project extensions are inherited by task/headless subagent sessions. Main
+ * model synchronization must never retarget a worker model, so only the
+ * top-level interactive session is allowed to attach the reconciliation loop.
+ */
+export function shouldAttachMainModelSync(hasUI: boolean): boolean {
+	return hasUI;
+}
+
 const THINKING_SUFFIX = /:(off|minimal|low|medium|high|xhigh|max)$/i;
 
 export function explicitThinkingLevel(roleValue: string | undefined): string | undefined {
@@ -187,18 +196,25 @@ export default function workflowMainModelSync(pi: ExtensionAPI): void {
 		if (orchestratorValue !== lastOrchestrator) remember();
 	};
 
+	const clearAttachment = (current?: ExtensionContext): void => {
+		if (timer && current) current.clearTimer(timer);
+		timer = undefined;
+		ctx = undefined;
+		liveRevision++;
+	};
+
 	const attach = (next: ExtensionContext): void => {
+		if (!shouldAttachMainModelSync(next.hasUI)) {
+			clearAttachment(ctx);
+			return;
+		}
+		if (timer && ctx) ctx.clearTimer(timer);
 		ctx = next;
 		canonicalize();
-		if (timer) next.clearTimer(timer);
 		timer = next.setInterval(reconcile, 200);
 	};
 
 	pi.on("session_start", async (_event, next) => attach(next));
 	pi.on("session_switch", async (_event, next) => attach(next));
-	pi.on("session_shutdown", async (_event, current) => {
-		if (timer) current.clearTimer(timer);
-		timer = undefined;
-		ctx = undefined;
-	});
+	pi.on("session_shutdown", async (_event, current) => clearAttachment(current));
 }
