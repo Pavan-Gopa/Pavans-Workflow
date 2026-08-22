@@ -6,9 +6,15 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
 and optional Human-requested Product Designer roles.
 
-> **Workflow v3.2.0 is live.**
+> **Workflow v3.3.0 is live.**
 >
-> Update an installed workflow project from its root:
+> Update an installed workflow project from its root with one command:
+>
+> ```bash
+> bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
+> ```
+>
+> Prefer git explicitly? The long form does the same:
 >
 > ```bash
 > (
@@ -22,6 +28,16 @@ and optional Human-requested Product Designer roles.
 >
 > Then restart OMP. Inside OMP you can also run `/work-update` or
 > `/workflow-update`, then restart the session.
+
+## v3.3 highlights
+
+- **Compaction that works during nonstop runs.** OMP native threshold
+  maintenance now owns the hard boundary at 28% of the Main window with mid-turn
+  tool-loop checkpoints: a checklist of any length gets compacted on the fly,
+  without waiting for the orchestrator to pause. The soft window (warn at 23%,
+  `shake -> soft` only when Main is fully settled) remains as the early path.
+- **Honest Alt+W RUN TODO.** Expanded dashboards render every runtime todo into
+  the scrollable view instead of silently capping at eight items.
 
 ## v3.2 highlights
 
@@ -40,7 +56,7 @@ and optional Human-requested Product Designer roles.
   sessions.
 - **Stable update path.** Context Economy is no longer a separate experiment to
   install manually. Fresh installs and normal workflow updates install/repair the
-  v3.2 runtime automatically while preserving project state and model choices.
+  v3.3 runtime automatically while preserving project state and model choices.
 - **Long-running workers.** Workflow task agents have a minimum four-hour hard
   wall (`maxRuntimeMs: 14400000`), while OMP's request-count forced-yield guard is
   disabled for workflow roles (`softRequestBudget: 0`). Human abort remains

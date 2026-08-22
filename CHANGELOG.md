@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.3.0 — 2026-08-22
+
+### Added
+
+- **Native mid-turn compaction owns the hard context boundary.** OMP threshold
+  maintenance is enabled for the top-level interactive Main session at a 28%
+  hard ceiling with `midTurnEnabled: true`. Continuous autonomous runs
+  (checklists of any length, no pauses) are compacted at tool-loop boundaries
+  without waiting for Main to go idle; the run continues seamlessly.
+- The extension soft window stays as the early path: warn at 23%, run
+  `shake -> soft` only when Main is fully settled — no active workers, no async
+  jobs, no queued messages (`arm 23% · upper target 28% · reset 18%`).
+- Context Economy status line in the Alt+W dashboard, live refresh on
+  auto-compaction events, and a `/workflow-experiment` command for
+  status/doctor/update/rollback.
+- Copy-paste remote update one-liner in README/INSTALL:
+  `bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update`.
+  The `--update` branch now runs before source-path resolution, so piping the
+  script through curl works.
+
+### Fixed
+
+- Alt+W expanded view no longer truncates RUN TODO to eight prioritized items
+  while advertising `0/N`: every runtime todo is rendered into the scrollable
+  viewport. Compact summaries keep their four-item budget.
+- `workflow-main-model-sync` and `workflow-quick-focus` deterministic selftests
+  pass under bare Node again: pure decision logic moved from `.omp/extensions/*`
+  into `.omp/lib/*`, so tests no longer import packages that resolve only inside
+  the OMP runtime.
+- Dashboard statistics rendering guards against a missing OMP-session usage
+  snapshot instead of crashing the whole dashboard build.
+
+### Changed
+
+- The Context Economy installer is a plain canonical-tree sync now: it copies
+  framework-owned files, removes superseded standalone monolith extensions that
+  would register a second compaction controller, patches only the managed config
+  sections (model roles and DEFAULT slot preserved), and validates the result.
+
+### Compatibility
+
+- Worker/task sessions still never auto-compact: shared automatic maintenance
+  remains disabled for them; the native hard boundary applies only to the
+  top-level interactive Main session.
+- Existing model selections, live workflow state, plans, reports, Designer
+  roles, Ponytail policy, manual Stats, and worker isolation are preserved by
+  update.
+
 ## 3.2.0 — 2026-08-21
 
 ### Added

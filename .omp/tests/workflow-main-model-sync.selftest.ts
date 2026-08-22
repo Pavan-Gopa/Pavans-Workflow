@@ -6,7 +6,7 @@ import {
 	MAIN_ORCHESTRATOR_ROLE,
 	planMainRoleMutation,
 	shouldAttachMainModelSync,
-} from "../extensions/workflow-main-model-sync.ts";
+} from "../lib/workflow-main-model-sync.ts";
 
 const fromDefault = planMainRoleMutation("project", "set", MAIN_DEFAULT_ROLE, "openai-codex/gpt-5.6-sol:medium");
 assert.deepEqual(fromDefault, {

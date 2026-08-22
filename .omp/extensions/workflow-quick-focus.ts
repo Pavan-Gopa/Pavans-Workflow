@@ -3,30 +3,9 @@ import { InputController } from "@oh-my-pi/pi-coding-agent/modes/controllers/inp
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import { matchesKey } from "@oh-my-pi/pi-tui";
 import { currentWorker } from "../lib/workflow-dashboard-data.ts";
-
+import { decideQuickFocus } from "../lib/workflow-quick-focus.ts";
 const patchedPrototypes = new WeakSet<object>();
 const patchedContexts = new WeakSet<object>();
-
-export type QuickFocusDecision = "focus-worker" | "return-main" | "passthrough";
-
-export function decideQuickFocus(options: {
-	isTab: boolean;
-	editorFocused: boolean;
-	editorEmpty: boolean;
-	autocompleteVisible: boolean;
-	overlayOpen: boolean;
-	focusedAgentId?: string;
-	workerId?: string;
-	workerStatus?: string;
-}): QuickFocusDecision {
-	if (!options.isTab || !options.editorFocused || !options.editorEmpty || options.autocompleteVisible || options.overlayOpen) {
-		return "passthrough";
-	}
-	if (options.focusedAgentId) return "return-main";
-	if (options.workerId && options.workerStatus === "running") return "focus-worker";
-	return "passthrough";
-}
-
 function installInputControllerPatch(): void {
 	const prototype = InputController.prototype as object & { setupKeyHandlers(): void };
 	if (patchedPrototypes.has(prototype)) return;

@@ -222,7 +222,7 @@ done
 printf '\n=== Preserving / repairing project model roles ===\n'
 repair_model_config
 
-printf '\n=== Installing Workflow v3.2 Main context policy ===\n'
+printf '\n=== Installing Workflow v3.3 Main context policy ===\n'
 bash "$TEMP_CLONE/AI_Workflow_Kit/experiments/context-economy/install.sh" "$PROJECT_ROOT"
 
 if [[ ! -e "$PROJECT_ROOT/.graphifyignore" ]]; then
@@ -259,6 +259,6 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 printf '\nWorkflow updated to v%s (%s).\n' "$UPSTREAM_VERSION" "$UPSTREAM_COMMIT"
 printf 'Live state and existing model selections were preserved/recovered.\n'
-printf 'Main context economy and Quick Worker Focus are installed as stable v3.2 features.\n'
+printf 'Main context economy and Quick Worker Focus are installed as stable v3.3 features.\n'
 printf 'Framework backup: %s\n' "$BACKUP_ROOT"
 printf 'Restart OMP so updated extensions, agents, and skills are discovered.\n'

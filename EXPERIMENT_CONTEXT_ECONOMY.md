@@ -1,31 +1,25 @@
-# Context-Economy Experimental Workflow v3
+# Context-Economy Workflow
 
-Branch: `experiment/context-economy-v3.2`
+Since v3.3 this line is part of the normal workflow install/update path; the
+`experiment/context-economy-v3.2` branch is historical.
 
-Version 3 makes context maintenance strictly **Main-only**. It also preserves
-the complete Pavan's Workflow 3.1.4 dashboard and OMP's native Agent Hub.
+Context maintenance is strictly **Main-only** and preserves the complete
+dashboard and OMP's native Agent Hub.
 
-## Why v3 exists
+How it works:
 
-Version 2 correctly restored the full dashboard, but its project compaction
-settings and extension were still inherited by task sessions. A Coder could
-therefore display or run soft compaction even though only Main was supposed to
-be compressed.
+- Shared automatic compaction stays disabled for task/headless worker sessions,
+  so Coders/Reviewers/Testers are never compacted or interrupted.
+- A Main-scoped extension owns the soft window: it warns at 23% and runs
+  `shake -> soft` only when Main is fully settled — no active workers, no async
+  jobs, no queued messages (`arm 23% · upper target 28% · reset 18%`).
+- OMP native threshold maintenance owns the hard ceiling at 28% with
+  `midTurnEnabled: true`: continuous autonomous runs are compacted at tool-loop
+  boundaries without waiting for pauses, and the run continues seamlessly.
 
-Version 3 fixes both paths:
-
-- OMP automatic compaction is disabled in the shared project config, preventing
-  native threshold/mid-turn compaction in workers.
-- A separately scoped extension manually compacts only the top-level
-  interactive Main session.
-- Nested/headless worker sessions disable the timer, status, tool, anchor, and
-  compaction invocation.
-- Main warns at 23%, reports `waiting-worker` while a worker is active, and runs
-  `shake -> soft` at the first safe Main idle boundary before/around the 28%
-  upper target.
-
-It is normal for Main to remain around 26–27% while Coder is still running. The
-context drop should occur after the worker and Main turn settle.
+Main may sit around 26–27% while a Coder is still running; in-band drops happen
+at the next settled boundary, and anything past 28% is compacted mid-run by the
+core without touching the live turn.
 
 ## Repair or update an existing installation
 

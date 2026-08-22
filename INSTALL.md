@@ -1,18 +1,27 @@
-# Install Pavan's Workflow v3.2
+# Install Pavan's Workflow v3.3
 
-Version 3.2 promotes the Main-only Context Economy experiment into the normal
-workflow and adds Quick Worker Focus while preserving the v3.1 dashboard,
-Designer path, long-worker runtime policy, and manual OMP Stats.
+Version 3.3 makes context maintenance work during nonstop autonomous runs:
+OMP native threshold maintenance compacts the top-level interactive Main
+session at a 28% hard boundary with mid-turn checkpoints, while the soft
+window (warn at 23%) keeps compacting earlier whenever Main is fully settled.
+Quick Worker Focus, the v3.1 dashboard, Designer path, long-worker runtime
+policy, and manual OMP Stats are unchanged.
 
 ## Update an existing v2/v3 project
 
 First close OMP for that project. From its root:
 
 ```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
+```
+
+Prefer git explicitly? The long form does the same:
+
+```bash
 ( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
 ```
 
-The v3.2 updater automatically installs/repairs the stable Main context policy,
+The v3.3 updater automatically installs/repairs the Main context policy,
 keeps task/headless workers out of Main compaction, binds
 `workflow_orchestrator` to the authoritative `DEFAULT` Main model slot, and
 installs Quick Worker Focus. Existing project model selections and live workflow
@@ -152,5 +161,5 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.2.0
+3.3.0
 ```

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { decideQuickFocus } from "../extensions/workflow-quick-focus.ts";
+import { decideQuickFocus } from "../lib/workflow-quick-focus.ts";
 
 const base = {
 	isTab: true,

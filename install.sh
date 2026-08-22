@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Install Pavan's Workflow v3.2 into an existing project or prepare a template clone.
+# Install Pavan's Workflow v3.3 into an existing project or prepare a template clone.
 
 set -euo pipefail
 
-SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_INPUT="${1:-.}"
 
 if [[ "$TARGET_INPUT" == "--update" || "$TARGET_INPUT" == "-u" ]]; then
@@ -16,6 +15,9 @@ if [[ "$TARGET_INPUT" == "--update" || "$TARGET_INPUT" == "-u" ]]; then
   exec bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" apply
 fi
 
+# Resolved after the --update branch so the script stays runnable through
+# `curl ... | bash -s -- --update`, where BASH_SOURCE is a /dev/fd pipe.
+SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
 PAYLOAD=(
   ".omp"
@@ -109,7 +111,7 @@ PYTIMEOUT
 }
 
 cd "$TARGET_ROOT"
-printf '\n=== Installing Workflow v3.2 Main context policy ===\n'
+printf '\n=== Installing Workflow v3.3 Main context policy ===\n'
 bash AI_Workflow_Kit/experiments/context-economy/install.sh "$TARGET_ROOT"
 
 if [[ "${WF_INSTALL_SKIP_GRAPHIFY:-0}" != "1" ]]; then
@@ -121,7 +123,7 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 
 cat <<'MESSAGE'
 
-Pavan's Workflow v3.2 is installed.
+Pavan's Workflow v3.3 is installed.
 
 Next:
   1. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh

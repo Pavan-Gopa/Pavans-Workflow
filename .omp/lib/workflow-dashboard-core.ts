@@ -1036,23 +1036,30 @@ export function runtimeTodoLines(
 		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "in_progress")) ??
 		snapshot.phases.find(phase => phase.tasks.some(task => task.status === "pending" || task.status === "blocked"));
 	if (activePhase && snapshot.phases.length > 1) lines.push({ text: `Phase · ${activePhase.name}`, tone: "muted" });
-	const budget = options.compact ? 4 : 8;
-	const shown: Array<{ content: string; status: string; blocker?: string }> = [];
-	const lastCompleted = [...tasks].reverse().find(task => task.status === "completed");
-	if (lastCompleted) shown.push(lastCompleted);
-	for (const task of tasks) if (task.status === "in_progress") shown.push(task);
-	for (const task of tasks) if (task.status === "blocked") shown.push(task);
-	for (const task of tasks) {
-		if (shown.length >= budget) break;
-		if (task.status === "pending") shown.push(task);
+	if (options.compact) {
+		const shown: Array<{ content: string; status: string; blocker?: string }> = [];
+		const lastCompleted = [...tasks].reverse().find(task => task.status === "completed");
+		if (lastCompleted) shown.push(lastCompleted);
+		for (const task of tasks) if (task.status === "in_progress") shown.push(task);
+		for (const task of tasks) if (task.status === "blocked") shown.push(task);
+		for (const task of tasks) {
+			if (shown.length >= 4) break;
+			if (task.status === "pending") shown.push(task);
+		}
+		for (const task of shown) {
+			const marker = RUNTIME_TODO_MARKERS[task.status] ?? "○";
+			addWrapped(lines, displayTaskText(task.content), width, `${marker} `, runtimeTodoTone(task.status));
+			if (task.blocker) addWrapped(lines, task.blocker, width, "  blocked: ", "warning");
+		}
+		const hidden = tasks.length - shown.length;
+		if (hidden > 0) lines.push({ text: `${hidden} more task${hidden === 1 ? "" : "s"} hidden`, tone: "muted" });
+		return lines;
 	}
-	for (const task of shown) {
+	for (const task of tasks) {
 		const marker = RUNTIME_TODO_MARKERS[task.status] ?? "○";
 		addWrapped(lines, displayTaskText(task.content), width, `${marker} `, runtimeTodoTone(task.status));
 		if (task.blocker) addWrapped(lines, task.blocker, width, "  blocked: ", "warning");
 	}
-	const hidden = tasks.length - shown.length;
-	if (hidden > 0) lines.push({ text: `${hidden} more task${hidden === 1 ? "" : "s"} hidden`, tone: "muted" });
 	return lines;
 }
 
@@ -1250,7 +1257,8 @@ function buildCenterContent(
 	}
 	return { pinned, scrollable };
 }
-function sessionUsageLines(usage: SessionUsage): TextLine[] {
+function sessionUsageLines(usage: SessionUsage | undefined): TextLine[] {
+	if (!usage) return [];
 	const lines: TextLine[] = [{ text: "THIS OMP SESSION · MAIN + WORKERS", tone: "accent" }];
 	if (usage.models.length === 0) {
 		lines.push({ text: "Token usage appears after the first model response.", tone: "muted" });
