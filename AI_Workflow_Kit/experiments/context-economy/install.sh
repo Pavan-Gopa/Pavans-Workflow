@@ -24,6 +24,13 @@ SOURCE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ACTION="${1:-install}"
 TARGET="${2:-$PWD}"
 
+# Backward compatibility: the v3.2 signature was `install.sh [project]`.
+# Callers that pass only a project path get the install action.
+if [[ -n "${1:-}" && ( "$1" == /* || -d "$1" ) ]]; then
+  ACTION="install"
+  TARGET="$1"
+fi
+
 EXPERIMENT_FILES=(
   ".omp/workflow-context-policy.json"
   ".omp/lib/workflow-context-economy-core.ts"
