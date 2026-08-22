@@ -161,5 +161,5 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.3.0
+3.3.1
 ```

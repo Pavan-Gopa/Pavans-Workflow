@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.3.1 — 2026-08-23
+
+### Fixed
+
+- **Quick Worker Focus now works on omp 18.** The Tab jump from Main into the
+  running workflow worker silently degraded to passthrough: the worker lookup
+  relied on the dashboard's in-memory map fed by `task:subagent:*` bus events,
+  which are not visible to the quick-focus input listener under omp 18's
+  isolated extension module registries. The active worker is now sourced from
+  the Main session's own async-job snapshot (ids match `focusAgentSession`),
+  with the dashboard tracker kept as fallback. Verified end-to-end against a
+  live spawned worker: first `Tab` focuses the worker, second `Tab` returns to
+  Main.
+
+### Added
+
+- A `[quick-focus] decision=...` trace line in the session debug log for field
+  diagnostics of every Tab decision.
+
 ## 3.3.0 — 2026-08-22
 
 ### Added

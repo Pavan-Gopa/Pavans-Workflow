@@ -6,7 +6,7 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
 and optional Human-requested Product Designer roles.
 
-> **Workflow v3.3.0 is live.**
+> **Workflow v3.3.1 is live.**
 >
 > Update an installed workflow project from its root with one command:
 >

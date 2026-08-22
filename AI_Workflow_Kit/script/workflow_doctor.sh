@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.3.0 installation without invoking a model.
+# Validate a Pavan's Workflow v3.3.1 installation without invoking a model.
 
 set -euo pipefail
 
@@ -52,10 +52,10 @@ for path in \
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.3.0" ]]; then
-  ok "workflow version: 3.3.0"
+if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.3.1" ]]; then
+  ok "workflow version: 3.3.1"
 else
-  fail "VERSION must be 3.3.0"
+  fail "VERSION must be 3.3.1"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
@@ -320,5 +320,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.3.0\n'
+printf 'Version: 3.3.1\n'
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'
