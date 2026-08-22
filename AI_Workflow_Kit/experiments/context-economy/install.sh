@@ -1,94 +1,135 @@
 #!/usr/bin/env bash
-# Install/repair the Main-only context-economy v3 payload used by Workflow v3.2.
+# Install, verify, or remove the context-economy experiment overlay.
+#
+# Strategy: native hard boundary + extension soft window.
+#   - OMP native threshold maintenance owns the hard ceiling at 28%:
+#     compaction.enabled=true, thresholdPercent=28, midTurnEnabled=true,
+#     autoContinue=true. The core compacts mid-turn at tool-loop boundaries,
+#     so continuous autonomous runs are compacted without waiting for pauses.
+#   - The extension owns the soft window 23-28%: it compacts only when Main is
+#     fully settled (no active workers, no async jobs, no queued messages).
+#
+# Managed config sections in the project .omp/config.yml: cycleOrder,
+# contextPromotion, compaction. Everything else — including modelRoles and the
+# DEFAULT model slot — is preserved untouched.
+#
+# Rollback: this script never touches product files or workflow state. Restore
+# the managed config sections from project git history (or your pre-experiment
+# baseline) and delete the additive files listed in EXPERIMENT_FILES below.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-TARGET="${1:-$PWD}"
-TARGET="$(cd "$TARGET" && pwd)"
-TEMP_ROOT="$(mktemp -d -t pavans-context-economy-v3.XXXXXX)"
-trap 'rm -rf "$TEMP_ROOT"' EXIT
-ARCHIVE="$TEMP_ROOT/context-economy-v3.tar.bz2"
-EXTRACTED="$TEMP_ROOT/source"
-CHECKSUM_FILE="$SCRIPT_DIR/context-economy-v3.sha256"
+ACTION="${1:-install}"
+TARGET="${2:-$PWD}"
 
-command -v python3 >/dev/null 2>&1 || { echo "ERROR: python3 is required." >&2; exit 1; }
-command -v tar >/dev/null 2>&1 || { echo "ERROR: tar is required." >&2; exit 1; }
-[[ -f "$CHECKSUM_FILE" ]] || { echo "ERROR: v3 checksum file is missing." >&2; exit 1; }
-
-python3 - "$SCRIPT_DIR" "$CHECKSUM_FILE" "$ARCHIVE" <<'PY'
-import base64
-import hashlib
-import pathlib
-import sys
-
-root = pathlib.Path(sys.argv[1])
-expected = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").strip().split()[0]
-parts = sorted(root.glob("context-economy-v3.tar.bz2.b64.part-*.txt"))
-if not parts:
-    raise SystemExit("ERROR: context-economy v3 package chunks are missing")
-raw = base64.b64decode(b"".join(part.read_bytes() for part in parts), validate=False)
-actual = hashlib.sha256(raw).hexdigest()
-if actual != expected:
-    raise SystemExit(f"ERROR: v3 package checksum mismatch: expected {expected}, got {actual}")
-pathlib.Path(sys.argv[3]).write_bytes(raw)
-PY
-
-mkdir -p "$EXTRACTED"
-tar -xjf "$ARCHIVE" -C "$EXTRACTED"
-
-WF_CONTEXT_ECONOMY_SOURCE_ROOT="$EXTRACTED" \
-WF_CONTEXT_ECONOMY_BASE_ROOT="$SOURCE_ROOT" \
-  bash "$EXTRACTED/AI_Workflow_Kit/experiments/context-economy/v3/apply.sh" "$TARGET"
-
-# The packaged context-economy payload may change compaction, model cycling,
-# worker prompts, and helper files, but it must never fork the canonical Main
-# control plane. Re-apply production-owned files from the release branch after
-# the payload so stable hotfixes always win.
-CONTROL_PLANE_FILES=(
-  ".omp/AGENTS.md"
-  ".omp/extensions/workflow-dashboard.ts"
-  ".omp/extensions/workflow-stats.ts"
-  ".omp/extensions/workflow-main-model-sync.ts"
-  ".omp/extensions/workflow-quick-focus.ts"
-  ".omp/lib/workflow-consistency.ts"
-  ".omp/lib/workflow-dashboard-core.ts"
-  ".omp/lib/workflow-dashboard-data.ts"
+EXPERIMENT_FILES=(
+  ".omp/workflow-context-policy.json"
+  ".omp/lib/workflow-context-economy-core.ts"
+  ".omp/lib/workflow-context-economy.ts"
+  ".omp/lib/workflow-context-snapshot.ts"
   ".omp/lib/workflow-dashboard-extension.ts"
   ".omp/lib/workflow-dashboard-panel.ts"
-  ".omp/lib/workflow-dashboard-viewport.ts"
-  ".omp/lib/workflow-live-step.ts"
-  ".omp/lib/workflow-routing.ts"
-  ".omp/lib/workflow-runtime-todo.ts"
-  ".omp/lib/workflow-stats-runtime.ts"
-  ".omp/lib/workflow-stats.ts"
-  ".omp/tests/workflow-main-model-sync.selftest.ts"
-  ".omp/tests/workflow-quick-focus.selftest.ts"
+  ".omp/tests/workflow-context-economy.selftest.ts"
+  "AI_Workflow_Kit/docs/AI/CONTEXT_ECONOMY.md"
+  "AI_Workflow_Kit/docs/AI/WORKER_OUTPUT_BUDGET.md"
+  "AI_Workflow_Kit/script/workflow_experiment_config.py"
+  "AI_Workflow_Kit/script/workflow_experiment_config.selftest.py"
 )
 
-for rel in "${CONTROL_PLANE_FILES[@]}"; do
-  src="$SOURCE_ROOT/$rel"
-  dst="$TARGET/$rel"
-  [[ -f "$src" ]] || { echo "ERROR: canonical control-plane file is missing: $rel" >&2; exit 1; }
-  mkdir -p "$(dirname "$dst")"
-  if [[ ! -e "$dst" || ! "$src" -ef "$dst" ]]; then
-    cp "$src" "$dst"
-  fi
-  cmp -s "$src" "$dst" || { echo "ERROR: failed to restore canonical control-plane file: $rel" >&2; exit 1; }
-done
+# Earlier experiment revisions installed a standalone monolithic extension in
+# extensions/ plus a main-only selftest. Both are superseded by the lib/ modules
+# wired through workflow-dashboard-extension.ts; stale copies would register a
+# second compaction controller alongside the current one.
+LEGACY_FILES=(
+  ".omp/extensions/workflow-context-economy.ts"
+  ".omp/tests/workflow-context-economy-main-only.selftest.ts"
+)
 
-# Existing installs may carry an explicit workflow_orchestrator assignment.
-# DEFAULT is the authoritative Main slot; retain the user's selected DEFAULT and
-# only turn the orchestrator role into an alias.
-python3 - "$TARGET/.omp/config.yml" <<'PY'
+say()  { printf 'OK   %s\n' "$*"; }
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+absolute_dir() {
+  local path="$1"
+  [[ -d "$path" ]] || { echo "ERROR: project directory not found: $path" >&2; exit 1; }
+  (cd "$path" && pwd)
+}
+
+check_policy() {
+  python3 - "$1/.omp/workflow-context-policy.json" <<'PY'
+import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert data["softArmPercent"] == 23
+assert data["hardThresholdPercent"] == 28
+assert data["rearmPercent"] < data["softArmPercent"]
+assert data["methodOrder"] == ["shake", "soft"]
+PY
+}
+
+doctor_action() {
+  local project
+  project="$(absolute_dir "$TARGET")"
+  local failures=0
+  check() {
+    local label="$1"; shift
+    if "$@" >/dev/null; then
+      printf 'OK   %s\n' "$label"
+    else
+      printf 'FAIL %s\n' "$label" >&2
+      failures=$((failures + 1))
+    fi
+  }
+  check "experiment policy JSON" check_policy "$project"
+  check "config patcher selftest" python3 "$project/AI_Workflow_Kit/script/workflow_experiment_config.selftest.py"
+  check "managed config sections" python3 "$project/AI_Workflow_Kit/script/workflow_experiment_config.py" check "$project/.omp/config.yml"
+  for rel in "${EXPERIMENT_FILES[@]}"; do
+    check "installed: $rel" test -f "$project/$rel"
+  done
+  for rel in "${LEGACY_FILES[@]}"; do
+    check "legacy removed: $rel" test ! -e "$project/$rel"
+  done
+  if [[ $failures -eq 0 ]]; then
+    printf '\nContext economy is healthy. Restart OMP to load updated extensions.\n'
+  else
+    printf '\n%s check(s) failed.\n' "$failures" >&2
+    exit 1
+  fi
+}
+
+install_action() {
+  local project
+  project="$(absolute_dir "$TARGET")"
+  [[ -f "$project/.omp/config.yml" ]] || fail "existing workflow config is required: $project/.omp/config.yml"
+
+  local rel
+  for rel in "${EXPERIMENT_FILES[@]}"; do
+    [[ -f "$SOURCE_ROOT/$rel" ]] || fail "experiment source missing: $rel"
+    mkdir -p "$project/$(dirname "$rel")"
+    if [[ ! -f "$project/$rel" ]] || ! cmp -s "$SOURCE_ROOT/$rel" "$project/$rel"; then
+      cp -p "$SOURCE_ROOT/$rel" "$project/$rel"
+      say "synced $rel"
+    fi
+  done
+
+  for rel in "${LEGACY_FILES[@]}"; do
+    if [[ -f "$project/$rel" ]]; then
+      rm -f "$project/$rel"
+      say "removed legacy $rel"
+    fi
+  done
+
+  python3 "$project/AI_Workflow_Kit/script/workflow_experiment_config.py" apply "$project/.omp/config.yml"
+
+  # Existing installs may carry an explicit workflow_orchestrator assignment.
+  # DEFAULT is the authoritative Main slot; retain the user's selected DEFAULT
+  # and only turn the orchestrator role into an alias.
+  python3 - "$project/.omp/config.yml" <<'PY'
 from pathlib import Path
 import re
 import sys
 
 path = Path(sys.argv[1])
-if not path.exists():
-    raise SystemExit(f"ERROR: project config is missing: {path}")
 text = path.read_text(encoding="utf-8")
 lines = text.splitlines()
 header = None
@@ -129,14 +170,51 @@ else:
 path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 PY
 
-grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|$)' "$TARGET/.omp/config.yml" || {
-  echo "ERROR: workflow_orchestrator is not bound to @default after install." >&2
-  exit 1
+  grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|$)' "$project/.omp/config.yml" || {
+    fail "workflow_orchestrator is not bound to @default after install."
+  }
+  grep -q '^## Canonical state-transition transaction$' "$project/.omp/AGENTS.md" || {
+    fail "strict Main state-transition contract is missing after install."
+  }
+
+  say "compaction: enabled at 28% hard threshold with mid-turn boundaries"
+  say "floating soft window: arm 23% · upper target 28% · reset 18% · shake->soft"
+
+  WF_CONTEXT_ECONOMY_DOCTOR_TARGET="$project" bash "$SCRIPT_DIR" doctor "$project"
+  printf '\nContext economy installed from %s.\n' "$(git -C "$SOURCE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  printf 'Restart OMP before continuing so the updated extensions load.\n'
 }
 
-grep -q '^## Canonical state-transition transaction$' "$TARGET/.omp/AGENTS.md" || {
-  echo "ERROR: strict Main state-transition contract is missing after install." >&2
-  exit 1
+remove_action() {
+  local project
+  project="$(absolute_dir "$TARGET")"
+  local rel
+  for rel in "${EXPERIMENT_FILES[@]}" "${LEGACY_FILES[@]}"; do
+    if [[ -f "$project/$rel" ]]; then
+      rm -f "$project/$rel"
+      say "removed $rel"
+    fi
+  done
+  printf 'Managed config sections were left as-is; restore them from git history if needed.\n'
 }
 
-printf '%s\n' "Context economy installed with canonical Main contract, Quick Focus, Alt+W, OMP Stats, and hard-synced DEFAULT/Main orchestrator."
+case "$ACTION" in
+  install|update)
+    install_action
+    ;;
+  doctor|status)
+    doctor_action
+    ;;
+  remove)
+    remove_action
+    ;;
+  *)
+    cat >&2 <<'USAGE'
+Usage:
+  install.sh [install|update] [project]   # install or refresh the overlay
+  install.sh [doctor|status] [project]    # verify the installed overlay
+  install.sh remove [project]             # delete additive files (keep config)
+USAGE
+    exit 2
+    ;;
+esac

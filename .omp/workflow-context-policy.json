@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "softArmPercent": 23,
+  "hardThresholdPercent": 28,
+  "rearmPercent": 18,
+  "cooldownSeconds": 60,
+  "methodOrder": ["shake", "soft"],
+  "requireMainIdle": true,
+  "requireNoActiveWorker": true,
+  "requireNoPendingMessages": true
+}

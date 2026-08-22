@@ -1,3 +1,4 @@
+# PAVANS_WORKFLOW_EXPERIMENT: context-economy-v1
 modelRoleStorage: project
 
 modelRoles:
@@ -50,3 +51,25 @@ skills:
   enableSkillCommands: true
   customDirectories:
     - .
+
+cycleOrder:
+  - workflow_orchestrator
+  - workflow_orchestrator_backup
+
+contextPromotion:
+  enabled: false
+
+compaction:
+  enabled: true
+  thresholdPercent: 28
+  thresholdTokens: -1
+  midTurnEnabled: true
+  autoContinue: true
+  idleEnabled: false
+  asyncEnabled: false
+  methodOrder:
+    - shake
+    - soft
+  remoteEnabled: false
+  supersedeReads: true
+  dropUseless: true

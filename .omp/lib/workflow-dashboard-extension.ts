@@ -1,7 +1,10 @@
+import { access } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { Key } from "@oh-my-pi/pi-tui";
 import type { AssistantUsageMessage } from "./workflow-dashboard-core.ts";
 import { deriveRoutingExplanation } from "./workflow-routing.ts";
+import { installContextEconomy } from "./workflow-context-economy.ts";
+import { installWorkflowContextSnapshot } from "./workflow-context-snapshot.ts";
 import {
 	clearWorkers,
 	currentWorker,
@@ -31,7 +34,38 @@ function installListeners(pi: ExtensionAPI): void {
 	});
 }
 
+async function experimentInstalled(cwd: string): Promise<boolean> {
+	try {
+		await access(`${cwd}/.omp/workflow-context-policy.json`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function runExperimentAction(pi: ExtensionAPI, action: string, ctx: ExtensionContext): Promise<void> {
+	const allowed = ["status", "doctor", "update", "rollback"];
+	const normalized = allowed.includes(action) ? action : "status";
+	if (normalized === "rollback") {
+		const confirmed = await ctx.ui.confirm(
+			"Roll back context-economy experiment?",
+			"Restore the pre-experiment workflow overlay and managed config/keybinding sections. Product files and live workflow state are preserved.",
+		);
+		if (!confirmed) return;
+	}
+	const result = await pi.exec("bash", ["AI_Workflow_Kit/script/workflow_experiment.sh", normalized], {
+		cwd: ctx.cwd,
+		timeout: 300_000,
+	});
+	ctx.ui.notify(
+		(result.code === 0 ? result.stdout : result.stderr || result.stdout).trim() || `Experiment action exited ${result.code}`,
+		result.code === 0 ? "info" : "error",
+	);
+}
+
 export default function workflowDashboard(pi: ExtensionAPI): void {
+	installContextEconomy(pi);
+	installWorkflowContextSnapshot(pi);
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		clearWorkers();
@@ -65,6 +99,9 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 		setMainActivity(currentWorker() ? "Supervising the active worker" : "Verifying evidence and selecting the next transition");
 		requestDashboardRender();
 	});
+	pi.on("auto_compaction_start", async () => requestDashboardRender());
+	pi.on("auto_compaction_end", async () => requestDashboardRender());
+	pi.on("session_compact", async () => requestDashboardRender());
 
 	pi.registerCommand("workflow-dashboard", {
 		description: "Open the live PLAN | CURRENT | STATISTICS workflow dashboard",
@@ -92,6 +129,10 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 
 	const update = async (args: string, ctx: ExtensionContext) => {
 		const tokens = args.trim().split(/\s+/).filter(Boolean);
+		if (await experimentInstalled(ctx.cwd)) {
+			await runExperimentAction(pi, tokens.includes("check") ? "status" : "update", ctx);
+			return;
+		}
 		const updater = ["AI_Workflow_Kit/script/workflow_update.sh", tokens.includes("check") ? "check" : "apply"];
 		if (tokens.includes("--refresh-graphify")) updater.push("--refresh-graphify");
 		ctx.ui.notify("Updating workflow framework...", "info");
@@ -103,4 +144,12 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 	};
 	pi.registerCommand("workflow-update", { description: "Safely update workflow framework", handler: update });
 	pi.registerCommand("work-update", { description: "Fast workflow update alias", handler: update });
+
+	pi.registerCommand("workflow-experiment", {
+		description: "Manage the context-economy experiment: status, doctor, update, rollback",
+		handler: async (args, ctx) => {
+			if (!ctx.hasUI) return;
+			await runExperimentAction(pi, args.trim() || "status", ctx);
+		},
+	});
 }

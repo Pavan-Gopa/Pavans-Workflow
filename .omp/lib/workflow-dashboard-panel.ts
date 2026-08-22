@@ -8,6 +8,7 @@ import {
 	type TodoViewMode,
 } from "./workflow-dashboard-core.ts";
 import { checkWorkflowConsistency, type ConsistencyFinding } from "./workflow-consistency.ts";
+import { formatContextEconomyDashboardLine } from "./workflow-context-economy.ts";
 import { applyLiveStep, type LiveStepResolution } from "./workflow-live-step.ts";
 import { linkRuntimeTodo, readRuntimeTodo } from "./workflow-runtime-todo.ts";
 import { getStatsRuntime } from "./workflow-stats-runtime.ts";
@@ -52,6 +53,11 @@ function recoveredFinding(resolution: LiveStepResolution, raw: string): Consiste
 		severity: "warn",
 		message: `live step ${resolution.id} recovered from ${resolution.source}; STATE current_step is ${raw}`,
 	};
+}
+
+function boxed(text: string, width: number): string {
+	const body = text.slice(0, Math.max(0, width - 2)).padEnd(Math.max(0, width - 2));
+	return `|${body}|`;
 }
 
 class WorkflowDashboard implements Component {
@@ -290,6 +296,11 @@ class WorkflowDashboard implements Component {
 				...line,
 				text: line.text.replace("PgUp/PgDn details", "wheel/PgUp/PgDn scroll"),
 			}));
+			const economy = formatContextEconomyDashboardLine(this.ctx);
+			lines.splice(2, 0, {
+				text: boxed(economy.text, panelWidth),
+				tone: economy.warning ? "warning" : "accent",
+			});
 			if (this.showHelp) {
 				const help = "HELP: ↑/↓ step · wheel/PgUp/PgDn scroll · Shift+↑/↓ fast · g/G top/bottom · c live · t todo · r refresh · o Stats";
 				lines.splice(2, 0, { text: `|${help.slice(0, panelWidth - 2).padEnd(panelWidth - 2)}|`, tone: "accent" });
