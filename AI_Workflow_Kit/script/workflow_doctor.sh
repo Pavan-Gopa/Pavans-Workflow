@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.2.0 installation without invoking a model.
+# Validate a Pavan's Workflow v3.3.0 installation without invoking a model.
 
 set -euo pipefail
 
@@ -52,10 +52,10 @@ for path in \
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.2.0" ]]; then
-  ok "workflow version: 3.2.0"
+if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.3.0" ]]; then
+  ok "workflow version: 3.3.0"
 else
-  fail "VERSION must be 3.2.0"
+  fail "VERSION must be 3.3.0"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
@@ -116,9 +116,16 @@ for path in "${CONTEXT_FILES[@]}"; do
 done
 if (( context_missing == 0 )); then
   ok "Main-only context-economy payload installed"
-  if grep -Eq 'top-level Main|Main only|main-only' AI_Workflow_Kit/docs/AI/CONTEXT_ECONOMY.md \
-     && grep -Eq '23|0\.23' .omp/workflow-context-policy.json \
-     && grep -Eq '28|0\.28' .omp/workflow-context-policy.json; then
+  policy_ok=1
+  python3 - .omp/workflow-context-policy.json <<'PY' || policy_ok=0
+import json, pathlib, sys
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert data["softArmPercent"] == 23
+assert data["hardThresholdPercent"] == 28
+assert data["rearmPercent"] < data["softArmPercent"]
+assert data["methodOrder"] == ["shake", "soft"]
+PY
+  if (( policy_ok )); then
     ok "context-economy policy: Main-only warning/upper thresholds present"
   else
     fail "context-economy policy is present but does not expose the expected Main-only 23/28 guardrails"
@@ -227,7 +234,7 @@ ACTUAL_GRAPHIFY="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
 if [[ -n "$EXPECTED_GRAPHIFY" && "$ACTUAL_GRAPHIFY" == "$EXPECTED_GRAPHIFY" ]]; then
   ok "graphify version: $ACTUAL_GRAPHIFY"
 elif [[ -n "$ACTUAL_GRAPHIFY" ]]; then
-  warn "graphify $ACTUAL_GRAPHIFY installed; v3.2 was validated with $EXPECTED_GRAPHIFY"
+  warn "graphify $ACTUAL_GRAPHIFY installed; v3.3 was validated with $EXPECTED_GRAPHIFY"
 fi
 
 if [[ -f graphify-out/graph.json ]]; then
@@ -253,8 +260,12 @@ else
   warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast after product source exists"
 fi
 
-if bash AI_Workflow_Kit/script/workflow_metrics.sh self-check >/dev/null; then ok "workflow metrics runtime/private path"; else fail "workflow metrics runtime/private path"; fi
-if bash AI_Workflow_Kit/script/workflow_metrics.sh validate >/dev/null; then ok "workflow metrics event store"; else fail "workflow metrics event store"; fi
+if git rev-parse --git-common-dir >/dev/null 2>&1; then
+  if bash AI_Workflow_Kit/script/workflow_metrics.sh self-check >/dev/null; then ok "workflow metrics runtime/private path"; else fail "workflow metrics runtime/private path"; fi
+  if bash AI_Workflow_Kit/script/workflow_metrics.sh validate >/dev/null; then ok "workflow metrics event store"; else fail "workflow metrics event store"; fi
+else
+  warn "metrics store unavailable outside a Git worktree; observer stays passive"
+fi
 if bash AI_Workflow_Kit/script/workflow_metrics.sh selftest >/dev/null; then ok "workflow metrics deterministic selftest"; else fail "workflow metrics deterministic selftest"; fi
 
 if migrate_output="$(bash AI_Workflow_Kit/script/workflow_migrate.sh check 2>&1)"; then
@@ -309,5 +320,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.2.0\n'
+printf 'Version: 3.3.0\n'
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'
