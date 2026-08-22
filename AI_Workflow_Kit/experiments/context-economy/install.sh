@@ -187,7 +187,7 @@ PY
   say "compaction: enabled at 28% hard threshold with mid-turn boundaries"
   say "floating soft window: arm 23% · upper target 28% · reset 18% · shake->soft"
 
-  WF_CONTEXT_ECONOMY_DOCTOR_TARGET="$project" bash "$SCRIPT_DIR" doctor "$project"
+  bash "${BASH_SOURCE[0]}" doctor "$project"
   printf '\nContext economy installed from %s.\n' "$(git -C "$SOURCE_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   printf 'Restart OMP before continuing so the updated extensions load.\n'
 }
