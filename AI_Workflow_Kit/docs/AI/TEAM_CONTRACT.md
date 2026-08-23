@@ -1,4 +1,4 @@
-# AI Team Contract — Workflow v3.1
+# AI Team Contract — Workflow v3.4-exp.lean
 
 Human process control goes through Main. Workers return structured evidence only.
 
@@ -38,7 +38,11 @@ not emit unsupported Designer metrics events.
 
 ## Gate contract
 
-- Objective Gates are deterministic commands/artifacts.
+- Objective Gates are deterministic commands/artifacts. Main re-runs
+  backticked commands via `workflow_gates.py` before Reviewer or a `quick`
+  close.
+- Pipeline profiles (`quick` / `standard` / `critical`) come from the step
+  card. Unlabeled cards are `standard`. `quick` is ignored when Risk is high.
 - Judgment Gates cover semantics, architecture, scope, contracts, failure
   behavior, maintainability, trust boundaries, and assigned visual criteria.
 - Reviewer owns engineering Judgment Gates; Human owns final aesthetic

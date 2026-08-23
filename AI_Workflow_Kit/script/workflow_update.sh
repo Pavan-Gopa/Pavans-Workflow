@@ -73,6 +73,13 @@ FRAMEWORK_PATHS=(
   "AI_Workflow_Kit/script"
   "AI_Workflow_Kit/vendor"
   "AI_Workflow_Kit/experiments/context-economy"
+  "AI_Workflow_Kit/experiments/lean-pipeline"
+  "AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md"
+  "AI_Workflow_Kit/docs/AI/WORKER_INPUT_DIGEST.md"
+  "AI_Workflow_Kit/docs/AI/CONTEXT_ECONOMY.md"
+  "AI_Workflow_Kit/docs/AI/WORKER_OUTPUT_BUDGET.md"
+  "AI_Workflow_Kit/docs/AI/SECURITY.md"
+  "AI_Workflow_Kit/docs/AI/KICK_TESTER.md"
   "AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md"
   "AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md"
   "AI_Workflow_Kit/docs/AI/MODELS.md"
@@ -84,6 +91,9 @@ FRAMEWORK_PATHS=(
   "AI_Workflow_Kit/docs/AI/KICK_DESIGNER.md"
   "PIPELINE.md"
   "ORCHESTRATOR_FIRST_PROMPT.md"
+  "AI_Workflow_Kit/script/workflow_gates.py"
+  "AI_Workflow_Kit/script/workflow_security_scope.py"
+  "AI_Workflow_Kit/script/workflow_lean.sh"
   "INSTALL.md"
   "README.md"
   "VERSION"
@@ -210,7 +220,7 @@ for item in "${FRAMEWORK_PATHS[@]}"; do
   [[ -e "$TEMP_CLONE/$item" ]] || continue
   if [[ -d "$TEMP_CLONE/$item" ]]; then
     case "$item" in
-      ponytail|ponytail-review|ponytail-audit|ponytail-debt|ui-designer|AI_Workflow_Kit/vendor|AI_Workflow_Kit/experiments/context-economy)
+      ponytail|ponytail-review|ponytail-audit|ponytail-debt|ui-designer|AI_Workflow_Kit/vendor|AI_Workflow_Kit/experiments/context-economy|AI_Workflow_Kit/experiments/lean-pipeline)
         copy_exact_dir "$item" ;;
       *) copy_overlay_dir "$item" ;;
     esac

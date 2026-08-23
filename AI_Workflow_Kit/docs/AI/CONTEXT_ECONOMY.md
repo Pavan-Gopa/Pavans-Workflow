@@ -1,8 +1,8 @@
-# Context Economy Experiment
+# Context Economy
 
-This policy is an experimental overlay on Pavan's Workflow v3.1.4. It reduces
-Main-session prompt growth without changing canonical workflow authority,
-worker scopes, or verification gates.
+This is the stable Main-only context policy (v3.3+). Lean-pipeline additionally
+makes targeted reconciliation the default for ordinary transitions. It never
+replaces canonical workflow authority, worker scopes, or verification gates.
 
 ## Authority
 

@@ -3,6 +3,12 @@
 All workflow workers return compact structured evidence. These limits reduce
 Main-session prompt growth without weakening gates.
 
+## Input rules (lean)
+
+- The assignment packet plus the role digest is the worker's context.
+- Do not reload TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT when the packet is complete.
+- Main uses targeted reconciliation on ordinary transitions; full reread is for startup, interrupt, and drift.
+
 ## Universal rules
 
 - Never paste a complete log, diff, transcript, generated bundle, or coverage

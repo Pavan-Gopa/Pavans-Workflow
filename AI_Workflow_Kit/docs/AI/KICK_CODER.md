@@ -8,7 +8,8 @@ Both autoload project-local `ponytail`.
 - Implement one Main-assigned step or verified fix.
 - Edit only assignment `target_files`.
 - Understand the affected real code flow before minimizing.
-- Apply assignment-local `ponytail_mode: off|lite|full` (`full` default).
+- Apply assignment-local `ponytail_mode: off|lite|full`. First attempt `full`;
+  review/QA retry `lite`; two identical failures `off`.
 - Run assigned Coder Objective Gates and return exact evidence.
 - Return objective-ready work for independent Judgment review.
 
@@ -36,7 +37,8 @@ patch one symptom merely to stay in scope.
 ```text
 Step: {{STEP_ID}} — {{TITLE}}
 Work item: {{STEP_ID}}.D{{N}}
-ponytail_mode: full
+ponytail_mode: full   # lite on review/QA retry; off after two identical failures
+role_digest: (paste Coder block from WORKER_INPUT_DIGEST.md)
 Goal: {{bounded goal}}
 Target files (only):
 - {{path}}

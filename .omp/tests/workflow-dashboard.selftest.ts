@@ -876,7 +876,7 @@ assert.match(profiledText, /PROFILE · quick · RISK · low/);
 assert.match(profiledText, /WORKFLOW HEALTH/);
 assert.match(profiledText, /BUDGET/);
 assert.match(profiledText, /Time · 0m \/ 20m/);
-assert.match(profiledText, /Tokens · 0 \/ 100,000 tok/);
+assert.match(profiledText, /Tokens · 410 tok \/ 100,000 tok/);
 assert.match(profiledText, /Cost · unavailable/);
 if (process.env.WORKFLOW_DASHBOARD_MOCKUPS === "1") {
 	for (const [label, view] of [

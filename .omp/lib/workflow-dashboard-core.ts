@@ -55,6 +55,8 @@ export type WorkflowState = {
 	reviewStatus: string;
 	reviewVerdict: string;
 	reviewEnabled: boolean;
+	qaStatus: string;
+	qaEnabled: boolean;
 	securityNextRun: string;
 	pipelineProfile: PipelineProfile;
 	pipelineAuthorizedBy: string;
@@ -690,6 +692,9 @@ export function roleLabel(value: string | undefined): string {
 			reviewer: "Reviewer",
 			tester: "Tester",
 			security: "Security",
+			"design-advisor": "Design Advisor",
+			design_advisor: "Design Advisor",
+			designer: "Designer",
 			human: "Human",
 		}[role ?? ""] ?? value ?? "Unknown"
 	);
@@ -707,6 +712,11 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 	if (runtime.worker && (runtime.worker.status === "running" || runtime.worker.status === "pending")) {
 		return { status: `${roleLabel(runtime.worker.agent)} running`, waitingForHuman: false };
 	}
+	if (state.securityNextRun === "offer_scoped") {
+		if (state.reviewVerdict === "approved" && (!state.qaEnabled || state.qaStatus === "qa_green" || state.qaStatus === "skipped")) {
+			return { status: "Security offer", waitingForHuman: true };
+		}
+	}
 	if (state.implementationStatus === "waiting_review") return { status: "Objective-ready", waitingForHuman: false };
 	if (state.reviewVerdict === "changes_requested" || state.reviewStatus === "changes_requested") {
 		return { status: "Changes requested", waitingForHuman: false };
@@ -719,8 +729,10 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 	return { status: "Main coordinating", waitingForHuman: false };
 }
 
-function deriveNextAction(state: WorkflowState, runtime: RuntimeSnapshot): string {
-	return deriveRoutingExplanation(state, runtime).action;
+function currentStepMeta(data: DashboardData): { pipelineProfile: PipelineProfile; risk: StepRisk } | undefined {
+	const step = data.steps.find(item => item.id === data.state.currentStep);
+	if (!step) return undefined;
+	return { pipelineProfile: step.pipelineProfile, risk: step.risk };
 }
 
 export function deriveDashboardViewModel(
@@ -745,7 +757,7 @@ export function deriveDashboardViewModel(
 	const workerRole = normalizeRole(runtime.worker?.agent);
 	const currentRole = workerRole && SPECIALIZED_ROLES.has(workerRole) ? workerRole : undefined;
 	const status = currentStatus(state, runtime);
-	const routing = deriveRoutingExplanation(state, runtime);
+	const routing = deriveRoutingExplanation(state, runtime, currentStepMeta(data));
 	return {
 		data,
 		runtime,
@@ -1277,7 +1289,11 @@ export function formatSampleLabel(runs: number): string {
 	return "established sample";
 }
 
-export function budgetLines(budget: StepBudget | undefined, stats: StepStats | undefined): TextLine[] {
+export function budgetLines(
+	budget: StepBudget | undefined,
+	stats: StepStats | undefined,
+	sessionTokens?: number,
+): TextLine[] {
 	if (!budget) return [];
 	const lines: TextLine[] = [{ text: "BUDGET", tone: "accent" }];
 	if (budget.timeMinutes !== undefined) {
@@ -1288,7 +1304,14 @@ export function budgetLines(budget: StepBudget | undefined, stats: StepStats | u
 		}
 	}
 	if (budget.tokens !== undefined) {
-		lines.push({ text: `Tokens · 0 / ${formatTokens(budget.tokens)}` });
+		if (sessionTokens === undefined) {
+			lines.push({ text: `Tokens · n/a / ${formatTokens(budget.tokens)} · session usage not yet available`, tone: "muted" });
+		} else {
+			lines.push({ text: `Tokens · ${formatTokens(sessionTokens)} / ${formatTokens(budget.tokens)} · session, not step-attributed` });
+			if (sessionTokens > budget.tokens) {
+				lines.push({ text: "WARN · Session tokens exceed this step budget", tone: "warning" });
+			}
+		}
 	}
 	lines.push({ text: "Cost · unavailable (OMP Stats exposes no exact step attribution)", tone: "muted" });
 	return lines;
@@ -1313,7 +1336,7 @@ function stepStatsLines(view: DashboardViewModel, stats: StepStats | undefined, 
 	if (!stats) {
 		lines.push({ text: view.relation === "planned" ? "Planned · no execution data yet" : "No telemetry for this step yet", tone: "muted" });
 		if (view.selectedStep?.budget) {
-			lines.push(...budgetLines(view.selectedStep.budget, stats));
+			lines.push(...budgetLines(view.selectedStep.budget, stats, view.data.sessionUsage?.totalTokens));
 		}
 		return lines;
 	}
@@ -1336,7 +1359,7 @@ function stepStatsLines(view: DashboardViewModel, stats: StepStats | undefined, 
 	}
 	if (stats.human_rating) lines.push({ text: `Human rating · ${stats.human_rating}`, tone: "muted" });
 	if (view.selectedStep?.budget) {
-		lines.push(...budgetLines(view.selectedStep.budget, stats));
+		lines.push(...budgetLines(view.selectedStep.budget, stats, view.data.sessionUsage?.totalTokens));
 	}
 	if (stats.models.length > 0) {
 		lines.push({ text: "AGENTS USED", tone: "accent" });

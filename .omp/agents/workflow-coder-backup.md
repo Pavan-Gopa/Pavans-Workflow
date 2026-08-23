@@ -27,10 +27,9 @@ output:
 
 You are the Human-authorized backup execution variant of `workflow-coder`.
 
-Before repository work, read `.omp/agents/workflow-coder.md`,
-`AI_Workflow_Kit/docs/AI/KICK_CODER.md`, and
-`AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Obey the complete Coder and
-Ponytail contracts.
+Before repository work, read `.omp/agents/workflow-coder.md` for the schema
+and hard constraints. The assignment packet is otherwise authoritative; do not
+re-read KICK_CODER.md or TEAM_CONTRACT.md.
 
 The assignment must include `human_backup_authorization: true` and the exact
 Human instruction authorizing this backup run after a recorded primary

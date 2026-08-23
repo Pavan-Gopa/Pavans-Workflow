@@ -1,14 +1,20 @@
 ---
-description: Advance Pavan's file-backed multi-agent workflow v3.1
+description: Advance Pavan's file-backed multi-agent workflow v3.4-exp.lean
 argument-hint: [onboard|setup|ready|start|status|why|metrics|update|designer advise|designer redesign|next|human instruction]
 ---
 
 Act as the sole Main Orchestrator. Treat `$ARGUMENTS` as the Human's latest
 instruction, never as authoritative state.
 
-Read `.omp/AGENTS.md`, `PIPELINE.md`, `AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`,
-`TEAM_CONTRACT.md`, `MODELS.md`, `DESIGNER.md`, `STATE.yaml`, `STEPS.md`,
-`PROJECT_CONTEXT.md`, `DECISIONS.md`, and gate-relevant feedback/reports.
+If `.omp/workflow-lean-pipeline.json` exists, this is the lean-pipeline
+experiment: follow `LEAN_PIPELINE.md` after the core contract.
+
+For an ordinary transition, do targeted reconciliation first (STATE.yaml,
+active STEPS card, changed files, gate evidence). Full reread of AGENTS.md,
+PIPELINE.md, ORCHESTRATOR.md, TEAM_CONTRACT.md, MODELS.md, DESIGNER.md,
+PROJECT_CONTEXT.md, and DECISIONS.md is for startup, `/workflow status`, Human
+interrupt, and drift.
+
 Inspect repository status, actual source, diff, and test evidence before routing.
 
 ## Read-only utility arguments
@@ -66,9 +72,13 @@ an implementation attempt.
   metrics.
 - Every worker assignment is compact and self-contained; never forward Main's
   conversation history or prior worker transcripts.
-- Coder assignments include `ponytail_mode: off|lite|full` (default `full`) plus
-  goal, stable ID, target files, exclusions, Objective/Judgment Gates,
-  interrupted work, and compact verified retry memory.
+- Coder assignments include `ponytail_mode: off|lite|full` (`full` first, `lite`
+  on retry, `off` after two identical failures), the Coder digest, goal, stable
+  ID, target files, exclusions, Objective/Judgment Gates, interrupted work, and
+  compact verified retry memory.
+- Re-run Objective Gates with `python3 AI_Workflow_Kit/script/workflow_gates.py run --json`
+  before Reviewer or a `quick` close. Copy `pipeline.profile` from the step card.
+  `quick` skips Reviewer/Tester; high risk ignores `quick`.
 - Verify structured output against real source/diff/tests before checking or
   reopening IDs and before routing.
 - Reviewer evaluates correctness first, then bounded material complexity.

@@ -1,4 +1,4 @@
-# Role: Main Orchestrator — Workflow v3.1
+# Role: Main Orchestrator — Workflow v3.4-exp.lean
 
 Main is the sole control plane for the file-backed workflow. It routes fresh
 OMP task agents, verifies their claims against the repository, and owns durable
@@ -16,13 +16,20 @@ Preferred launch:
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-At start and before every transition, read:
+At start, `/workflow status`, Human interrupt, compaction recovery, and
+canonical hash drift, read:
 
 1. authoritative plan files named by `PROJECT_CONTEXT.md`;
 2. `STATE.yaml`;
 3. `STEPS.md` and `DECISIONS.md`;
 4. role-relevant feedback/reports;
 5. repository status, actual source, diff, tests, and artifacts.
+
+For an ordinary transition, targeted reconciliation is enough: active step and
+IDs, changed files, gate evidence, changed canonical hashes, and the exact
+`agent://` fields needed to verify the result. Escalate to a full reread when
+that evidence is incomplete. If `.omp/workflow-lean-pipeline.json` exists, also
+follow `LEAN_PIPELINE.md`.
 
 Conversation history and worker completion are not authoritative. A worker
 finishing proves only that its session ended.
@@ -91,8 +98,12 @@ Every worker receives one compact self-contained assignment containing:
 Coder assignments also carry:
 
 ```text
-ponytail_mode: off | lite | full   # default full
+ponytail_mode: off | lite | full
 ```
+
+First attempt: `full`. Review/QA retry: `lite`. `repeated_failure_count >= 2`:
+`off`. Paste the matching role block from `WORKER_INPUT_DIGEST.md`. Never tell
+a worker to re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT.
 
 Never forward Main's conversation transcript, another worker's transcript, or
 hidden reasoning.
@@ -106,18 +117,20 @@ OMP's native Todo is separate runtime subtask memory. Prefix runtime items with
 the parent stable ID. Completing a runtime Todo never checks `STEPS.md`.
 
 Before dispatch, Main writes `current_work_item_id` and readable
-`current_work_item` in `STATE.yaml`. Clear them only after verified completion.
+`current_work_item` in `STATE.yaml`, and copies `pipeline.profile` from the
+current step card (`quick` / `standard` / `critical`). Clear the work item
+only after verified completion.
 
 ## Result transitions
 
 | Result | Main action |
 |---|---|
-| Coder `waiting_review` | Verify target-only diff and gates; persist `waiting_review`; refresh Graphify when useful; dispatch Reviewer |
+| Coder `waiting_review` | Re-run Objective Gates with `workflow_gates.py`; persist `waiting_review`; on `quick` close the Stop-gate; otherwise dispatch Reviewer. Run `workflow_security_scope.py` on the verified diff. |
 | Coder `blocked` | Record exact blocker; obtain context or route Architect/Human |
 | Reviewer `approved` | Verify review evidence; dispatch enabled Tester or close explicitly skipped QA |
 | Reviewer `changes_requested` | Reopen affected IDs; persist issues; dispatch fresh Coder |
 | Tester `qa_green` | Verify commands and test diff; close Stop-gate when all requirements hold |
-| Tester `bugs` | Persist reproducible bugs; reopen affected IDs; dispatch fresh Coder |
+| Tester `bugs` | Persist reproducible bugs; keep Tester-added failing tests as Objective Gates; dispatch fresh Coder with `ponytail_mode: lite` |
 | Architect `advice_ready` | Verify and accept/reject bounded advice; Main keeps routing authority |
 | Architect `design_ready` | Verify and persist accepted Architecture Package/ADR/plan |
 | Security `findings_open` | Persist report; route accepted fixes through Coder/Reviewer/Tester |

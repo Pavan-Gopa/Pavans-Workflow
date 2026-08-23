@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.4.0-exp.lean — 2026-08-23
+
+Experimental overlay. Default unlabeled steps stay Coder → Reviewer → Tester.
+Apply/rollback: `bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh`.
+
+### Added
+
+- Pipeline profiles on step cards (`quick` / `standard` / `critical`). `quick`
+  skips Reviewer/Tester after Main re-runs Objective Gates; `high` risk ignores
+  `quick`.
+- Deterministic Objective Gate runner: `workflow_gates.py`.
+- Scoped Security offer from path blast-radius: `workflow_security_scope.py`.
+- Assignment-first worker packets and `WORKER_INPUT_DIGEST.md`.
+- Retry Ponytail: `lite` after review/QA, `off` after two identical failures.
+- Tester writes a failing test before returning `bugs`.
+- Reversible installer with timestamped framework backup.
+
+### Changed
+
+- Targeted Main reconciliation is the default for ordinary transitions.
+- Alt+W token budget no longer hardcodes `0`; Designer/Advisor labels render.
+- Context Economy docs no longer describe themselves as a v3.1.4 experiment.
+
 ## 3.3.1 — 2026-08-23
 
 ### Fixed

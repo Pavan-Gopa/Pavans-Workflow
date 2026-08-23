@@ -52,15 +52,28 @@ for path in \
   check_path "$path"
 done
 
-if [[ "$(tr -d '[:space:]' < VERSION 2>/dev/null || true)" == "3.3.1" ]]; then
+WF_VERSION="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+if [[ "$WF_VERSION" == "3.4.0-exp.lean" ]]; then
+  ok "workflow version: 3.4.0-exp.lean (lean-pipeline experiment)"
+elif [[ "$WF_VERSION" == "3.3.1" ]]; then
   ok "workflow version: 3.3.1"
 else
-  fail "VERSION must be 3.3.1"
+  fail "VERSION must be 3.3.1 or 3.4.0-exp.lean"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
   check_script "AI_Workflow_Kit/script/$script.sh"
 done
+if [[ -f AI_Workflow_Kit/script/workflow_lean.sh ]]; then
+  check_script AI_Workflow_Kit/script/workflow_lean.sh
+fi
+if [[ -f AI_Workflow_Kit/script/workflow_gates.py ]]; then
+  python3 AI_Workflow_Kit/script/workflow_gates.selftest.py >/dev/null && ok "objective gate runner selftest" || fail "objective gate runner selftest"
+  python3 AI_Workflow_Kit/script/workflow_security_scope.selftest.py >/dev/null && ok "security scope selftest" || fail "security scope selftest"
+fi
+if [[ -f AI_Workflow_Kit/script/workflow_lean.selftest.sh ]]; then
+  bash AI_Workflow_Kit/script/workflow_lean.selftest.sh >/dev/null && ok "lean-pipeline apply/rollback selftest" || fail "lean-pipeline apply/rollback selftest"
+fi
 
 if python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml >/dev/null; then
   ok "project YAML/model-role/task-policy guard"
@@ -320,5 +333,5 @@ if (( failures > 0 )); then
   exit 1
 fi
 printf '\nWorkflow doctor: ready (%d warning(s))\n' "$warnings"
-printf 'Version: 3.3.1\n'
+printf 'Version: %s\n' "$WF_VERSION"
 printf 'Launch: bash AI_Workflow_Kit/script/omp_workflow.sh\n'

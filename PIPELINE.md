@@ -1,4 +1,4 @@
-# Pipeline — Pavan's Workflow v3.1
+# Pipeline — Pavan's Workflow v3.4-exp.lean
 
 A file-backed, multi-model OMP development loop with fresh specialized workers,
 Main-owned state, conditional Graphify, Coder-only Ponytail, a live plan cursor,
@@ -23,6 +23,10 @@ Human <-> Main
   -> green: close step and continue
   -> red: persist compact verified retry memory and start a fresh Coder
 ```
+
+Step cards may set `**Pipeline profile:** quick|standard|critical`. Unlabeled
+cards stay `standard`. `quick` skips Reviewer/Tester after Main re-runs
+Objective Gates and is ignored when `**Risk:** high`.
 
 Designer is never inserted automatically.
 

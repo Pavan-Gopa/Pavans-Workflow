@@ -115,7 +115,8 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 		description: "Explain why the workflow selected the current step and next actor",
 		handler: async (_args, ctx) => {
 			const files = await readDashboardFiles(ctx.cwd);
-			const routing = deriveRoutingExplanation(files.state, runtimeSnapshot(ctx));
+			const current = files.steps.find(step => step.id === files.state.currentStep);
+			const routing = deriveRoutingExplanation(files.state, runtimeSnapshot(ctx), current);
 			ctx.ui.notify([
 				`Current step: ${files.state.currentStep}`,
 				`Current status: ${files.state.implementationStatus}`,

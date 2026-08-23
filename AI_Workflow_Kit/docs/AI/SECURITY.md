@@ -42,6 +42,7 @@ When steps are largely green and ship is near, Orchestrator **must offer** (not 
 | Human asks | Anytime — still warn about cost |
 | Large new attack surface late | e.g. new auth, downloads, IPC — prefer still after that surface is feature-tested |
 | STATE `security.next_run: pending` | Only if Human already agreed |
+| Lean scoped offer | After a verified Coder diff, Main runs `workflow_security_scope.py`. A path hit sets `security.next_run: offer_scoped` and asks the Human. This is a bounded pass on those files, not the full pre-release campaign. Decline records `declined`. |
 
 **Do not:**
 

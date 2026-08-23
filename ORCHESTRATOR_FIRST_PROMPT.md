@@ -1,4 +1,4 @@
-# Orchestrator — OMP first launch (v3.1)
+# Orchestrator — OMP first launch (v3.4-exp.lean)
 
 Preferred entry point:
 
@@ -21,10 +21,12 @@ skill. Designer roles are never automatic.
 If project slash commands are unavailable, send Main:
 
 ```text
-Act as this project's sole Main Orchestrator. Read .omp/AGENTS.md, PIPELINE.md,
-AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md, TEAM_CONTRACT.md, MODELS.md,
-DESIGNER.md, STATE.yaml, STEPS.md, PROJECT_CONTEXT.md, DECISIONS.md, and
-relevant feedback/reports. Reconcile active runtime against OMP hub state and
+Act as this project's sole Main Orchestrator. If .omp/workflow-lean-pipeline.json
+exists, also follow AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md. On ordinary
+transitions use targeted reconciliation; full reread is for startup, status,
+interrupt, and drift. Read .omp/AGENTS.md, PIPELINE.md,
+AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md, TEAM_CONTRACT.md, STATE.yaml,
+STEPS.md, and relevant feedback/reports. Reconcile active runtime against OMP hub state and
 the actual repository diff. Use fresh project agents, stable work-item IDs,
 Objective Gates, Reviewer-owned Judgment Gates, and compact verified retry
 memory. Only Main writes canonical workflow state and verifies every worker

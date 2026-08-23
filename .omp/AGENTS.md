@@ -1,4 +1,4 @@
-# Pavan's Workflow v3.1 — OMP Contract
+# Pavan's Workflow v3.4-exp.lean — OMP Contract
 
 This project runs one file-backed, Human-supervised multi-agent workflow inside
 an OMP Main session.
@@ -17,8 +17,8 @@ an OMP Main session.
 
 ## Source of truth
 
-Conversation history is not authoritative. Before routing or changing a gate,
-Main rereads:
+Conversation history is not authoritative. At start, `/workflow status`, Human
+interrupt, and drift, Main rereads:
 
 1. authoritative plan files named by `PROJECT_CONTEXT.md`;
 2. `AI_Workflow_Kit/docs/AI/STATE.yaml`;
@@ -26,8 +26,10 @@ Main rereads:
 4. current feedback/report files;
 5. repository status, real source, diff, and test evidence.
 
-Higher-priority sources in `TEAM_CONTRACT.md` win. A worker exiting does not
-prove success.
+Ordinary transitions use targeted reconciliation (active IDs, changed files,
+gate evidence). If `.omp/workflow-lean-pipeline.json` exists, follow
+`LEAN_PIPELINE.md`. Higher-priority sources in `TEAM_CONTRACT.md` win. A worker
+exiting does not prove success.
 
 ## Main loop
 
@@ -38,9 +40,12 @@ prove success.
 3. Dispatch a fresh project agent with a compact self-contained assignment:
    goal, step, stable work-item ID, target files, exclusions, Objective Gates,
    Reviewer-owned Judgment Gates, and source-of-truth paths.
-4. Coder assignments include `ponytail_mode: off | lite | full`; default `full`.
-5. Verify every result against real source/diff/tests before writing canonical
-   feedback, checking or reopening stable IDs, recording metrics, or routing.
+4. Coder assignments include `ponytail_mode: off | lite | full` (`full` first,
+   `lite` on review/QA retry, `off` after two identical failures) plus the role
+   digest. Do not tell workers to reload TEAM_CONTRACT / KICK_* / PROJECT_CONTEXT.
+5. Re-run Objective Gates with `workflow_gates.py` before Reviewer or a `quick`
+   close. Verify every result against real source/diff/tests before writing
+   canonical feedback, checking or reopening stable IDs, recording metrics, or routing.
 6. Stop after three materially identical failures of the same approach. New
    evidence, a new approach, or a different failure is progress.
 

@@ -77,6 +77,12 @@ security:
   note: >-
     Offer once near release when work is ready (optional). Top models only:
     GLM 5.2 max, Sol max, or Opus 5 max. Not every step. Not Terra/Luna.
+# Lean-pipeline experiment. Default standard keeps Coder -> Reviewer -> Tester.
+pipeline:
+  profile: standard
+  authorized_by: null
+  authorized_at: null
+  note: null
 next_actor: orchestrator
 track: BOOTSTRAP
 plan_files:

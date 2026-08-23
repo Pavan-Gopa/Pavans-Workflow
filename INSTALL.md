@@ -1,5 +1,13 @@
 # Install Pavan's Workflow v3.3
 
+Experimental lean-pipeline overlay (smarter routing, fewer token repeats) lives
+on `experiment/lean-pipeline` and is reversible:
+
+```bash
+bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh apply /path/to/project
+bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh rollback /path/to/project
+```
+
 Version 3.3 makes context maintenance work during nonstop autonomous runs:
 OMP native threshold maintenance compacts the top-level interactive Main
 session at a 28% hard boundary with mid-turn checkpoints, while the soft

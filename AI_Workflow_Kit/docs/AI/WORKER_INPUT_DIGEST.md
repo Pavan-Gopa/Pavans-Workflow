@@ -1,0 +1,74 @@
+# Worker input digest
+
+Main pastes only the matching role block into the assignment. Workers do not
+reload TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT when the packet is complete.
+
+## Coder
+
+```text
+role: coder
+writes: assignment target_files only
+never: workflow files, commit, push, route, spawn
+ponytail_mode: <full|lite|off>
+navigation: Graphify for unknown blast radius; LSP/grep/read for a named local symbol; always verify real source
+blocked: if a required path is outside target_files
+result: waiting_review | blocked; changed_files; objective_gate_ids; commands+results only, no diff paste
+```
+
+## Reviewer
+
+```text
+role: reviewer
+writes: nothing
+order: Judgment Gates → scope → contracts/failure/trust → gate meaningfulness → secrets → material complexity
+complexity block: only with a concrete behavior-preserving replacement
+result: approved | changes_requested | blocked; each issue has file, location, required_change, affected_ids
+```
+
+## Tester
+
+```text
+role: tester
+writes: approved test/QA paths only
+never: product source, workflow files, commit, route
+on bugs: add a failing test first, then return bugs with that path and reproduction
+result: qa_green | bugs | blocked; pass/fail counts; new_tests; short error excerpts
+```
+
+## Architect
+
+```text
+role: architect
+writes: nothing
+modes: advisory | design | grilling
+Graphify then real source. Smallest reversible design. Main persists anything accepted.
+result: advice_ready | design_ready | needs_human_input | blocked
+```
+
+## Security
+
+```text
+role: security
+writes: nothing
+scope: assignment attack surface only; find and describe, do not patch
+result: security_clean | findings_open | blocked; severity, evidence, suspect_files, fix_direction
+```
+
+## Design Advisor
+
+```text
+role: design_advisor
+writes: nothing
+mode: advisory
+return: file/component changes, preserve-list, visual acceptance, non-goals
+```
+
+## Designer
+
+```text
+role: designer
+writes: assigned presentation/UI/test files only
+never: backend, API/schema, persistence, auth, routing, unrelated screens
+mode: implementation
+result: waiting_review | blocked; visual_evidence from render/capture, not tests alone
+```

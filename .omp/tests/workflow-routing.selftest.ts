@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
 	deriveRoutingExplanation,
-	type RoutingReasonCode,
+	effectivePipelineProfile,
+	ponytailModeForRetry,
 } from "../lib/workflow-routing.ts";
 import { parseWorkflowState, type RuntimeSnapshot } from "../lib/workflow-dashboard-core.ts";
 
@@ -64,6 +65,7 @@ const reviewChanges = deriveRoutingExplanation(
 );
 assert.equal(reviewChanges.reasonCode, "review_changes_requested");
 assert.equal(reviewChanges.actor, "coder");
+assert.equal(reviewChanges.ponytailMode, "lite");
 
 // 4. QA pending
 const qaPending = deriveRoutingExplanation(
@@ -78,8 +80,9 @@ const qaBugs = deriveRoutingExplanation(
 	{ ...baseState, qaStatus: "bugs" },
 	baseRuntime,
 );
-assert.equal(qaBugs.reasonCode, "qa_bugs");
+assert.equal(qaBugs.reasonCode, "qa_bugs_red_test");
 assert.equal(qaBugs.actor, "coder");
+assert.equal(qaBugs.ponytailMode, "lite");
 
 // 6. Stop-gate ready
 const stopGateReady = deriveRoutingExplanation(
@@ -118,6 +121,45 @@ const onboardingPending = deriveRoutingExplanation(
 assert.equal(onboardingPending.reasonCode, "onboarding");
 assert.equal(onboardingPending.actor, "human");
 
+const quickClose = deriveRoutingExplanation(
+	{ ...baseState, implementationStatus: "waiting_review" },
+	baseRuntime,
+	{ pipelineProfile: "quick", risk: "low" },
+);
+assert.equal(quickClose.reasonCode, "quick_profile_close");
+assert.equal(quickClose.actor, "orchestrator");
+
+const highRiskKeepsReview = deriveRoutingExplanation(
+	{ ...baseState, implementationStatus: "waiting_review", reviewEnabled: true },
+	baseRuntime,
+	{ pipelineProfile: "quick", risk: "high" },
+);
+assert.equal(highRiskKeepsReview.reasonCode, "objective_ready_for_review");
+assert.equal(effectivePipelineProfile(baseState, { pipelineProfile: "quick", risk: "high" }), "standard");
+
+const securityOffer = deriveRoutingExplanation(
+	{
+		...baseState,
+		reviewVerdict: "approved",
+		qaStatus: "qa_green",
+		securityNextRun: "offer_scoped",
+	},
+	baseRuntime,
+);
+assert.equal(securityOffer.reasonCode, "security_offer");
+assert.equal(securityOffer.actor, "human");
+
+assert.equal(ponytailModeForRetry({ kind: "first" }), "full");
+assert.equal(ponytailModeForRetry({ kind: "review_changes", repeatedFailureCount: 1 }), "lite");
+assert.equal(ponytailModeForRetry({ kind: "qa_bugs", repeatedFailureCount: 2 }), "off");
+
+const standardStillReviews = deriveRoutingExplanation(
+	{ ...baseState, implementationStatus: "waiting_review" },
+	baseRuntime,
+);
+assert.equal(standardStillReviews.reasonCode, "objective_ready_for_review");
+
 console.log("workflow routing selftest: PASS");
-console.log("  reasons: worker_running, objective_ready, review_changes, qa_pending, qa_bugs, stop_gate_ready");
-console.log("  exceptions: model_failure_waiting_authorization, human_blocker, onboarding_pending");
+console.log("  reasons: worker_running, objective_ready, quick_profile_close, review_changes, qa_pending, qa_bugs_red_test, stop_gate_ready, security_offer");
+console.log("  exceptions: model_failure_waiting_authorization, human_blocker, onboarding_pending, high-risk ignores quick");
+

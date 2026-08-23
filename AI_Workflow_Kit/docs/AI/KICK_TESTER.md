@@ -13,6 +13,8 @@ after Main verifies Reviewer approval.
 3. Use Graphify to locate affected execution paths and related tests.
 4. Add missing tests or QA scripts only in assignment-approved test paths.
 5. Re-run the relevant gate and return exact counts/evidence.
+6. On product bugs, add a failing test in approved paths before returning
+   `bugs`. That test becomes the Coder retry Objective Gate.
 
 ## Write boundary
 

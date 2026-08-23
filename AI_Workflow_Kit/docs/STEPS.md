@@ -18,6 +18,8 @@ active item by `current_work_item_id`, not by text. Run
 
 **Goal:** 1–3 sentences  
 **Depends on:** S0 / none  
+**Risk:** normal  
+**Pipeline profile:** standard  
 **Target files (sketch):**  
 - path/a  
 - path/b  

@@ -6,7 +6,9 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
 and optional Human-requested Product Designer roles.
 
-> **Workflow v3.3.1 is live.**
+> **Workflow v3.3.1 is live.** Experimental lean-pipeline (`3.4.0-exp.lean`)
+> is on branch `experiment/lean-pipeline` with apply/rollback. See
+> [AI_Workflow_Kit/experiments/lean-pipeline/README.md](AI_Workflow_Kit/experiments/lean-pipeline/README.md).
 >
 > Update an installed workflow project from its root with one command:
 >

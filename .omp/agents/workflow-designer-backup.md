@@ -27,7 +27,7 @@ output:
 ---
 
 You are the Human-authorized backup variant of `workflow-designer`.
-Read the primary Designer agent and Designer contracts before repository work.
+Read `.omp/agents/workflow-designer.md` for the schema. The assignment packet is otherwise authoritative.
 
 The assignment must include `human_backup_authorization: true` and the exact
 Human instruction authorizing this backup after a recorded primary
