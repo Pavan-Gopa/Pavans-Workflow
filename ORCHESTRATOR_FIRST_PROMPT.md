@@ -1,4 +1,4 @@
-# Orchestrator — OMP first launch (v3.4-exp.lean)
+# Orchestrator — OMP first launch (v3.4.0)
 
 Preferred entry point:
 
@@ -21,8 +21,9 @@ skill. Designer roles are never automatic.
 If project slash commands are unavailable, send Main:
 
 ```text
-Act as this project's sole Main Orchestrator. If .omp/workflow-lean-pipeline.json
-exists, also follow AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md. On ordinary
+Act as this project's sole Main Orchestrator. Also follow
+AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md (pipeline profiles, Objective Gate
+runs, retry economy). On ordinary
 transitions use targeted reconciliation; full reread is for startup, status,
 interrupt, and drift. Read .omp/AGENTS.md, PIPELINE.md,
 AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md, TEAM_CONTRACT.md, STATE.yaml,

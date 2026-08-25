@@ -1,4 +1,4 @@
-# AI Team Contract — Workflow v3.4-exp.lean
+# AI Team Contract — Workflow v3.4.0
 
 Human process control goes through Main. Workers return structured evidence only.
 

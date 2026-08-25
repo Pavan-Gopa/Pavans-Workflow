@@ -1,9 +1,11 @@
 # Changelog
 
-## 3.4.0-exp.lean — 2026-08-23
+## 3.4.0 — 2026-08-25
 
-Experimental overlay. Default unlabeled steps stay Coder → Reviewer → Tester.
-Apply/rollback: `bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh`.
+Lean pipeline promoted to core from the `experiment/lean-pipeline` overlay.
+Unlabeled steps keep the default loop: Coder → Reviewer → Tester. The former
+opt-in installer remains under `AI_Workflow_Kit/experiments/lean-pipeline/`
+for pre-3.4.0 installs.
 
 ### Added
 

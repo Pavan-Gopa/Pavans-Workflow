@@ -1,8 +1,12 @@
 # Lean Pipeline experiment
 
-Opt-in overlay on Pavan's Workflow v3.3.1. Default project behavior stays
-`standard` (Coder → Reviewer → Tester). The experiment adds smarter routing
-and cuts repeated prompt load without removing gates on real product work.
+> **Superseded:** this behavior merged into `main` as v3.4.0 and ships
+> natively now. This installer stays only for applying/removing the overlay on
+> pre-3.4.0 installs; new installs already include everything below.
+
+Former opt-in overlay on Pavan's Workflow v3.3.1. Default project behavior was
+`standard` (Coder → Reviewer → Tester). The experiment added smarter routing
+and cut repeated prompt load without removing gates on real product work.
 
 ## What it changes
 

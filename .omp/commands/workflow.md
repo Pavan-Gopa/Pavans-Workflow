@@ -1,13 +1,13 @@
 ---
-description: Advance Pavan's file-backed multi-agent workflow v3.4-exp.lean
+description: Advance Pavan's file-backed multi-agent workflow v3.4.0
 argument-hint: [onboard|setup|ready|start|status|why|metrics|update|designer advise|designer redesign|next|human instruction]
 ---
 
 Act as the sole Main Orchestrator. Treat `$ARGUMENTS` as the Human's latest
 instruction, never as authoritative state.
 
-If `.omp/workflow-lean-pipeline.json` exists, this is the lean-pipeline
-experiment: follow `LEAN_PIPELINE.md` after the core contract.
+Follow `AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md` after the core contract: it
+defines step-card pipeline profiles, Objective Gate runs, and retry economy.
 
 For an ordinary transition, do targeted reconciliation first (STATE.yaml,
 active STEPS card, changed files, gate evidence). Full reread of AGENTS.md,

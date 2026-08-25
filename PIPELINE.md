@@ -1,4 +1,4 @@
-# Pipeline — Pavan's Workflow v3.4-exp.lean
+# Pipeline — Pavan's Workflow v3.4.0
 
 A file-backed, multi-model OMP development loop with fresh specialized workers,
 Main-owned state, conditional Graphify, Coder-only Ponytail, a live plan cursor,

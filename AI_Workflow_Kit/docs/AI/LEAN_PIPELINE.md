@@ -1,10 +1,10 @@
-# Lean Pipeline — experiment contract
+# Lean Pipeline — pipeline profiles, deterministic gates, retry economy
 
-Active when `.omp/workflow-lean-pipeline.json` exists. Default unlabeled
-behavior is unchanged: Coder → Main verification → Reviewer → Tester.
+Core routing since v3.4.0. Unlabeled cards run the default loop: Coder → Main
+verification → Reviewer → Tester.
 
-This file is the experiment addendum. `TEAM_CONTRACT.md` still wins on role
-boundaries. Lean never lets economy outrank a high-risk card.
+`TEAM_CONTRACT.md` still wins on role boundaries. Lean never lets economy
+outrank a high-risk card.
 
 ## Pipeline profiles
 

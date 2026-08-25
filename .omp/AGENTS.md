@@ -1,4 +1,4 @@
-# Pavan's Workflow v3.4-exp.lean — OMP Contract
+# Pavan's Workflow v3.4.0 — OMP Contract
 
 This project runs one file-backed, Human-supervised multi-agent workflow inside
 an OMP Main session.
@@ -27,9 +27,8 @@ interrupt, and drift, Main rereads:
 5. repository status, real source, diff, and test evidence.
 
 Ordinary transitions use targeted reconciliation (active IDs, changed files,
-gate evidence). If `.omp/workflow-lean-pipeline.json` exists, follow
-`LEAN_PIPELINE.md`. Higher-priority sources in `TEAM_CONTRACT.md` win. A worker
-exiting does not prove success.
+gate evidence); follow `LEAN_PIPELINE.md`. Higher-priority sources in
+`TEAM_CONTRACT.md` win. A worker exiting does not prove success.
 
 ## Main loop
 

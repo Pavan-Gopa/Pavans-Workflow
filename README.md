@@ -6,9 +6,12 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
 and optional Human-requested Product Designer roles.
 
-> **Workflow v3.3.1 is live.** Experimental lean-pipeline (`3.4.0-exp.lean`)
-> is on branch `experiment/lean-pipeline` with apply/rollback. See
-> [AI_Workflow_Kit/experiments/lean-pipeline/README.md](AI_Workflow_Kit/experiments/lean-pipeline/README.md).
+> **Workflow v3.4.0 is live.** The lean pipeline is now core: step-card
+> pipeline profiles (`quick` / `standard` / `critical`), deterministic
+> Objective Gates (`workflow_gates.py`), scoped Security offers, and Coder
+> retry economy. The former opt-in overlay remains at
+> [AI_Workflow_Kit/experiments/lean-pipeline/README.md](AI_Workflow_Kit/experiments/lean-pipeline/README.md)
+> for pre-3.4.0 installs.
 >
 > Update an installed workflow project from its root with one command:
 >

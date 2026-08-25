@@ -1,4 +1,4 @@
-# Role: Main Orchestrator — Workflow v3.4-exp.lean
+# Role: Main Orchestrator — Workflow v3.4.0
 
 Main is the sole control plane for the file-backed workflow. It routes fresh
 OMP task agents, verifies their claims against the repository, and owns durable
@@ -28,8 +28,8 @@ canonical hash drift, read:
 For an ordinary transition, targeted reconciliation is enough: active step and
 IDs, changed files, gate evidence, changed canonical hashes, and the exact
 `agent://` fields needed to verify the result. Escalate to a full reread when
-that evidence is incomplete. If `.omp/workflow-lean-pipeline.json` exists, also
-follow `LEAN_PIPELINE.md`.
+that evidence is incomplete. Follow `LEAN_PIPELINE.md` for pipeline profiles,
+Objective Gate runs, and retry economy.
 
 Conversation history and worker completion are not authoritative. A worker
 finishing proves only that its session ended.
