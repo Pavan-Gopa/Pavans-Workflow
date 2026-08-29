@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Detect credential/auth/trust-boundary paths in a verified diff."""
+"""Detect credential/auth/trust-boundary and public-contract paths in a verified diff."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PATH_HINTS = (
+SECURITY_HINTS = (
     "auth",
     "credential",
     "secret",
@@ -34,7 +34,18 @@ PATH_HINTS = (
     "oidc",
     "kms",
 )
-HINT = re.compile("|".join(re.escape(item) for item in PATH_HINTS), re.I)
+CONTRACT_HINTS = (
+    "schema",
+    "migration",
+    "migrate",
+    "openapi",
+    "graphql",
+    "protobuf",
+    "grpc",
+)
+SECURITY_HINT = re.compile("|".join(re.escape(item) for item in SECURITY_HINTS), re.I)
+CONTRACT_HINT = re.compile("|".join(re.escape(item) for item in CONTRACT_HINTS), re.I)
+API_SEGMENT = re.compile(r"(^|/)api(/|$|\.)", re.I)
 SKIP_PREFIXES = (
     "AI_Workflow_Kit/docs/",
     ".omp/",
@@ -77,8 +88,25 @@ def is_product_path(path: str) -> bool:
     return not any(normalized.startswith(prefix) for prefix in SKIP_PREFIXES)
 
 
+def normalize(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def security_hit(path: str) -> bool:
+    return bool(SECURITY_HINT.search(normalize(path)))
+
+
+def contract_hit(path: str) -> bool:
+    text = normalize(path)
+    return bool(CONTRACT_HINT.search(text) or API_SEGMENT.search(text))
+
+
 def hits_for(paths: list[str]) -> list[str]:
-    return [path for path in paths if is_product_path(path) and HINT.search(path)]
+    return [path for path in paths if is_product_path(path) and security_hit(path)]
+
+
+def forbid_hits_for(paths: list[str]) -> list[str]:
+    return [path for path in paths if is_product_path(path) and (security_hit(path) or contract_hit(path))]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,17 +117,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root = Path(args.project).resolve() if args.project else repo_root_from_here()
     paths = list(args.paths) if args.paths else git_paths(root)
-    hits = hits_for(paths)
+    security = hits_for(paths)
+    forbid = forbid_hits_for(paths)
     payload = {
-        "offer_scoped": bool(hits),
-        "hits": hits,
+        "offer_scoped": bool(security),
+        "forbid_quick": bool(forbid),
+        "hits": security,
+        "forbid_hits": forbid,
         "checked": len(paths),
     }
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
-    elif hits:
-        print("offer_scoped")
-        for path in hits:
+    elif forbid:
+        print("forbid_quick" if forbid and not security else "offer_scoped")
+        for path in forbid:
             print(path)
     else:
         print("none")

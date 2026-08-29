@@ -82,6 +82,7 @@ pipeline:
   profile: standard
   authorized_by: null
   authorized_at: null
+  quick_forbidden: false
   note: null
 next_actor: orchestrator
 track: BOOTSTRAP

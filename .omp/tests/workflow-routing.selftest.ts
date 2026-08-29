@@ -134,8 +134,20 @@ const highRiskKeepsReview = deriveRoutingExplanation(
 	baseRuntime,
 	{ pipelineProfile: "quick", risk: "high" },
 );
-assert.equal(highRiskKeepsReview.reasonCode, "objective_ready_for_review");
+assert.equal(highRiskKeepsReview.reasonCode, "quick_forbidden");
+assert.equal(highRiskKeepsReview.actor, "reviewer");
 assert.equal(effectivePipelineProfile(baseState, { pipelineProfile: "quick", risk: "high" }), "standard");
+
+const blastRadiusBlocksQuick = deriveRoutingExplanation(
+	{ ...baseState, implementationStatus: "waiting_review", reviewEnabled: true, pipelineQuickForbidden: true },
+	baseRuntime,
+	{ pipelineProfile: "quick", risk: "low", quickForbidden: true },
+);
+assert.equal(blastRadiusBlocksQuick.reasonCode, "quick_forbidden");
+assert.equal(effectivePipelineProfile(
+	{ ...baseState, pipelineQuickForbidden: true },
+	{ pipelineProfile: "quick", risk: "low" },
+), "standard");
 
 const securityOffer = deriveRoutingExplanation(
 	{
@@ -161,5 +173,5 @@ assert.equal(standardStillReviews.reasonCode, "objective_ready_for_review");
 
 console.log("workflow routing selftest: PASS");
 console.log("  reasons: worker_running, objective_ready, quick_profile_close, review_changes, qa_pending, qa_bugs_red_test, stop_gate_ready, security_offer");
-console.log("  exceptions: model_failure_waiting_authorization, human_blocker, onboarding_pending, high-risk ignores quick");
+console.log("  exceptions: model_failure_waiting_authorization, human_blocker, onboarding_pending, high-risk/blast-radius ignore quick");
 

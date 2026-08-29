@@ -7,6 +7,9 @@
 
 ## How to write a card
 
+`**Pipeline profile:** quick` is ignored when `**Risk:**` is high or the
+verified diff hits auth/API/schema/migration paths.
+
 Every checklist item carries a stable ID: `<step>.<D|O|J><n>` — `D` for `Do`
 work items, `O` for Objective gates, `J` for Judgment gates. IDs are unique
 across the whole file and never change once assigned; `STATE.yaml` links the

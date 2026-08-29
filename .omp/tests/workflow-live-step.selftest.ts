@@ -62,6 +62,7 @@ function state(currentStep: string, currentWorkItemId = "-", implementationStatu
 		pipelineAuthorizedBy: "-",
 		pipelineAuthorizedAt: "-",
 		pipelineNote: "-",
+		pipelineQuickForbidden: false,
 		blocker: "-",
 		repeatedFailureCount: 0,
 		activeAgent: "-",

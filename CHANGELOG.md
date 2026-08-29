@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.4.1 — 2026-08-23
+
+### Added
+
+- `workflow_security_scope.py` now reports `forbid_quick` for auth/trust paths
+  and public-contract paths (`/api/`, schema, OpenAPI, GraphQL, protobuf,
+  migrations). Main cannot close a `quick` card when the helper hits.
+- Metrics report groups completed steps, Coder retries, and recorded tokens by
+  `pipeline_profile` (`quick` / `standard` / `critical` / unlabeled). No USD.
+
+### Fixed
+
+- Fresh-install README/INSTALL snippets preserve the installer exit code.
+
 ## 3.4.0 — 2026-08-25
 
 Lean pipeline promoted to core from the `experiment/lean-pipeline` overlay.

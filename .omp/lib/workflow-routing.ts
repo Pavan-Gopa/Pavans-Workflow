@@ -14,12 +14,14 @@ export type PonytailMode = "full" | "lite" | "off";
 export type StepRoutingMeta = {
 	pipelineProfile?: PipelineProfile;
 	risk?: StepRisk;
+	quickForbidden?: boolean;
 };
 
 export type RoutingReasonCode =
 	| "worker_running"
 	| "objective_ready_for_review"
 	| "quick_profile_close"
+	| "quick_forbidden"
 	| "review_changes_requested"
 	| "qa_pending"
 	| "qa_bugs"
@@ -48,7 +50,9 @@ export function effectivePipelineProfile(
 	step?: StepRoutingMeta,
 ): PipelineProfile {
 	const candidate: PipelineProfile = step?.pipelineProfile || state.pipelineProfile || "standard";
-	if (candidate === "quick" && step?.risk === "high") return "standard";
+	if (candidate === "quick" && (step?.risk === "high" || step?.quickForbidden || state.pipelineQuickForbidden)) {
+		return "standard";
+	}
 	return candidate;
 }
 
@@ -169,10 +173,28 @@ export function deriveRoutingExplanation(
 		};
 	}
 
+	const requestedQuick = (step?.pipelineProfile || state.pipelineProfile) === "quick";
+	if (state.implementationStatus === "waiting_review" && requestedQuick && profile !== "quick") {
+		return {
+			action: "Main re-runs Objective Gates, then dispatches Reviewer — quick is blocked by blast radius or high risk",
+			reason: step?.risk === "high"
+				? "Card is marked quick but Risk is high; the full Coder → Reviewer → Tester loop stays in force"
+				: "Card is marked quick but the verified diff hit auth/API/schema/migration paths; quick is forbidden",
+			reasonCode: "quick_forbidden",
+			actor: "reviewer",
+			actorLabel: "Reviewer",
+			pipelineProfile: profile,
+			prerequisites: [
+				"python3 AI_Workflow_Kit/script/workflow_gates.py run --json",
+				"python3 AI_Workflow_Kit/script/workflow_security_scope.py --json",
+			],
+		};
+	}
+
 	if (state.implementationStatus === "waiting_review" && profile === "quick") {
 		return {
 			action: "Main re-runs Objective Gates with workflow_gates.py, then closes the Stop-gate",
-			reason: "Pipeline profile is quick; Reviewer and Tester are skipped after deterministic gates. High-risk cards cannot use quick.",
+			reason: "Pipeline profile is quick; Reviewer and Tester are skipped after deterministic gates. High-risk cards and blast-radius hits cannot use quick.",
 			reasonCode: "quick_profile_close",
 			actor: "orchestrator",
 			actorLabel: "Main",

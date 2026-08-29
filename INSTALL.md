@@ -79,10 +79,13 @@ bash install.sh .
 ## Install into an existing repository without the workflow
 
 ```bash
-tmp_dir="$(mktemp -d)"
-git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
-bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
-rm -rf "$tmp_dir"
+(
+  set -Eeuo pipefail
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
+  bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
+)
 ```
 
 The installer refuses to overwrite an existing workflow; use the updater for

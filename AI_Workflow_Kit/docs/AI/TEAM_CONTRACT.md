@@ -42,7 +42,8 @@ not emit unsupported Designer metrics events.
   backticked commands via `workflow_gates.py` before Reviewer or a `quick`
   close.
 - Pipeline profiles (`quick` / `standard` / `critical`) come from the step
-  card. Unlabeled cards are `standard`. `quick` is ignored when Risk is high.
+  card. Unlabeled cards are `standard`. `quick` is ignored when Risk is high
+  or when the verified diff hits auth/API/schema/migration paths.
 - Judgment Gates cover semantics, architecture, scope, contracts, failure
   behavior, maintainability, trust boundaries, and assigned visual criteria.
 - Reviewer owns engineering Judgment Gates; Human owns final aesthetic

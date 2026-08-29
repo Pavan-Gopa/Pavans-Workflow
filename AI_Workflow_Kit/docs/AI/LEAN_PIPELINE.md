@@ -24,9 +24,11 @@ pipeline:
 | `quick` | skip after green Objective Gates | skip | no |
 | `critical` | on | on unless Human skipped | offer scoped pass if blast-radius hits |
 
-`quick` is ignored when the card `**Risk:**` is `high`. Write `quick` only on
-docs, comments, config copy, or other low-blast work. Writing the field on the
-card is the Human authorization; Main does not invent `quick`.
+`quick` is ignored when the card `**Risk:**` is `high`, or when
+`workflow_security_scope.py` reports `forbid_quick` (auth, credentials, trust
+boundaries, `/api/`, schema, OpenAPI, GraphQL, protobuf, or migrations). Main
+writes `pipeline.quick_forbidden: true` and keeps Reviewer/Tester. Writing
+`quick` on the card is the Human authorization; Main does not invent `quick`.
 
 Before closing a `quick` step or dispatching Reviewer on `standard`/`critical`,
 run:
@@ -69,8 +71,9 @@ After a verified Coder diff, run:
 python3 AI_Workflow_Kit/script/workflow_security_scope.py
 ```
 
-A hit sets `security.next_run: offer_scoped` and asks the Human. Decline
-records `declined`. This is not a full pre-release campaign.
+A security hit sets `security.next_run: offer_scoped` and asks the Human.
+A contract/auth hit also sets `pipeline.quick_forbidden: true`. Decline on
+Security records `declined`. This is not a full pre-release campaign.
 
 ## Rollback
 

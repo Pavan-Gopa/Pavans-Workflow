@@ -53,14 +53,16 @@ for path in \
 done
 
 WF_VERSION="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
-if [[ "$WF_VERSION" == "3.4.0" ]]; then
+if [[ "$WF_VERSION" == "3.4.1" ]]; then
+  ok "workflow version: 3.4.1"
+elif [[ "$WF_VERSION" == "3.4.0" ]]; then
   ok "workflow version: 3.4.0"
 elif [[ "$WF_VERSION" == "3.4.0-exp.lean" ]]; then
-  ok "workflow version: 3.4.0-exp.lean (pre-release overlay; update to 3.4.0)"
+  ok "workflow version: 3.4.0-exp.lean (pre-release overlay; update to 3.4.1)"
 elif [[ "$WF_VERSION" == "3.3.1" ]]; then
   ok "workflow version: 3.3.1"
 else
-  fail "VERSION must be 3.3.1, 3.4.0-exp.lean, or 3.4.0"
+  fail "VERSION must be 3.3.1, 3.4.0-exp.lean, 3.4.0, or 3.4.1"
 fi
 
 for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do

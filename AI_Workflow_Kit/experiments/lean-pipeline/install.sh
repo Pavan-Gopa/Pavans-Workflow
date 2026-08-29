@@ -111,6 +111,7 @@ block = (
     + "  profile: standard\n"
     + "  authorized_by: null\n"
     + "  authorized_at: null\n"
+    + "  quick_forbidden: false\n"
     + "  note: null\n"
 )
 if "\nnext_actor:" in text:

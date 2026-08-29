@@ -125,7 +125,7 @@ only after verified completion.
 
 | Result | Main action |
 |---|---|
-| Coder `waiting_review` | Re-run Objective Gates with `workflow_gates.py`; persist `waiting_review`; on `quick` close the Stop-gate; otherwise dispatch Reviewer. Run `workflow_security_scope.py` on the verified diff. |
+| Coder `waiting_review` | Re-run Objective Gates with `workflow_gates.py`. Run `workflow_security_scope.py` on the verified diff; if `forbid_quick`, set `pipeline.quick_forbidden: true` and do not close as `quick`. Persist `waiting_review`; on remaining `quick` close the Stop-gate; otherwise dispatch Reviewer. |
 | Coder `blocked` | Record exact blocker; obtain context or route Architect/Human |
 | Reviewer `approved` | Verify review evidence; dispatch enabled Tester or close explicitly skipped QA |
 | Reviewer `changes_requested` | Reopen affected IDs; persist issues; dispatch fresh Coder |

@@ -6,10 +6,10 @@ A reusable **multi-model, multi-agent development workflow** for
 [Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
 and optional Human-requested Product Designer roles.
 
-> **Workflow v3.4.0 is live.** The lean pipeline is now core: step-card
-> pipeline profiles (`quick` / `standard` / `critical`), deterministic
-> Objective Gates (`workflow_gates.py`), scoped Security offers, and Coder
-> retry economy. The former opt-in overlay remains at
+> **Workflow v3.4.1 is live.** Lean pipeline is core: step-card profiles
+> (`quick` / `standard` / `critical`), deterministic Objective Gates,
+> blast-radius `quick` forbid, scoped Security offers, profile-grouped
+> metrics, and Coder retry economy. The former opt-in overlay remains at
 > [AI_Workflow_Kit/experiments/lean-pipeline/README.md](AI_Workflow_Kit/experiments/lean-pipeline/README.md)
 > for pre-3.4.0 installs.
 >
@@ -308,10 +308,13 @@ bash install.sh .
 ### Existing repository without the workflow
 
 ```bash
-tmp_dir="$(mktemp -d)"
-git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
-bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
-rm -rf "$tmp_dir"
+(
+  set -Eeuo pipefail
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
+  bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
+)
 ```
 
 Use the updater, not the installer, for projects already running an earlier

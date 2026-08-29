@@ -52,6 +52,7 @@ REVIEW_KINDS = {"product", "test_diff"}
 ARCHITECT_MODES = {"advisory", "design", "grilling"}
 GATES = {"reviewer", "qa", "security"}
 RATINGS = {"good", "overkill", "underchecked"}
+PIPELINE_PROFILES = {"quick", "standard", "critical"}
 INTERRUPTIONS = {
     "interrupted_no_changes",
     "interrupted_partial",
@@ -90,6 +91,8 @@ ALLOWED_FIELDS = {
     "repeat_count",
     "threshold",
     "human_rating",
+    "pipeline_profile",
+    "tokens",
 }
 SIMPLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$")
 SIMPLE_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@#-]{0,239}$")
@@ -283,10 +286,12 @@ def validate_event(event: dict[str, Any]) -> None:
         if event.get(key) is not None:
             require_id(key, event[key])
     validate_ref(event.get("evidence_ref"))
-    for key in ("attempt", "duration_ms", "repeat_count", "threshold"):
+    for key in ("attempt", "duration_ms", "repeat_count", "threshold", "tokens"):
         value = event.get(key)
         if value is not None and (not isinstance(value, int) or value < 0):
             raise MetricsError(f"{key} must be a non-negative integer")
+    if event.get("pipeline_profile") is not None:
+        require_enum("pipeline_profile", event.get("pipeline_profile"), PIPELINE_PROFILES)
 
     required: dict[str, tuple[str, ...]] = {
         "step_started": ("step",),
@@ -660,6 +665,52 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
             ],
         }
 
+    by_profile: dict[str, dict[str, Any]] = {}
+    for name in ("quick", "standard", "critical", "unlabeled"):
+        by_profile[name] = {
+            "completed_steps": 0,
+            "coder_attempts": 0,
+            "coder_retries": 0,
+            "review_changes_requested": 0,
+            "qa_bugs": 0,
+            "median_step_duration_ms": None,
+            "tokens": None,
+            "worker_runs": 0,
+        }
+    profile_durations: dict[str, list[int]] = defaultdict(list)
+    profile_tokens: dict[str, int] = defaultdict(int)
+    profile_token_seen: dict[str, bool] = defaultdict(bool)
+    for step, stats in step_stats.items():
+        step_events = [event for event in events if str(event.get("step")) == step]
+        profile = "unlabeled"
+        for event in step_events:
+            if event.get("event") == "step_started" and event.get("pipeline_profile") in PIPELINE_PROFILES:
+                profile = str(event["pipeline_profile"])
+                break
+        else:
+            for event in step_events:
+                if event.get("pipeline_profile") in PIPELINE_PROFILES:
+                    profile = str(event["pipeline_profile"])
+                    break
+        bucket = by_profile[profile]
+        if stats["status"] == "completed":
+            bucket["completed_steps"] += 1
+        bucket["coder_attempts"] += stats["coder_attempts"]
+        bucket["coder_retries"] += max(0, stats["coder_attempts"] - 1)
+        bucket["review_changes_requested"] += stats["product_reviews"]["changes_requested"]
+        bucket["qa_bugs"] += stats["qa_runs"]["bugs"]
+        bucket["worker_runs"] += sum(1 for event in step_events if event.get("event") == "worker_started")
+        if isinstance(stats.get("duration_ms"), int):
+            profile_durations[profile].append(stats["duration_ms"])
+        for event in step_events:
+            if isinstance(event.get("tokens"), int):
+                profile_tokens[profile] += event["tokens"]
+                profile_token_seen[profile] = True
+        stats["pipeline_profile"] = profile
+    for name, bucket in by_profile.items():
+        bucket["median_step_duration_ms"] = median_or_none(profile_durations.get(name, []))
+        bucket["tokens"] = profile_tokens[name] if profile_token_seen[name] else None
+
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
@@ -668,6 +719,7 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
         "failure_categories": dict(sorted(failure_categories.items())),
         "detected_by": dict(sorted(detected_by.items())),
         "role_stats": role_stats,
+        "by_profile": by_profile,
         "step_stats": step_stats,
         "human_ratings": dict(sorted(ratings.items())),
         "model_samples": model_samples,
@@ -722,6 +774,20 @@ def format_report(report: dict[str, Any]) -> str:
     if storage.get("future_schema_events"):
         lines.append(f"Notice: read {storage['future_schema_events']} future-schema event(s) using known fields")
     lines.append(f"Local store: {storage['events_path']}")
+    profiles = report.get("by_profile") or {}
+    profile_lines = []
+    for name in ("quick", "standard", "critical", "unlabeled"):
+        stats = profiles.get(name) or {}
+        if not stats.get("completed_steps") and not stats.get("worker_runs"):
+            continue
+        tokens = "n/a tok" if stats.get("tokens") is None else f"{stats['tokens']} tok"
+        profile_lines.append(
+            f"{name}: {stats.get('completed_steps', 0)} steps, "
+            f"{stats.get('coder_retries', 0)} retries, "
+            f"{format_duration(stats.get('median_step_duration_ms'))}, {tokens}"
+        )
+    if profile_lines:
+        lines.append("By pipeline profile: " + "; ".join(profile_lines))
     return "\n".join(lines)
 
 
@@ -872,8 +938,8 @@ def synthetic_events() -> list[dict[str, Any]]:
         events.append(make_event(iso_at(minute), event, key, **fields))
 
     # S1: perfect first pass.
-    add("step_started", "step_started:S1", 0, step="S1")
-    add("worker_started", "worker_started:c1", 1, step="S1", run_id="c1", candidate_id="c1", role="coder", attempt=1, model_role="workflow_coder", provider="local", model="Luna")
+    add("step_started", "step_started:S1", 0, step="S1", pipeline_profile="quick")
+    add("worker_started", "worker_started:c1", 1, step="S1", run_id="c1", candidate_id="c1", role="coder", attempt=1, model_role="workflow_coder", provider="local", model="Luna", tokens=1200)
     add("worker_result", "worker_result:c1", 2, step="S1", run_id="c1", role="coder", attempt=1, result="waiting_review", evidence_ref="AI_Workflow_Kit/docs/AI/FEEDBACK.md")
     add("worker_started", "worker_started:r1", 3, step="S1", run_id="r1", role="reviewer", attempt=1)
     add("worker_result", "worker_result:r1", 4, step="S1", run_id="r1", candidate_id="c1", role="reviewer", result="approved", review_kind="product", evidence_ref="AI_Workflow_Kit/docs/AI/FEEDBACK.md")
@@ -882,7 +948,7 @@ def synthetic_events() -> list[dict[str, Any]]:
     add("step_completed", "step_completed:S1", 7, step="S1")
 
     # S2: Reviewer catches a bug; second Coder candidate passes. Includes advisory Architect.
-    add("step_started", "step_started:S2", 8, step="S2")
+    add("step_started", "step_started:S2", 8, step="S2", pipeline_profile="standard")
     add("worker_started", "worker_started:a2", 9, step="S2", run_id="a2", role="architect", mode="advisory")
     add("worker_result", "worker_result:a2", 10, step="S2", run_id="a2", role="architect", result="advice_ready", evidence_ref="AI_Workflow_Kit/docs/AI/FEEDBACK.md")
     add("worker_started", "worker_started:c2a", 11, step="S2", run_id="c2a", candidate_id="c2a", role="coder", attempt=1)
@@ -899,7 +965,7 @@ def synthetic_events() -> list[dict[str, Any]]:
     add("step_completed", "step_completed:S2", 22, step="S2")
 
     # S3: Reviewer-approved candidate escapes to QA, then a fixed candidate passes.
-    add("step_started", "step_started:S3", 23, step="S3")
+    add("step_started", "step_started:S3", 23, step="S3", pipeline_profile="critical")
     add("worker_started", "worker_started:c3a", 24, step="S3", run_id="c3a", candidate_id="c3a", role="coder", attempt=1)
     add("worker_result", "worker_result:c3a", 25, step="S3", run_id="c3a", role="coder", result="waiting_review", evidence_ref="AI_Workflow_Kit/docs/AI/FEEDBACK.md")
     add("worker_started", "worker_started:r3a", 26, step="S3", run_id="r3a", role="reviewer")
@@ -996,6 +1062,14 @@ def command_selftest(_args: argparse.Namespace) -> int:
         assert_equal("N S4 QA skip", report["step_stats"]["S4"]["gate_skips"]["qa"], 1)
         cases.append("N canonical per-step statistics")
 
+        assert_equal("P quick completed", report["by_profile"]["quick"]["completed_steps"], 1)
+        assert_equal("P quick retries", report["by_profile"]["quick"]["coder_retries"], 0)
+        assert_equal("P quick tokens", report["by_profile"]["quick"]["tokens"], 1200)
+        assert_equal("P standard retries", report["by_profile"]["standard"]["coder_retries"], 1)
+        assert_equal("P critical retries", report["by_profile"]["critical"]["coder_retries"], 1)
+        assert_equal("P unlabeled completed", report["by_profile"]["unlabeled"]["completed_steps"], 2)
+        cases.append("P pipeline profile grouping")
+
         duplicate = dict(fixture[0])
         duplicate["ts"] = iso_at(59, 30)
         duplicate_status, _ = append_event(events_path, duplicate)
@@ -1029,7 +1103,7 @@ def command_selftest(_args: argparse.Namespace) -> int:
             raise AssertionError("L malformed line did not produce a warning")
         cases.append("L malformed trailing JSONL recovered")
 
-        print(f"workflow metrics selftest: PASS ({len(cases)}/14)")
+        print(f"workflow metrics selftest: PASS ({len(cases)} cases)")
         for case in cases:
             print(f"  PASS {case}")
         print("\nSynthetic five-step report:\n")
@@ -1081,6 +1155,8 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--status")
     record.add_argument("--repeat-count", type=int)
     record.add_argument("--threshold", type=int)
+    record.add_argument("--pipeline-profile", dest="pipeline_profile", choices=sorted(PIPELINE_PROFILES))
+    record.add_argument("--tokens", type=int)
     add_store_option(record)
     record.set_defaults(func=command_record)
 

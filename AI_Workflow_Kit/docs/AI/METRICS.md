@@ -48,7 +48,9 @@ Fields are present only when applicable:
 - failure: `failure_category`, `detected_by`, `repeat_count`, `threshold`;
 - model sample: `model_role`, `provider`, `model`;
 - bounded evidence pointer: `evidence_ref`;
-- optional Human assessment: `human_rating`.
+- optional Human assessment: `human_rating`;
+- pipeline: `pipeline_profile` (`quick`, `standard`, `critical`);
+- optional token count: `tokens` (OMP-reported usage for that worker/step, never a USD estimate).
 
 Supported event types:
 
@@ -134,7 +136,7 @@ Examples:
 
 ```bash
 bash AI_Workflow_Kit/script/workflow_metrics.sh record step_started \
-  --event-key step_started:S3 --step S3
+  --event-key step_started:S3 --step S3 --pipeline-profile standard
 
 bash AI_Workflow_Kit/script/workflow_metrics.sh record worker_started \
   --event-key worker_started:coder-S3-01 --step S3 \
@@ -200,6 +202,13 @@ All counts use unique valid events after `event_key` deduplication.
 Human rating is a separate count using the latest recorded rating per step and
 never affects success/failure formulas. There is no quality score, model ranking,
 cost estimator, or AI classifier.
+
+**By pipeline profile.** Events may carry `pipeline_profile`. Aggregation groups
+completed steps, Coder attempts/retries, Reviewer `changes_requested`, Tester
+`bugs`, median step duration, and summed `tokens` (or `n/a` when no token
+fields were recorded) under `quick`, `standard`, `critical`, and `unlabeled`.
+Main should pass `--pipeline-profile` on `step_started` / worker events and
+`--tokens` when OMP exposes a usage number. Do not convert tokens to currency.
 
 ## Commands
 

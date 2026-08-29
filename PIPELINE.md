@@ -26,7 +26,8 @@ Human <-> Main
 
 Step cards may set `**Pipeline profile:** quick|standard|critical`. Unlabeled
 cards stay `standard`. `quick` skips Reviewer/Tester after Main re-runs
-Objective Gates and is ignored when `**Risk:** high`.
+Objective Gates and is ignored when `**Risk:** high` or the verified diff hits
+auth/API/schema/migration paths (`workflow_security_scope.py`).
 
 Designer is never inserted automatically.
 

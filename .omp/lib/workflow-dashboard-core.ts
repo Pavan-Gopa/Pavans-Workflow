@@ -62,6 +62,7 @@ export type WorkflowState = {
 	pipelineAuthorizedBy: string;
 	pipelineAuthorizedAt: string;
 	pipelineNote: string;
+	pipelineQuickForbidden: boolean;
 	blocker: string;
 	repeatedFailureCount: number;
 	activeAgent: string;
@@ -94,6 +95,17 @@ export type StepModelStats = {
 	provider: string;
 	model: string;
 	runs: number;
+};
+
+export type ProfileStats = {
+	completed_steps: number;
+	coder_attempts: number;
+	coder_retries: number;
+	review_changes_requested: number;
+	qa_bugs: number;
+	median_step_duration_ms?: number | null;
+	tokens?: number | null;
+	worker_runs: number;
 };
 
 export type StepStats = {
@@ -145,6 +157,7 @@ export type MetricsReport = {
 		median_worker_duration_ms?: number | null;
 	};
 	role_stats?: Record<string, RoleStats>;
+	by_profile?: Record<string, ProfileStats>;
 	step_stats?: Record<string, StepStats>;
 	failure_categories?: Record<string, number>;
 	detected_by?: Record<string, number>;
@@ -560,6 +573,7 @@ export function parseWorkflowState(source: string): WorkflowState {
 		pipelineAuthorizedBy: sectionValue(source, "pipeline", "authorized_by"),
 		pipelineAuthorizedAt: sectionValue(source, "pipeline", "authorized_at"),
 		pipelineNote: sectionValue(source, "pipeline", "note"),
+		pipelineQuickForbidden: sectionBoolean(source, "pipeline", "quick_forbidden", false),
 		blocker: sectionValue(source, "retry_guard", "blocker"),
 		repeatedFailureCount: sectionNumber(source, "retry_guard", "repeated_failure_count"),
 		activeAgent: sectionValue(source, "omp", "active_agent"),
@@ -729,10 +743,14 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 	return { status: "Main coordinating", waitingForHuman: false };
 }
 
-function currentStepMeta(data: DashboardData): { pipelineProfile: PipelineProfile; risk: StepRisk } | undefined {
+function currentStepMeta(data: DashboardData): { pipelineProfile: PipelineProfile; risk: StepRisk; quickForbidden: boolean } | undefined {
 	const step = data.steps.find(item => item.id === data.state.currentStep);
 	if (!step) return undefined;
-	return { pipelineProfile: step.pipelineProfile, risk: step.risk };
+	return {
+		pipelineProfile: step.pipelineProfile,
+		risk: step.risk,
+		quickForbidden: data.state.pipelineQuickForbidden,
+	};
 }
 
 export function deriveDashboardViewModel(
@@ -1190,7 +1208,14 @@ function buildCenterContent(
 		return { pinned, scrollable };
 	}
 	pinned.push({ text: `${step.id} — ${step.title}`, tone: "accent" });
-	if (step.pipelineProfile !== "standard" || step.risk !== "normal") {
+	if (step.pipelineProfile === "quick" && (step.risk === "high" || state.pipelineQuickForbidden)) {
+		pinned.push({
+			text: state.pipelineQuickForbidden
+				? "PROFILE · quick blocked · blast radius · using standard"
+				: "PROFILE · quick blocked · high risk · using standard",
+			tone: "warning",
+		});
+	} else if (step.pipelineProfile !== "standard" || step.risk !== "normal") {
 		pinned.push({ text: `PROFILE · ${step.pipelineProfile} · RISK · ${step.risk}`, tone: "muted" });
 	}
 	if (view.relation === "completed") {
@@ -1393,6 +1418,18 @@ function teamHealthLines(report: MetricsReport): TextLine[] {
 	}
 	if ((summary.repeated_failure_incidents ?? 0) > 0) {
 		lines.push({ text: `Repeated-failure incidents · ${summary.repeated_failure_incidents}`, tone: "warning" });
+	}
+	const profiles = report.by_profile;
+	if (profiles) {
+		for (const name of ["quick", "standard", "critical", "unlabeled"]) {
+			const stats = profiles[name];
+			if (!stats || stats.completed_steps === 0 && stats.worker_runs === 0) continue;
+			const tokens = stats.tokens == null ? "n/a tok" : `${formatTokens(stats.tokens)}`;
+			lines.push({
+				text: `Profile ${name} · ${stats.completed_steps} steps · ${stats.coder_retries} retries · ${tokens}`,
+				tone: "muted",
+			});
+		}
 	}
 	return lines;
 }

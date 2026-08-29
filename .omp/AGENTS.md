@@ -43,8 +43,11 @@ gate evidence); follow `LEAN_PIPELINE.md`. Higher-priority sources in
    `lite` on review/QA retry, `off` after two identical failures) plus the role
    digest. Do not tell workers to reload TEAM_CONTRACT / KICK_* / PROJECT_CONTEXT.
 5. Re-run Objective Gates with `workflow_gates.py` before Reviewer or a `quick`
-   close. Verify every result against real source/diff/tests before writing
-   canonical feedback, checking or reopening stable IDs, recording metrics, or routing.
+   close. Run `workflow_security_scope.py` on the verified Coder diff; `forbid_quick`
+   keeps Reviewer/Tester even if the card says `quick`. Record `pipeline_profile`
+   (and `tokens` when known) on metrics events. Verify every result against real
+   source/diff/tests before writing canonical feedback, checking or reopening
+   stable IDs, recording metrics, or routing.
 6. Stop after three materially identical failures of the same approach. New
    evidence, a new approach, or a different failure is progress.
 

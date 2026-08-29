@@ -78,7 +78,10 @@ an implementation attempt.
   compact verified retry memory.
 - Re-run Objective Gates with `python3 AI_Workflow_Kit/script/workflow_gates.py run --json`
   before Reviewer or a `quick` close. Copy `pipeline.profile` from the step card.
-  `quick` skips Reviewer/Tester; high risk ignores `quick`.
+  After a Coder diff run `workflow_security_scope.py --json`. `quick` skips
+  Reviewer/Tester unless Risk is high or the helper reports `forbid_quick`.
+- Record `pipeline_profile` (and `tokens` when OMP exposes them) on metrics
+  events so `/workflow metrics` can group retries by profile. Never invent USD.
 - Verify structured output against real source/diff/tests before checking or
   reopening IDs and before routing.
 - Reviewer evaluates correctness first, then bounded material complexity.
