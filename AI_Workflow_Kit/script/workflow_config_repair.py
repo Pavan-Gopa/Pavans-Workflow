@@ -158,20 +158,20 @@ def _normalize_main_tag(lines: list[str], notes: list[str]) -> list[str]:
         notes.append(f"added hidden model tag for managed {MAIN_ROLE} alias")
         return lines
 
-    start, end, child_indent = bounds
-    base_width = _indent_width(lines[start])
-    role_index: int | None = None
-    duplicate_roles: list[int] = []
-    for index in range(start + 1, end):
-        match = ROLE_LINE.match(lines[index])
-        if not match or _indent_width(lines[index]) != base_width + 2 or match.group("key") != MAIN_ROLE:
-            continue
-        if role_index is None:
-            role_index = index
-        else:
-            duplicate_roles.append(index)
+    def role_entries() -> tuple[int, int, str, list[int]]:
+        current = _section_bounds(lines, "modelTags")
+        assert current is not None
+        section_start, section_end, child_indent = current
+        child_width = len(child_indent)
+        indexes: list[int] = []
+        for index in range(section_start + 1, section_end):
+            match = ROLE_LINE.match(lines[index])
+            if match and _indent_width(lines[index]) == child_width and match.group("key") == MAIN_ROLE:
+                indexes.append(index)
+        return section_start, section_end, child_indent, indexes
 
-    if role_index is None:
+    start, end, child_indent, indexes = role_entries()
+    if not indexes:
         lines[end:end] = [
             f"{child_indent}{MAIN_ROLE}:",
             f"{child_indent}  name: {MAIN_TAG_NAME}",
@@ -180,36 +180,50 @@ def _normalize_main_tag(lines: list[str], notes: list[str]) -> list[str]:
         notes.append(f"added hidden model tag for managed {MAIN_ROLE} alias")
         return lines
 
-    # Normalize this role entry into a mapping and inspect only its nested keys.
+    # Remove duplicate role blocks before inserting nested fields so indexes
+    # cannot become stale while the first block is normalized.
+    for duplicate in reversed(indexes[1:]):
+        duplicate_indent = _indent_width(lines[duplicate])
+        delete_end = duplicate + 1
+        while delete_end < len(lines):
+            stripped = lines[delete_end].strip()
+            if stripped and not stripped.startswith("#") and _indent_width(lines[delete_end]) <= duplicate_indent:
+                break
+            delete_end += 1
+        del lines[duplicate:delete_end]
+        notes.append(f"removed duplicate model tag for {MAIN_ROLE}")
+
+    _, section_end, _, indexes = role_entries()
+    assert len(indexes) == 1
+    role_index = indexes[0]
     role_indent = _indent_width(lines[role_index])
     lines[role_index] = f"{' ' * role_indent}{MAIN_ROLE}:"
-    bounds = _section_bounds(lines, "modelTags")
-    assert bounds is not None
-    _, section_end, _ = bounds
+
     entry_end = section_end
     for index in range(role_index + 1, section_end):
         stripped = lines[index].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if _indent_width(lines[index]) <= role_indent:
+        if stripped and not stripped.startswith("#") and _indent_width(lines[index]) <= role_indent:
             entry_end = index
             break
 
     nested: dict[str, list[int]] = {}
+    nested_indent = " " * (role_indent + 2)
     for index in range(role_index + 1, entry_end):
         match = ROLE_LINE.match(lines[index])
-        if match and _indent_width(lines[index]) == role_indent + 2:
-            nested.setdefault(match.group("key"), []).append(index)
+        if not match or _indent_width(lines[index]) <= role_indent:
+            continue
+        nested_indent = match.group("indent")
+        nested.setdefault(match.group("key"), []).append(index)
 
     insertion = entry_end
     if not nested.get("name"):
-        lines.insert(insertion, f"{' ' * (role_indent + 2)}name: {MAIN_TAG_NAME}")
+        lines.insert(insertion, f"{nested_indent}name: {MAIN_TAG_NAME}")
         insertion += 1
         notes.append(f"named managed {MAIN_ROLE} model tag")
 
     hidden_indexes = nested.get("hidden", [])
     if not hidden_indexes:
-        lines.insert(insertion, f"{' ' * (role_indent + 2)}hidden: true")
+        lines.insert(insertion, f"{nested_indent}hidden: true")
         notes.append(f"hid managed {MAIN_ROLE} alias from role picker")
     else:
         hidden = hidden_indexes[0]
@@ -221,19 +235,6 @@ def _normalize_main_tag(lines: list[str], notes: list[str]) -> list[str]:
         for duplicate in reversed(hidden_indexes[1:]):
             del lines[duplicate]
             notes.append(f"removed duplicate hidden flag for {MAIN_ROLE}")
-
-    # Duplicate top-level tag entries are unsafe. Remove the extra entry header
-    # and its nested block, preserving the first normalized mapping.
-    for duplicate in reversed(duplicate_roles):
-        duplicate_indent = _indent_width(lines[duplicate])
-        delete_end = duplicate + 1
-        while delete_end < len(lines):
-            stripped = lines[delete_end].strip()
-            if stripped and not stripped.startswith("#") and _indent_width(lines[delete_end]) <= duplicate_indent:
-                break
-            delete_end += 1
-        del lines[duplicate:delete_end]
-        notes.append(f"removed duplicate model tag for {MAIN_ROLE}")
     return lines
 
 
@@ -380,13 +381,13 @@ def validate_config_text(source: str) -> list[str]:
     tag_bounds = _section_bounds(lines, "modelTags")
     hidden_values: list[str] = []
     if tag_bounds is not None:
-        start, end, _ = tag_bounds
-        base_width = _indent_width(lines[start])
+        start, end, child_indent = tag_bounds
+        child_width = len(child_indent)
         role_index: int | None = None
         role_count = 0
         for index in range(start + 1, end):
             match = ROLE_LINE.match(lines[index])
-            if match and _indent_width(lines[index]) == base_width + 2 and match.group("key") == MAIN_ROLE:
+            if match and _indent_width(lines[index]) == child_width and match.group("key") == MAIN_ROLE:
                 role_count += 1
                 role_index = role_index if role_index is not None else index
         if role_count > 1:
@@ -398,7 +399,7 @@ def validate_config_text(source: str) -> list[str]:
                 if stripped and not stripped.startswith("#") and _indent_width(lines[index]) <= role_indent:
                     break
                 match = ROLE_LINE.match(lines[index])
-                if match and _indent_width(lines[index]) == role_indent + 2 and match.group("key") == "hidden":
+                if match and _indent_width(lines[index]) > role_indent and match.group("key") == "hidden":
                     hidden_values.append(_unquote(_scalar(match.group("rest"))).lower())
     if tag_bounds is None or not hidden_values:
         errors.append(f"modelTags.{MAIN_ROLE}.hidden must be true")
