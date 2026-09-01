@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install Pavan's Workflow v3.3 into an existing project or prepare a template clone.
+# Install the current Pavan's Workflow release into an existing project or
+# prepare a template clone. VERSION is the single release source of truth.
 
 set -euo pipefail
 
@@ -7,18 +8,20 @@ TARGET_INPUT="${1:-.}"
 
 if [[ "$TARGET_INPUT" == "--update" || "$TARGET_INPUT" == "-u" ]]; then
   shift
+  command -v git >/dev/null 2>&1 || { echo "ERROR: git is required." >&2; exit 1; }
   TARGET_ROOT="$(cd "${1:-.}" && pwd)"
   TEMP_CLONE="$(mktemp -d -t pavans-workflow-install.XXXXXX)"
   trap 'rm -rf "$TEMP_CLONE"' EXIT
   git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$TEMP_CLONE"
   cd "$TARGET_ROOT"
-  exec bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" apply
+  exec bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" apply "$TARGET_ROOT"
 fi
 
-# Resolved after the --update branch so the script stays runnable through
-# `curl ... | bash -s -- --update`, where BASH_SOURCE is a /dev/fd pipe.
+# Resolved after the --update branch so the script remains runnable through a
+# /dev/fd pipe created by `bash <(curl ...) --update`.
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_ROOT="$(cd "$TARGET_INPUT" && pwd)"
+WF_VERSION="$(tr -d '[:space:]' < "$SOURCE_ROOT/VERSION" 2>/dev/null || echo unknown)"
 PAYLOAD=(
   ".omp"
   "AI_Workflow_Kit"
@@ -39,6 +42,10 @@ command -v omp >/dev/null 2>&1 || {
   echo "Install: curl -fsSL https://omp.sh/install | sh" >&2
   exit 1
 }
+command -v python3 >/dev/null 2>&1 || {
+  echo "ERROR: Python 3 is required." >&2
+  exit 1
+}
 
 if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   conflicts=()
@@ -46,7 +53,7 @@ if [[ "$SOURCE_ROOT" != "$TARGET_ROOT" ]]; then
   if (( ${#conflicts[@]} > 0 )); then
     echo "Workflow paths already exist in $TARGET_ROOT: ${conflicts[*]}" >&2
     echo "Use the safe updater instead:" >&2
-    echo "  ( tmp_dir=\"\$(mktemp -d)\" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git \"\$tmp_dir/pw\" && bash \"\$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh\" apply; rc=\$?; rm -rf \"\$tmp_dir\"; exit \"\$rc\" )" >&2
+    echo "  bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update" >&2
     exit 1
   fi
   for path in "${PAYLOAD[@]}"; do cp -R "$SOURCE_ROOT/$path" "$TARGET_ROOT/$path"; done
@@ -59,23 +66,21 @@ GITIGNORE="$TARGET_ROOT/.gitignore"
 touch "$GITIGNORE"
 grep -qxF 'graphify-out/' "$GITIGNORE" || printf '\ngraphify-out/\n' >> "$GITIGNORE"
 
-EXPECTED_GRAPHIFY=0.9.46
+EXPECTED_GRAPHIFY="$(awk '$1 == "graphify:" { in_graphify=1; next } in_graphify && $1 == "version:" { print $2; exit }' "$TARGET_ROOT/AI_Workflow_Kit/vendor/dependencies.lock" 2>/dev/null || true)"
+EXPECTED_GRAPHIFY="${EXPECTED_GRAPHIFY:-0.9.46}"
 if ! command -v graphify >/dev/null 2>&1; then
   echo "Installing tested Graphify version $EXPECTED_GRAPHIFY (package graphifyy)..."
   if command -v uv >/dev/null 2>&1; then
     uv tool install "graphifyy==$EXPECTED_GRAPHIFY"
   elif command -v pipx >/dev/null 2>&1; then
     pipx install "graphifyy==$EXPECTED_GRAPHIFY"
-  elif command -v python3 >/dev/null 2>&1; then
-    python3 -m pip install --user "graphifyy==$EXPECTED_GRAPHIFY"
   else
-    echo "ERROR: Graphify needs Python 3.10+ and uv or pipx." >&2
-    exit 1
+    python3 -m pip install --user "graphifyy==$EXPECTED_GRAPHIFY"
   fi
 else
   actual="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
   if [[ "$actual" != "$EXPECTED_GRAPHIFY" ]]; then
-    echo "WARN: Graphify $actual is installed; workflow v3.2 was validated with $EXPECTED_GRAPHIFY." >&2
+    echo "WARN: Graphify $actual is installed; workflow v$WF_VERSION is pinned to $EXPECTED_GRAPHIFY." >&2
   fi
 fi
 
@@ -111,8 +116,9 @@ PYTIMEOUT
 }
 
 cd "$TARGET_ROOT"
-printf '\n=== Installing Workflow v3.3 Main context policy ===\n'
+printf '\n=== Installing Workflow v%s Main context policy ===\n' "$WF_VERSION"
 bash AI_Workflow_Kit/experiments/context-economy/install.sh "$TARGET_ROOT"
+python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
 
 if [[ "${WF_INSTALL_SKIP_GRAPHIFY:-0}" != "1" ]]; then
   if ! run_with_timeout "${WF_GRAPHIFY_INSTALL_TIMEOUT:-120}" bash AI_Workflow_Kit/script/graphify_rebuild.sh fast; then
@@ -121,20 +127,18 @@ if [[ "${WF_INSTALL_SKIP_GRAPHIFY:-0}" != "1" ]]; then
 fi
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 
-cat <<'MESSAGE'
+cat <<MESSAGE
 
-Pavan's Workflow v3.3 is installed.
+Pavan's Workflow v$WF_VERSION is installed.
 
 Next:
   1. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh
-  2. Complete onboarding and model-role setup through Alt+M -> Roles.
-  3. Use Alt+W for the live workflow dashboard; its live cursor follows current work.
-  4. With an empty composer, Tab jumps from Main directly into the running worker; Tab or Esc returns to Main.
-  5. OMP Stats remains manual: press o in Alt+W or run /workflow-stats.
-  6. Optional: assign workflow_designer to Kimi or another strong visual model in Alt+M.
+  2. Set the persistent Main model and effort through Alt+M -> Roles -> DEFAULT.
+  3. Configure worker primary/backup pairs through Alt+M -> Roles.
+  4. Use Alt+W for the live dashboard and Alt+A for the full Agent Hub.
+  5. Use the quick-switch control (Alt+Q in the workflow setup) for temporary Main backup use.
+  6. OMP Stats remains manual: press o in Alt+W or run /workflow-stats.
 
-Main-only context economy keeps worker sessions uncompacted while preserving the
-Orchestrator across long runs. Coder agents load Ponytail automatically. Design
-Advisor and Designer load the project-local ui-designer skill only when the Human
-explicitly requests them.
+The internal workflow_orchestrator role is a hidden managed alias to DEFAULT.
+Restart OMP after any framework update so new extensions and model tags load.
 MESSAGE

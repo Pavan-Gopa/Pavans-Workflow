@@ -8,6 +8,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+MAIN_ROLE = "workflow_orchestrator"
+MAIN_ALIAS = "@default"
+MAIN_TAG_NAME = "Main Orchestrator (managed by DEFAULT)"
+
 DESIGN_DEFAULTS = (
     ("workflow_design_advisor", "@workflow_reviewer"),
     ("workflow_designer", "@workflow_architect"),
@@ -18,7 +22,6 @@ DESIGN_DEFAULTS = (
 MIN_RUNTIME_MS = 14_400_000  # 4 hours
 SOFT_REQUEST_BUDGET = 0      # disable request-count forced-yield guard
 
-MODEL_ROLES_HEADER = re.compile(r"^(?P<indent>[ \t]*)modelRoles:[ \t]*(?:#.*)?$")
 SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
 ROLE_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
 BARE_ALIAS_VALUE = re.compile(r"^(?P<space>[ \t]*)(?P<alias>@[^\s#]+)(?P<tail>[ \t]*(?:#.*)?)$")
@@ -80,6 +83,161 @@ def _scalar(rest: str) -> str:
     return rest.strip().split("#", 1)[0].strip()
 
 
+def _unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
+def _normalize_main_role(lines: list[str], notes: list[str]) -> list[str]:
+    bounds = _model_roles_bounds(lines)
+    assert bounds is not None
+    start, end, child_indent = bounds
+
+    entries: dict[str, list[int]] = {}
+    for index in range(start + 1, end):
+        match = ROLE_LINE.match(lines[index])
+        if match:
+            entries.setdefault(match.group("key"), []).append(index)
+
+    role_indexes = entries.get(MAIN_ROLE, [])
+    if not role_indexes:
+        lines.insert(start + 1, f'{child_indent}{MAIN_ROLE}: "{MAIN_ALIAS}"')
+        notes.append(f"added managed {MAIN_ROLE} alias")
+        return lines
+
+    first = role_indexes[0]
+    match = ROLE_LINE.match(lines[first])
+    assert match is not None
+    value = _scalar(match.group("rest"))
+    resolved_value = _unquote(value)
+
+    if resolved_value != MAIN_ALIAS:
+        # Preserve an old direct Main selection only when no authoritative
+        # DEFAULT role exists. When DEFAULT is already present it remains the
+        # source of truth, matching the runtime contract.
+        if value and not entries.get("default"):
+            lines.insert(first, f"{match.group('indent')}default: {value}")
+            first += 1
+            notes.append(f"migrated explicit {MAIN_ROLE} selection to default")
+        lines[first] = f'{match.group("indent")}{MAIN_ROLE}: "{MAIN_ALIAS}"'
+        notes.append(f"restored {MAIN_ROLE} as managed @default alias")
+
+    # Recalculate because the optional DEFAULT insertion shifts indexes.
+    bounds = _model_roles_bounds(lines)
+    assert bounds is not None
+    start, end, _ = bounds
+    duplicates: list[int] = []
+    seen = False
+    for index in range(start + 1, end):
+        role_match = ROLE_LINE.match(lines[index])
+        if not role_match or role_match.group("key") != MAIN_ROLE:
+            continue
+        if seen:
+            duplicates.append(index)
+        else:
+            seen = True
+    for duplicate in reversed(duplicates):
+        del lines[duplicate]
+    if duplicates:
+        notes.append(f"removed {len(duplicates)} duplicate {MAIN_ROLE} entr{'y' if len(duplicates) == 1 else 'ies'}")
+    return lines
+
+
+def _normalize_main_tag(lines: list[str], notes: list[str]) -> list[str]:
+    bounds = _section_bounds(lines, "modelTags")
+    if bounds is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.extend([
+            "modelTags:",
+            f"  {MAIN_ROLE}:",
+            f"    name: {MAIN_TAG_NAME}",
+            "    hidden: true",
+        ])
+        notes.append(f"added hidden model tag for managed {MAIN_ROLE} alias")
+        return lines
+
+    def role_entries() -> tuple[int, int, str, list[int]]:
+        current = _section_bounds(lines, "modelTags")
+        assert current is not None
+        section_start, section_end, child_indent = current
+        child_width = len(child_indent)
+        indexes: list[int] = []
+        for index in range(section_start + 1, section_end):
+            match = ROLE_LINE.match(lines[index])
+            if match and _indent_width(lines[index]) == child_width and match.group("key") == MAIN_ROLE:
+                indexes.append(index)
+        return section_start, section_end, child_indent, indexes
+
+    start, end, child_indent, indexes = role_entries()
+    if not indexes:
+        lines[end:end] = [
+            f"{child_indent}{MAIN_ROLE}:",
+            f"{child_indent}  name: {MAIN_TAG_NAME}",
+            f"{child_indent}  hidden: true",
+        ]
+        notes.append(f"added hidden model tag for managed {MAIN_ROLE} alias")
+        return lines
+
+    # Remove duplicate role blocks before inserting nested fields so indexes
+    # cannot become stale while the first block is normalized.
+    for duplicate in reversed(indexes[1:]):
+        duplicate_indent = _indent_width(lines[duplicate])
+        delete_end = duplicate + 1
+        while delete_end < len(lines):
+            stripped = lines[delete_end].strip()
+            if stripped and not stripped.startswith("#") and _indent_width(lines[delete_end]) <= duplicate_indent:
+                break
+            delete_end += 1
+        del lines[duplicate:delete_end]
+        notes.append(f"removed duplicate model tag for {MAIN_ROLE}")
+
+    _, section_end, _, indexes = role_entries()
+    assert len(indexes) == 1
+    role_index = indexes[0]
+    role_indent = _indent_width(lines[role_index])
+    lines[role_index] = f"{' ' * role_indent}{MAIN_ROLE}:"
+
+    entry_end = section_end
+    for index in range(role_index + 1, section_end):
+        stripped = lines[index].strip()
+        if stripped and not stripped.startswith("#") and _indent_width(lines[index]) <= role_indent:
+            entry_end = index
+            break
+
+    nested: dict[str, list[int]] = {}
+    nested_indent = " " * (role_indent + 2)
+    for index in range(role_index + 1, entry_end):
+        match = ROLE_LINE.match(lines[index])
+        if not match or _indent_width(lines[index]) <= role_indent:
+            continue
+        nested_indent = match.group("indent")
+        nested.setdefault(match.group("key"), []).append(index)
+
+    insertion = entry_end
+    if not nested.get("name"):
+        lines.insert(insertion, f"{nested_indent}name: {MAIN_TAG_NAME}")
+        insertion += 1
+        notes.append(f"named managed {MAIN_ROLE} model tag")
+
+    hidden_indexes = nested.get("hidden", [])
+    if not hidden_indexes:
+        lines.insert(insertion, f"{nested_indent}hidden: true")
+        notes.append(f"hid managed {MAIN_ROLE} alias from role picker")
+    else:
+        hidden = hidden_indexes[0]
+        match = ROLE_LINE.match(lines[hidden])
+        assert match is not None
+        if _unquote(_scalar(match.group("rest"))).lower() != "true":
+            lines[hidden] = f"{match.group('indent')}hidden: true"
+            notes.append(f"hid managed {MAIN_ROLE} alias from role picker")
+        for duplicate in reversed(hidden_indexes[1:]):
+            del lines[duplicate]
+            notes.append(f"removed duplicate hidden flag for {MAIN_ROLE}")
+    return lines
+
+
 def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
     bounds = _section_bounds(lines, "task")
     if bounds is None:
@@ -123,7 +281,6 @@ def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
             end -= 1
             changed.append("dedup:maxRuntimeMs")
 
-    # Recalculate bounds after possible insertion/removal before handling budget.
     bounds = _section_bounds(lines, "task")
     assert bounds is not None
     start, end, child_indent = bounds
@@ -157,7 +314,12 @@ def normalize_config_text(source: str) -> tuple[str, list[str]]:
     notes: list[str] = []
     bounds = _model_roles_bounds(lines)
     if bounds is None:
-        block = ["modelRoles:", *[f'  {key}: "{value}"' for key, value in DESIGN_DEFAULTS], ""]
+        block = [
+            "modelRoles:",
+            f'  {MAIN_ROLE}: "{MAIN_ALIAS}"',
+            *[f'  {key}: "{value}"' for key, value in DESIGN_DEFAULTS],
+            "",
+        ]
         lines = block + lines
         notes.append("created modelRoles block")
     else:
@@ -179,6 +341,8 @@ def normalize_config_text(source: str) -> tuple[str, list[str]]:
             lines[end:end] = insertion
             notes.append("added " + ", ".join(key for key, _ in missing))
 
+    lines = _normalize_main_role(lines, notes)
+    lines = _normalize_main_tag(lines, notes)
     lines = _normalize_task_policy(lines, notes)
     return "\n".join(lines).rstrip() + "\n", notes
 
@@ -192,12 +356,14 @@ def validate_config_text(source: str) -> list[str]:
     else:
         start, end, _ = bounds
         counts: dict[str, int] = {}
+        values: dict[str, list[str]] = {}
         for line in lines[start + 1:end]:
             role_match = ROLE_LINE.match(line)
             if not role_match:
                 continue
             key = role_match.group("key")
             counts[key] = counts.get(key, 0) + 1
+            values.setdefault(key, []).append(_unquote(_scalar(role_match.group("rest"))))
             if BARE_ALIAS_VALUE.match(role_match.group("rest")):
                 errors.append(f"{key} uses an unquoted @ role alias")
         for key, _ in DESIGN_DEFAULTS:
@@ -205,6 +371,42 @@ def validate_config_text(source: str) -> list[str]:
                 errors.append(f"missing model role: {key}")
             elif counts[key] > 1:
                 errors.append(f"duplicate model role: {key}")
+        if counts.get(MAIN_ROLE, 0) == 0:
+            errors.append(f"missing model role: {MAIN_ROLE}")
+        elif counts[MAIN_ROLE] > 1:
+            errors.append(f"duplicate model role: {MAIN_ROLE}")
+        elif values[MAIN_ROLE][0] != MAIN_ALIAS:
+            errors.append(f"{MAIN_ROLE} must be the managed {MAIN_ALIAS} alias")
+
+    tag_bounds = _section_bounds(lines, "modelTags")
+    hidden_values: list[str] = []
+    if tag_bounds is not None:
+        start, end, child_indent = tag_bounds
+        child_width = len(child_indent)
+        role_index: int | None = None
+        role_count = 0
+        for index in range(start + 1, end):
+            match = ROLE_LINE.match(lines[index])
+            if match and _indent_width(lines[index]) == child_width and match.group("key") == MAIN_ROLE:
+                role_count += 1
+                role_index = role_index if role_index is not None else index
+        if role_count > 1:
+            errors.append(f"duplicate model tag: {MAIN_ROLE}")
+        if role_index is not None:
+            role_indent = _indent_width(lines[role_index])
+            for index in range(role_index + 1, end):
+                stripped = lines[index].strip()
+                if stripped and not stripped.startswith("#") and _indent_width(lines[index]) <= role_indent:
+                    break
+                match = ROLE_LINE.match(lines[index])
+                if match and _indent_width(lines[index]) > role_indent and match.group("key") == "hidden":
+                    hidden_values.append(_unquote(_scalar(match.group("rest"))).lower())
+    if tag_bounds is None or not hidden_values:
+        errors.append(f"modelTags.{MAIN_ROLE}.hidden must be true")
+    elif len(hidden_values) > 1:
+        errors.append(f"duplicate hidden flag for model tag: {MAIN_ROLE}")
+    elif hidden_values[0] != "true":
+        errors.append(f"modelTags.{MAIN_ROLE}.hidden must be true")
 
     task_bounds = _section_bounds(lines, "task")
     if task_bounds is None:

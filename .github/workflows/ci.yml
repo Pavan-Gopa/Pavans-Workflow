@@ -1,0 +1,53 @@
+name: Workflow CI
+
+on:
+  push:
+    branches: [main, "fix/**", "release/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-selftests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find . -type f -name '*.sh' -print0)
+
+      - name: Python syntax and deterministic selftests
+        run: |
+          set -euo pipefail
+          python -m compileall -q AI_Workflow_Kit/script
+          while IFS= read -r -d '' test; do
+            python "$test"
+          done < <(find AI_Workflow_Kit/script -type f -name '*.selftest.py' -print0 | sort -z)
+
+      - name: OMP-independent TypeScript selftests
+        run: |
+          set -euo pipefail
+          while IFS= read -r test; do
+            NODE_NO_WARNINGS=1 node --experimental-strip-types "$test"
+          done < <(find .omp/tests -type f -name '*.selftest.ts' | sort)
+
+      - name: Shell deterministic selftests
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' test; do
+            bash "$test"
+          done < <(find AI_Workflow_Kit/script -maxdepth 1 -type f -name '*.selftest.sh' -print0 | sort -z)
+
+      - name: Canonical config guard
+        run: python AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml

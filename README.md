@@ -1,109 +1,78 @@
 # Pavan's Workflow
 
-A reusable **multi-model, multi-agent development workflow** for
+[![Version](https://img.shields.io/badge/version-3.4.2-1f6feb)](CHANGELOG.md)
+[![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
+[![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+A reusable multi-model, multi-agent engineering workflow for
 [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi), with scoped
-[Graphify](https://github.com/Graphify-Labs/graphify) navigation, Coder-only
-[Ponytail](https://github.com/DietrichGebert/ponytail), durable file-backed state,
-and optional Human-requested Product Designer roles.
+[Graphify](https://github.com/Graphify-Labs/graphify) navigation, durable
+file-backed state, independent primary/backup role models, Coder-only Ponytail,
+and optional product-design roles.
 
-> **Workflow v3.4.1 is live.** Lean pipeline is core: step-card profiles
-> (`quick` / `standard` / `critical`), deterministic Objective Gates,
-> blast-radius `quick` forbid, scoped Security offers, profile-grouped
-> metrics, and Coder retry economy. The former opt-in overlay remains at
-> [AI_Workflow_Kit/experiments/lean-pipeline/README.md](AI_Workflow_Kit/experiments/lean-pipeline/README.md)
-> for pre-3.4.0 installs.
->
-> Update an installed workflow project from its root with one command:
->
-> ```bash
-> bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
-> ```
->
-> Prefer git explicitly? The long form does the same:
->
-> ```bash
-> (
->   set -Eeuo pipefail
->   tmp_dir="$(mktemp -d)"
->   trap 'rm -rf "$tmp_dir"' EXIT
->   git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
->   bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply "$PWD"
-> )
-> ```
->
-> Then restart OMP. Inside OMP you can also run `/work-update` or
-> `/workflow-update`, then restart the session.
+> **v3.4.2 fixes Main model switching.** `DEFAULT` is now the only editable
+> Main-model slot. The internal `workflow_orchestrator` alias is hidden from the
+> role picker, and the old 200 ms live-model reconciliation loop has been
+> removed. OMP can now finish its native model + effort selection flow without a
+> workflow extension changing the live model underneath the selector.
 
-## v3.3 highlights
+## Release highlights
 
-- **Compaction that works during nonstop runs.** OMP native threshold
-  maintenance now owns the hard boundary at 28% of the Main window with mid-turn
-  tool-loop checkpoints: a checklist of any length gets compacted on the fly,
-  without waiting for the orchestrator to pause. The soft window (warn at 23%,
-  `shake -> soft` only when Main is fully settled) remains as the early path.
-- **Honest Alt+W RUN TODO.** Expanded dashboards render every runtime todo into
-  the scrollable view instead of silently capping at eight items.
+### v3.4.2 — Main model picker stability
 
-## v3.2 highlights
+- Removes the polling race that could close OMP while the effort picker was open.
+- Stops the workflow extension from calling `setModel()` or
+  `setThinkingLevel()` during model-role changes.
+- Keeps `workflow_orchestrator` as a managed alias to `@default` and hides that
+  implementation role from **Alt+M → Roles**.
+- Migrates older direct Orchestrator selections safely: when no explicit
+  `DEFAULT` exists, the old selection is preserved as `DEFAULT` before the alias
+  is repaired.
+- Adds deterministic regression coverage and GitHub Actions CI.
+- Refreshes README, installation guidance, version metadata, and release notes.
 
-- **Main-only Context Economy.** Automatic context maintenance is scoped to the
-  top-level interactive Main session. Workers are excluded from Main compaction.
-  Main warns near 23%, waits for active work to reach a safe boundary, and can
-  perform `shake -> soft` maintenance around the 28% upper target.
-- **Quick Worker Focus.** With an empty composer, press `Tab` in Main to jump
-  directly into the currently running workflow worker. While viewing that worker,
-  press `Tab` or `Esc` to return to Main. If the composer contains text,
-  autocomplete is open, an overlay owns focus, or no worker is running, Tab keeps
-  normal OMP completion behavior.
-- **DEFAULT is the Main model source of truth.** `workflow_orchestrator` aliases
-  `@default`, and the live Main model is reconciled with the persisted role
-  selection. This synchronization is explicitly disabled in task/headless worker
-  sessions.
-- **Stable update path.** Context Economy is no longer a separate experiment to
-  install manually. Fresh installs and normal workflow updates install/repair the
-  v3.3 runtime automatically while preserving project state and model choices.
-- **Long-running workers.** Workflow task agents have a minimum four-hour hard
-  wall (`maxRuntimeMs: 14400000`), while OMP's request-count forced-yield guard is
-  disabled for workflow roles (`softRequestBudget: 0`). Human abort remains
-  available through Agent Hub.
-- **Fullscreen Alt+W dashboard.** The full plan, step checklist, native RUN TODO,
-  active worker, gates, failures, model usage, and Stats URL live in one scrollable
-  fullscreen inspector with mouse-wheel and keyboard navigation.
-- **Native manual OMP Stats.** Stats starts only after an explicit `o` or
-  `/workflow-stats` action and delegates to OMP's own Stats implementation instead
-  of copying its private dashboard security protocol.
-- **Optional Product Design path.** Design Advisor can return a read-only visual
-  brief; Designer can make bounded presentation-layer edits when explicitly
-  requested by the Human. Normal review, QA, and final Human acceptance still
-  apply.
+### v3.4.1 — Safer quick profiles
 
-Full release history: [CHANGELOG.md](CHANGELOG.md).
+- Prevents `quick` closure for authentication, trust-boundary, API/schema,
+  migration, and other public-contract changes.
+- Groups metrics by pipeline profile, including retries and token counts.
+- Preserves installer exit codes in copy-paste installation snippets.
 
-## Architecture
+### v3.4.0 — Lean pipeline in core
+
+- Promotes `quick`, `standard`, and `critical` step-card profiles to the stable
+  workflow.
+- Adds deterministic Objective Gates, blast-radius Security offers,
+  assignment-first worker packets, and retry-economy rules.
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete release history.
+
+## How the workflow runs
 
 ```mermaid
 flowchart LR
-    H[Human supervisor] <--> O[Main Orchestrator]
-    O --> C[Fresh Coder + Ponytail]
-    C --> O
-    O --> R[Fresh Reviewer]
-    R --> O
-    O --> T[Fresh Tester]
-    T --> O
-    O -. system uncertainty .-> A[Architect + Grilling]
-    A --> O
-    O -. visual advice .-> DA[Design Advisor]
-    DA --> O
-    O -. visual implementation .-> D[Designer + UI skill]
-    D --> O
-    O -. optional pre-release .-> S[Security]
-    S --> O
+    H[Human supervisor] <--> M[Main Orchestrator]
+    M --> C[Fresh Coder + Ponytail]
+    C --> M
+    M --> R[Fresh Reviewer]
+    R --> M
+    M --> T[Fresh Tester]
+    T --> M
+    M -. system uncertainty .-> A[Fresh Architect + Grilling]
+    A --> M
+    M -. visual advice .-> DA[Design Advisor]
+    DA --> M
+    M -. visual implementation .-> D[Designer + UI skill]
+    D --> M
+    M -. optional pre-release .-> S[Security Reviewer]
+    S --> M
 ```
 
-All routing goes through Main. Workers never route, invoke another worker,
-commit, push, or write canonical workflow state.
+All routing goes through Main. Workers never route another worker, write
+canonical workflow state, commit, or push.
 
-The normal engineering loop is:
+Default engineering loop:
 
 ```text
 Main -> Coder -> Main verification
@@ -112,39 +81,37 @@ Main -> Coder -> Main verification
      -> next step
 ```
 
-Designer is not automatic. It is entered only after explicit Human intent.
+The lean pipeline may skip a gate only when a step profile and deterministic
+Objective Gates explicitly permit it. High-risk work cannot use the `quick`
+shortcut.
 
-## Quick Worker Focus
+## Main model control
 
-The fast path for inspecting the worker currently doing the job:
+The Main session has **one authoritative primary slot: `DEFAULT`**.
 
-```text
-Main + empty composer + running worker
-                Tab
-                 ↓
-        live worker session
+| Goal | Action |
+|---|---|
+| Change the persistent primary Main model | **Alt+M → Roles → DEFAULT**, then choose both model and effort |
+| Temporarily move to the configured backup | Use the quick-switch control (`Alt+Q` in the workflow setup) |
+| Make another model the new primary | Assign that model and effort to `DEFAULT` |
+| Inspect the backup mapping | Open `workflow_orchestrator_backup` in **Alt+M → Roles** |
 
-live worker + empty composer
-          Tab or Esc
-              ↓
-             Main
-```
+`workflow_orchestrator` remains in `cycleOrder` so launch and quick-switch
+behavior continue to work, but it is hidden from the role editor because it is
+only an alias to `@default`. Editing two independent Main entries was the source
+of the former conflict.
 
-Quick Focus is contextual, not a global Tab rebind. Normal autocomplete keeps
-Tab whenever Quick Focus conditions are not satisfied. Agent Hub (`Alt+A`)
-remains the full roster, history, intervention, abort, and recovery surface.
+After updating to v3.4.2, restart OMP so the new extension and model-tag metadata
+are loaded.
 
-## Main model and role pairs
+## Role model pairs
 
-Configure roles through **Alt+M → Roles**.
-
-`DEFAULT` is the authoritative Main model slot in v3.2. The Orchestrator role is
-kept synchronized with it rather than maintaining a second independent Main
-selection.
+Configure worker roles through **Alt+M → Roles**. Persistent provider/model
+failure pauses the workflow; the Human explicitly authorizes a backup.
 
 | Role | Primary | Human-authorized backup |
 |---|---|---|
-| Orchestrator | `@workflow_orchestrator` (`@default`) | `@workflow_orchestrator_backup` |
+| Main Orchestrator | `DEFAULT` via `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
 | Coder | `@workflow_coder` | `@workflow_coder_backup` |
 | Reviewer | `@workflow_reviewer` | `@workflow_reviewer_backup` |
 | Tester | `@workflow_tester` | `@workflow_tester_backup` |
@@ -153,147 +120,51 @@ selection.
 | Design Advisor | `@workflow_design_advisor` | `@workflow_design_advisor_backup` |
 | Designer | `@workflow_designer` | `@workflow_designer_backup` |
 
-Persistent model/provider failure pauses the workflow. Main does not silently
-switch to a backup; the Human authorizes fallback.
+Worker changes apply on the next fresh spawn. Main-model changes through
+`DEFAULT` are handled by OMP's native model selector.
 
-## Context Economy
+## Core properties
 
-v3.2 promotes the experimental Context Economy line into the stable workflow.
-The policy is deliberately **Main-only**:
+### Fresh context
 
-```text
-worker/task session
-    -> no Main context-maintenance loop
+Each specialist is a fresh OMP task-agent session receiving only its stable role
+contract, current assignment, source-of-truth paths, allowed scope, acceptance
+criteria, and repository access.
 
-interactive Main
-    -> warn near 23%
-    -> wait while worker is active
-    -> maintain context at a safe idle boundary
-    -> shake -> soft around the 28% upper target
-```
+### Files are memory
 
-This keeps Main responsive on long projects without letting inherited project
-extensions retarget or compact Coder/Reviewer/Tester sessions as though they
-were the Orchestrator.
+Durable state lives in files, including:
 
-## Optional Designer path
+- `AI_Workflow_Kit/docs/AI/STATE.yaml`
+- `AI_Workflow_Kit/docs/STEPS.md`
+- `AI_Workflow_Kit/docs/DECISIONS.md`
+- `AI_Workflow_Kit/docs/AI/FEEDBACK.md`
+- QA, bug, security, and metrics reports
 
-### Read-only design advice
+Worker completion never advances a gate by itself. Main verifies real source and
+evidence first.
 
-```text
-/workflow designer advise settings panel
-```
+### Main-only Context Economy
 
-or simply ask Main to consult Designer without allowing direct edits. The Design
-Advisor returns a concrete implementation brief tied to files/components,
-responsive and accessibility constraints, non-goals, implementation order, and
-observable acceptance criteria.
+The top-level interactive Main session warns near 23% context use and uses OMP's
+native 28% hard threshold with mid-turn checkpoints. Task/headless workers do
+not inherit Main's automatic compaction policy.
 
-### Direct presentation-layer redesign
-
-```text
-/workflow designer redesign settings panel
-```
-
-Main confirms the target surface and preserved behavior, then dispatches the
-Designer. The role may edit only the approved presentation-layer scope and
-associated UI tests/assets. The result still passes Main verification, Reviewer,
-enabled Tester, and final Human visual acceptance.
-
-## Ponytail without role leakage
-
-Only primary and backup Coder autoload `ponytail`. Confirmed scope, stable IDs,
-gates, validation, security, accessibility, compatibility, and data integrity
-outrank simplification. Designer and Advisor use the UI design skill rather than
-Coder's simplification policy.
-
-Manual one-shot skills remain available:
-
-```text
-/skill:ponytail-review
-/skill:ponytail-audit
-/skill:ponytail-debt
-```
-
-## Conditional Graphify
+### Graphify-first, source-verified navigation
 
 ```text
 non-trivial discovery -> Graphify -> focused real source -> verify
-known exact local symbol -> focused LSP/grep/read -> verify
+known exact symbol     -> focused LSP/grep/read           -> verify
 ```
 
-Profiles:
+Graphify is advisory. Actual source and test output remain authoritative.
 
-```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
-bash AI_Workflow_Kit/script/graphify_rebuild.sh deep
-bash AI_Workflow_Kit/script/graphify_rebuild.sh semantic
-bash AI_Workflow_Kit/script/graphify_rebuild.sh force
-```
+### Live dashboard and quick focus
 
-Graphify is advisory. Workflow updates preserve the existing graph and defer
-refresh by default so a framework update cannot appear frozen on a large repo.
-Use `--refresh-graphify` when you explicitly want a bounded refresh during the
-update.
-
-## Alt+W live dashboard
-
-`Alt+W` opens a **fullscreen read-only inspector** showing the complete workflow
-board: plan, selected/live step, Main-verified `STEP CHECKLIST`, native `RUN TODO`,
-active worker/model/tool, gates, blockers, passive metrics, session tokens, and
-the copyable Stats URL.
-
-Markers:
-
-```text
-* = selected for inspection
-> = live workflow step
-✓ = completed
-● = current/running
-○ = planned
-```
-
-The dashboard has one vertical viewport over the complete logical board. Long
-plans and Todo lists are scrolled rather than replaced with `N more detail lines`.
-
-```text
-mouse wheel        scroll
-PageUp/PageDown    one page
-Shift+Up/Down      fast vertical scroll
-g / G              top / bottom
-Up/Down            inspect previous/next workflow step
-Home/End            first/last workflow step
-c                   return to live step / resume follow
-```
-
-Manual scrolling pauses live-follow so runtime updates do not yank the viewport
-away while older content is being inspected.
-
-## OMP Stats is manual
-
-The dashboard exposes the local Stats URL, normally:
-
-```text
-http://127.0.0.1:3847
-```
-
-Nothing starts at OMP launch. Press `o` in Alt+W or run `/workflow-stats` to
-explicitly sync, start/reuse native OMP Stats, and open it in the browser.
-
-## Long-running worker policy
-
-Workflow agents may legitimately spend hours on large repositories, migrations,
-long test suites, and tool-heavy implementation work:
-
-```yaml
-task:
-  maxRuntimeMs: 14400000
-  softRequestBudget: 0
-```
-
-Four hours is the workflow's minimum hard wall; the updater does not reduce a
-larger project-specific runtime that was already configured. Human abort remains
-available through Agent Hub and workflow retry/stall rules still apply.
+- `Alt+W` opens the fullscreen workflow dashboard.
+- `Tab` on an empty Main composer focuses the currently running worker.
+- `Tab` or `Esc` returns from that worker to Main.
+- `Alt+A` remains the full Agent Hub for history, intervention, and abort.
 
 ## Install
 
@@ -317,18 +188,17 @@ bash install.sh .
 )
 ```
 
-Use the updater, not the installer, for projects already running an earlier
-Pavan's Workflow release. Full notes: [INSTALL.md](INSTALL.md).
-
-## Start
-
-```bash
-bash AI_Workflow_Kit/script/omp_workflow.sh
-```
+The installer refuses to overwrite existing workflow paths.
 
 ## Update an existing workflow project
 
-Close that project's OMP process first, then run from the project root:
+Close OMP for that project, then run from the project root:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
+```
+
+Equivalent explicit-git form:
 
 ```bash
 (
@@ -340,34 +210,33 @@ Close that project's OMP process first, then run from the project root:
 )
 ```
 
-The v3.2 updater automatically installs/repairs the stable Context Economy
-payload, preserves durable workflow state, keeps project model selections,
-maintains the four-hour-or-longer runtime policy, restores the canonical Main
-control plane, and runs the workflow doctor before declaring the project ready.
+The updater preserves project model choices, durable workflow state, product
+code, tests, reports, custom `.graphifyignore` rules, and the existing Graphify
+index. Append `--refresh-graphify` for an explicit bounded graph refresh.
 
-Legacy v3.1.0 projects whose invalid YAML caused OMP to rename `.omp/config.yml`
-to `.omp/config.yml.broken-*` are still recovered automatically from the newest
-usable project-specific config/backup.
+Legacy direct `workflow_orchestrator` values are migrated without destroying an
+otherwise missing Main selection. The canonical alias and hidden-role metadata
+are then validated before the update is declared ready.
 
-The updater preserves:
+Full platform notes: [INSTALL.md](INSTALL.md).
 
-- project model selections and unrelated `.omp/config.yml` settings;
-- `STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, decisions, feedback, and reports;
-- product code and tests;
-- custom `.graphifyignore` rules and existing Graphify output by default.
+## Start
 
-To refresh Graphify during the same update, append `--refresh-graphify`.
+```bash
+bash AI_Workflow_Kit/script/omp_workflow.sh
+```
 
 ## Useful controls
 
 | Action | Control |
 |---|---|
-| Quick focus active worker | `Tab` on empty Main composer |
+| Change persistent Main primary | `Alt+M` → Roles → `DEFAULT` |
+| Quick-switch Main/backup | `Alt+Q` |
+| Configure worker role pairs | `Alt+M` → Roles |
+| Quick-focus active worker | `Tab` on empty Main composer |
 | Return from focused worker | `Tab` on empty worker composer or `Esc` |
-| Agent Hub / full roster | `Alt+A` |
+| Full Agent Hub | `Alt+A` |
 | Live workflow dashboard | `Alt+W` |
-| Dashboard scroll | mouse wheel / PgUp/PgDn / Shift+Up/Down / `g`/`G` |
-| Model roles | `Alt+M` |
 | Update framework | `/work-update` or `/workflow-update` |
 | Dry-run update | `/work-update check` |
 | Reconcile and continue | `/workflow status` |
@@ -377,18 +246,37 @@ To refresh Graphify during the same update, append `--refresh-graphify`.
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
 | Diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |
 
+## Verify
+
+Dependency-free deterministic checks run in GitHub Actions. For an installed
+project, run the full local doctor as well so OMP, Graphify, provider setup, and
+the local graph are checked:
+
+```bash
+cat VERSION
+python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
+bash AI_Workflow_Kit/script/workflow_doctor.sh
+```
+
+Expected version:
+
+```text
+3.4.2
+```
+
 ## Repository map
 
 ```text
 .omp/                         agents, commands, extensions, shared runtime
+.github/workflows/ci.yml      deterministic repository checks
 ui-designer/                  progressive UI/UX skill for optional design roles
 ponytail*/                    Coder simplification and one-shot audit skills
 grilling/                     architecture discovery skill
 AI_Workflow_Kit/docs/         durable workflow state and role contracts
-AI_Workflow_Kit/script/       launcher, update, doctor, metrics, Graphify
+AI_Workflow_Kit/script/       launcher, updater, doctor, metrics, Graphify tools
 AI_Workflow_Kit/vendor/       dependency/version metadata
 VERSION                       current workflow version
-CHANGELOG.md                  release notes
+CHANGELOG.md                  complete release history
 ```
 
 MIT. See [LICENSE](LICENSE).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate a Pavan's Workflow v3.3.1 installation without invoking a model.
+# Validate a Pavan's Workflow v3.4.2 installation without invoking a model.
 
 set -euo pipefail
 
@@ -9,8 +9,7 @@ cd "$PROJECT_ROOT"
 
 failures=0
 warnings=0
-
-ok() { printf 'OK   %s\n' "$1"; }
+ok()   { printf 'OK   %s\n' "$1"; }
 warn() { printf 'WARN %s\n' "$1" >&2; warnings=$((warnings + 1)); }
 fail() { printf 'FAIL %s\n' "$1" >&2; failures=$((failures + 1)); }
 check_path() { [[ -e "$1" ]] && ok "$1" || fail "$1"; }
@@ -26,14 +25,15 @@ check_command graphify
 check_command python3
 
 for path in \
-  VERSION CHANGELOG.md .graphifyignore \
+  VERSION CHANGELOG.md README.md INSTALL.md .graphifyignore \
   .omp/config.yml .omp/AGENTS.md .omp/commands/workflow.md \
   .omp/extensions/workflow-dashboard.ts .omp/extensions/workflow-stats.ts \
   .omp/extensions/workflow-main-model-sync.ts .omp/extensions/workflow-quick-focus.ts \
-  .omp/lib/workflow-live-step.ts .omp/lib/workflow-model-readiness.ts \
-  .omp/lib/workflow-dashboard-data.ts .omp/lib/workflow-dashboard-panel.ts \
-  .omp/lib/workflow-dashboard-extension.ts .omp/lib/workflow-dashboard-viewport.ts \
-  .omp/lib/workflow-stats.ts .omp/lib/workflow-stats-runtime.ts \
+  .omp/lib/workflow-main-model-sync.ts .omp/lib/workflow-live-step.ts \
+  .omp/lib/workflow-model-readiness.ts .omp/lib/workflow-dashboard-data.ts \
+  .omp/lib/workflow-dashboard-panel.ts .omp/lib/workflow-dashboard-extension.ts \
+  .omp/lib/workflow-dashboard-viewport.ts .omp/lib/workflow-stats.ts \
+  .omp/lib/workflow-stats-runtime.ts \
   .omp/tests/workflow-main-model-sync.selftest.ts .omp/tests/workflow-quick-focus.selftest.ts \
   .omp/tests/workflow-live-step.selftest.ts .omp/tests/workflow-stats.selftest.ts \
   .omp/tests/workflow-dashboard-viewport.selftest.ts .omp/tests/workflow-dashboard-mount.selftest.ts \
@@ -53,36 +53,27 @@ for path in \
 done
 
 WF_VERSION="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
-if [[ "$WF_VERSION" == "3.4.1" ]]; then
-  ok "workflow version: 3.4.1"
-elif [[ "$WF_VERSION" == "3.4.0" ]]; then
-  ok "workflow version: 3.4.0"
-elif [[ "$WF_VERSION" == "3.4.0-exp.lean" ]]; then
-  ok "workflow version: 3.4.0-exp.lean (pre-release overlay; update to 3.4.1)"
-elif [[ "$WF_VERSION" == "3.3.1" ]]; then
-  ok "workflow version: 3.3.1"
+if [[ "$WF_VERSION" == "3.4.2" ]]; then
+  ok "workflow version: 3.4.2"
 else
-  fail "VERSION must be 3.3.1, 3.4.0-exp.lean, 3.4.0, or 3.4.1"
+  fail "VERSION must be 3.4.2 (found ${WF_VERSION:-<empty>})"
 fi
 
-for script in checkpoint graphify_rebuild omp_workflow workflow_doctor workflow_metrics workflow_migrate workflow_models workflow_update; do
-  check_script "AI_Workflow_Kit/script/$script.sh"
+LOCK_VERSION="$(awk '$1 == "workflow_version:" { print $2; exit }' AI_Workflow_Kit/vendor/dependencies.lock 2>/dev/null || true)"
+if [[ "$LOCK_VERSION" == "$WF_VERSION" ]]; then
+  ok "dependency lock workflow version: $LOCK_VERSION"
+else
+  fail "dependencies.lock workflow_version must match VERSION"
+fi
+
+for script in AI_Workflow_Kit/script/*.sh install.sh; do
+  [[ -e "$script" ]] && check_script "$script"
 done
-if [[ -f AI_Workflow_Kit/script/workflow_lean.sh ]]; then
-  check_script AI_Workflow_Kit/script/workflow_lean.sh
-fi
-if [[ -f AI_Workflow_Kit/script/workflow_gates.py ]]; then
-  python3 AI_Workflow_Kit/script/workflow_gates.selftest.py >/dev/null && ok "objective gate runner selftest" || fail "objective gate runner selftest"
-  python3 AI_Workflow_Kit/script/workflow_security_scope.selftest.py >/dev/null && ok "security scope selftest" || fail "security scope selftest"
-fi
-if [[ -f AI_Workflow_Kit/script/workflow_lean.selftest.sh ]]; then
-  bash AI_Workflow_Kit/script/workflow_lean.selftest.sh >/dev/null && ok "lean-pipeline apply/rollback selftest" || fail "lean-pipeline apply/rollback selftest"
-fi
 
 if python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml >/dev/null; then
   ok "project YAML/model-role/task-policy guard"
 else
-  fail ".omp/config.yml is invalid, missing workflow roles, or violates the long-worker task policy"
+  fail ".omp/config.yml violates the canonical workflow policy"
 fi
 
 RUNTIME_MS="$(awk '$1 == "maxRuntimeMs:" { print $2; exit }' .omp/config.yml 2>/dev/null || true)"
@@ -93,72 +84,30 @@ else
   fail "task runtime policy requires maxRuntimeMs>=14400000 and softRequestBudget=0"
 fi
 
-if grep -Eq '^[[:space:]]*workflow_orchestrator:[[:space:]]*"@default"([[:space:]]|$)' .omp/config.yml; then
-  ok "Main model slot: workflow_orchestrator aliases DEFAULT"
+if python3 - .omp/extensions/workflow-main-model-sync.ts <<'PY' >/dev/null
+from pathlib import Path
+import re
+import sys
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+code = re.sub(r"^[ \t]*//.*$", "", source, flags=re.MULTILINE)
+assert "shouldRepairMainAlias(ctx.hasUI)" in code
+assert "session_start" in code and "session_switch" in code
+for forbidden in (r"setInterval\s*\(", r"pi\.setModel\s*\(", r"setThinkingLevel\s*\("):
+    assert re.search(forbidden, code) is None, forbidden
+PY
+then
+  ok "Main alias guard is interactive-only and cannot race OMP's effort picker"
 else
-  fail "v3.2 requires workflow_orchestrator: \"@default\""
-fi
-
-if grep -q 'shouldAttachMainModelSync(next.hasUI)' .omp/extensions/workflow-main-model-sync.ts \
-   && grep -q 'if (!shouldAttachMainModelSync(next.hasUI))' .omp/extensions/workflow-main-model-sync.ts; then
-  ok "Main model synchronization is interactive-Main only"
-else
-  fail "Main model synchronization must not attach to headless worker sessions"
+  fail "Main alias guard must not poll or mutate the live model/thinking level"
 fi
 
 if grep -q 'InputController' .omp/extensions/workflow-quick-focus.ts \
    && grep -q 'ctx.focusAgentSession(workerId)' .omp/extensions/workflow-quick-focus.ts \
    && grep -q 'ctx.unfocusSession()' .omp/extensions/workflow-quick-focus.ts \
    && grep -q 'return undefined' .omp/extensions/workflow-quick-focus.ts; then
-  ok "Quick Worker Focus: contextual Tab -> worker/Main with native passthrough"
+  ok "Quick Worker Focus preserves contextual native Tab passthrough"
 else
-  fail "Quick Worker Focus wiring is missing or no longer preserves native Tab passthrough"
-fi
-
-# Stable v3.2 installs contain the extracted context-economy payload. A source
-# checkout may intentionally carry only the checksum-verified package before
-# install.sh is run, so report that state as a warning instead of misdiagnosing
-# the release source tree as corrupt.
-CONTEXT_FILES=(
-  .omp/workflow-context-policy.json
-  .omp/lib/workflow-context-economy-core.ts
-  .omp/lib/workflow-context-economy.ts
-  .omp/lib/workflow-context-snapshot.ts
-  AI_Workflow_Kit/docs/AI/CONTEXT_ECONOMY.md
-  AI_Workflow_Kit/docs/AI/WORKER_OUTPUT_BUDGET.md
-)
-context_missing=0
-for path in "${CONTEXT_FILES[@]}"; do
-  [[ -f "$path" ]] || context_missing=$((context_missing + 1))
-done
-if (( context_missing == 0 )); then
-  ok "Main-only context-economy payload installed"
-  policy_ok=1
-  python3 - .omp/workflow-context-policy.json <<'PY' || policy_ok=0
-import json, pathlib, sys
-data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-assert data["softArmPercent"] == 23
-assert data["hardThresholdPercent"] == 28
-assert data["rearmPercent"] < data["softArmPercent"]
-assert data["methodOrder"] == ["shake", "soft"]
-PY
-  if (( policy_ok )); then
-    ok "context-economy policy: Main-only warning/upper thresholds present"
-  else
-    fail "context-economy policy is present but does not expose the expected Main-only 23/28 guardrails"
-  fi
-else
-  if [[ -f AI_Workflow_Kit/experiments/context-economy/context-economy-v3.sha256 ]]; then
-    warn "stable context payload is packaged but not extracted; run install.sh or workflow_update.sh apply"
-  else
-    fail "Main-only context-economy payload is missing"
-  fi
-fi
-
-if python3 AI_Workflow_Kit/script/workflow_config_repair.selftest.py >/dev/null; then
-  ok "workflow config repair deterministic selftest"
-else
-  fail "workflow config repair deterministic selftest"
+  fail "Quick Worker Focus wiring is incomplete"
 fi
 
 for role in coder reviewer tester architect security design-advisor designer; do
@@ -170,11 +119,9 @@ for alias in \
   workflow_orchestrator workflow_coder workflow_reviewer workflow_tester \
   workflow_architect workflow_security workflow_design_advisor workflow_designer; do
   for configured in "$alias" "${alias}_backup"; do
-    if grep -q "^[[:space:]]*$configured:" .omp/config.yml; then
-      ok "model alias: $configured"
-    else
-      fail "model alias: $configured"
-    fi
+    grep -q "^[[:space:]]*$configured:" .omp/config.yml \
+      && ok "model alias: $configured" \
+      || fail "model alias: $configured"
   done
 done
 
@@ -190,28 +137,21 @@ for file in \
   grep -Eq '^autoloadSkills:[[:space:]]*\["ui-designer"\]' "$file" \
     && ok "UI Designer autoload: $file" \
     || fail "ui-designer must autoload in $file"
-  if grep -Eq 'autoloadSkills:.*ponytail' "$file"; then
-    fail "Ponytail must not autoload in $file"
-  else
-    ok "Ponytail excluded: $file"
-  fi
+  grep -Eq 'autoloadSkills:.*ponytail' "$file" \
+    && fail "Ponytail must not autoload in $file" \
+    || ok "Ponytail excluded: $file"
 done
 
 if grep -q 'workflow-dashboard-extension' .omp/extensions/workflow-dashboard.ts \
    && grep -q 'applyLiveStep' .omp/lib/workflow-dashboard-panel.ts \
-   && grep -q 'currentWorkItemId' .omp/lib/workflow-live-step.ts; then
-  ok "Alt+W live plan cursor recovery"
-else
-  fail "Alt+W must resolve and follow the live step"
-fi
-
-if grep -q 'ScrollView' .omp/lib/workflow-dashboard-panel.ts \
+   && grep -q 'currentWorkItemId' .omp/lib/workflow-live-step.ts \
+   && grep -q 'ScrollView' .omp/lib/workflow-dashboard-panel.ts \
    && grep -q 'routeSgrMouseInput' .omp/lib/workflow-dashboard-panel.ts \
    && grep -q 'fullscreen: true' .omp/lib/workflow-dashboard-panel.ts \
    && grep -q 'mouseTracking: true' .omp/lib/workflow-dashboard-panel.ts; then
-  ok "Alt+W fullscreen scrollable mouse-tracked viewport"
+  ok "Alt+W live cursor and fullscreen scrolling contract"
 else
-  fail "Alt+W fullscreen scrolling contract is missing"
+  fail "Alt+W dashboard contract is incomplete"
 fi
 
 STATS_EXTENSION=.omp/extensions/workflow-stats.ts
@@ -225,71 +165,46 @@ if grep -q 'spawn(' "$STATS_RUNTIME" \
    && grep -q '"omp"' "$STATS_RUNTIME" \
    && grep -q '"stats"' "$STATS_RUNTIME" \
    && ! grep -q 'STATS_HEADER_VALUE' "$STATS_RUNTIME"; then
-  ok "OMP Stats delegates lifecycle/security to native omp stats CLI"
+  ok "OMP Stats delegates lifecycle/security to native omp stats"
 else
-  fail "OMP Stats must delegate to native omp stats without copied security-header versions"
+  fail "OMP Stats native delegation is incomplete"
 fi
 
-run_bounded() {
-  local seconds="$1"; shift
-  python3 - "$seconds" "$@" <<'PYTIMEOUT'
-import subprocess
+CONTEXT_FILES=(
+  .omp/workflow-context-policy.json
+  .omp/lib/workflow-context-economy-core.ts
+  .omp/lib/workflow-context-economy.ts
+  .omp/lib/workflow-context-snapshot.ts
+  AI_Workflow_Kit/docs/AI/CONTEXT_ECONOMY.md
+  AI_Workflow_Kit/docs/AI/WORKER_OUTPUT_BUDGET.md
+)
+context_missing=0
+for path in "${CONTEXT_FILES[@]}"; do [[ -f "$path" ]] || context_missing=$((context_missing + 1)); done
+if (( context_missing == 0 )); then
+  ok "Main-only context-economy payload installed"
+  policy_ok=1
+  python3 - .omp/workflow-context-policy.json <<'PYCONTEXT' || policy_ok=0
+import json
+import pathlib
 import sys
 
-seconds = float(sys.argv[1])
-command = sys.argv[2:]
-try:
-    completed = subprocess.run(command, timeout=seconds, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-except subprocess.TimeoutExpired:
-    raise SystemExit(124)
-raise SystemExit(completed.returncode)
-PYTIMEOUT
-}
-
-EXPECTED_GRAPHIFY="$(awk '$1 == "graphify:" { in_graphify=1; next } in_graphify && $1 == "version:" { print $2; exit }' AI_Workflow_Kit/vendor/dependencies.lock 2>/dev/null || true)"
-ACTUAL_GRAPHIFY="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
-if [[ -n "$EXPECTED_GRAPHIFY" && "$ACTUAL_GRAPHIFY" == "$EXPECTED_GRAPHIFY" ]]; then
-  ok "graphify version: $ACTUAL_GRAPHIFY"
-elif [[ -n "$ACTUAL_GRAPHIFY" ]]; then
-  warn "graphify $ACTUAL_GRAPHIFY installed; v3.3 was validated with $EXPECTED_GRAPHIFY"
-fi
-
-if [[ -f graphify-out/graph.json ]]; then
-  if python3 - <<'PY'
-import json, pathlib
-p = pathlib.Path('graphify-out/graph.json')
-d = json.loads(p.read_text(encoding='utf-8'))
-assert isinstance(d, dict)
-assert isinstance(d.get('nodes'), list)
-assert len(d['nodes']) > 0
-PY
-  then
-    ok "graphify-out/graph.json valid"
-    if run_bounded 20 graphify query "project entry points" --graph graphify-out/graph.json --budget 64; then
-      ok "Graphify smoke query"
-    else
-      warn "Graphify graph parses, but smoke query failed"
-    fi
+data = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert data["softArmPercent"] == 23
+assert data["hardThresholdPercent"] == 28
+assert data["rearmPercent"] < data["softArmPercent"]
+assert data["methodOrder"] == ["shake", "soft"]
+PYCONTEXT
+  if (( policy_ok )); then
+    ok "context-economy policy: Main-only 23/28 guardrails"
   else
-    fail "graphify-out/graph.json invalid"
+    fail "context-economy policy is present but its Main-only guardrails are invalid"
   fi
 else
-  warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast after product source exists"
-fi
-
-if git rev-parse --git-common-dir >/dev/null 2>&1; then
-  if bash AI_Workflow_Kit/script/workflow_metrics.sh self-check >/dev/null; then ok "workflow metrics runtime/private path"; else fail "workflow metrics runtime/private path"; fi
-  if bash AI_Workflow_Kit/script/workflow_metrics.sh validate >/dev/null; then ok "workflow metrics event store"; else fail "workflow metrics event store"; fi
-else
-  warn "metrics store unavailable outside a Git worktree; observer stays passive"
-fi
-if bash AI_Workflow_Kit/script/workflow_metrics.sh selftest >/dev/null; then ok "workflow metrics deterministic selftest"; else fail "workflow metrics deterministic selftest"; fi
-
-if migrate_output="$(bash AI_Workflow_Kit/script/workflow_migrate.sh check 2>&1)"; then
-  printf '%s\n' "$migrate_output"
-else
-  printf '%s\n' "$migrate_output" >&2
-  fail "workflow schema migration check"
+  if [[ -f AI_Workflow_Kit/experiments/context-economy/context-economy-v3.sha256 ]]; then
+    warn "context payload is packaged but not extracted; run install.sh or workflow_update.sh apply"
+  else
+    fail "Main-only context-economy payload is missing"
+  fi
 fi
 
 run_typescript_selftest() {
@@ -324,12 +239,83 @@ else
   warn "Node/Bun/tsx unavailable; OMP TypeScript selftests skipped"
 fi
 
-if [[ -x AI_Workflow_Kit/script/workflow_experiment.selftest.sh ]]; then
-  if bash AI_Workflow_Kit/script/workflow_experiment.selftest.sh >/dev/null; then
-    ok "context-economy installation/rollback selftest"
+for test in AI_Workflow_Kit/script/*.selftest.py; do
+  [[ -f "$test" ]] || continue
+  python3 "$test" >/dev/null && ok "selftest: $test" || fail "selftest: $test"
+done
+for test in AI_Workflow_Kit/script/*.selftest.sh; do
+  [[ -f "$test" ]] || continue
+  bash "$test" >/dev/null && ok "selftest: $test" || fail "selftest: $test"
+done
+
+run_bounded() {
+  local seconds="$1"; shift
+  python3 - "$seconds" "$@" <<'PYTIMEOUT'
+import subprocess
+import sys
+
+seconds = float(sys.argv[1])
+command = sys.argv[2:]
+try:
+    completed = subprocess.run(command, timeout=seconds, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+raise SystemExit(completed.returncode)
+PYTIMEOUT
+}
+
+EXPECTED_GRAPHIFY="$(awk '$1 == "graphify:" { in_graphify=1; next } in_graphify && $1 == "version:" { print $2; exit }' AI_Workflow_Kit/vendor/dependencies.lock 2>/dev/null || true)"
+ACTUAL_GRAPHIFY="$(graphify --version 2>/dev/null | awk '{print $NF}' || true)"
+if [[ -n "$EXPECTED_GRAPHIFY" && "$ACTUAL_GRAPHIFY" == "$EXPECTED_GRAPHIFY" ]]; then
+  ok "graphify version: $ACTUAL_GRAPHIFY"
+elif [[ -n "$ACTUAL_GRAPHIFY" ]]; then
+  warn "graphify $ACTUAL_GRAPHIFY installed; workflow v$WF_VERSION pins $EXPECTED_GRAPHIFY"
+fi
+
+if [[ -f graphify-out/graph.json ]]; then
+  if python3 - <<'PYGRAPH'
+import json
+import pathlib
+
+path = pathlib.Path("graphify-out/graph.json")
+data = json.loads(path.read_text(encoding="utf-8"))
+assert isinstance(data, dict)
+assert isinstance(data.get("nodes"), list)
+assert data["nodes"]
+PYGRAPH
+  then
+    ok "graphify-out/graph.json valid"
+    if run_bounded 20 graphify query "project entry points" --graph graphify-out/graph.json --budget 64; then
+      ok "Graphify smoke query"
+    else
+      warn "Graphify graph parses, but smoke query failed"
+    fi
   else
-    fail "context-economy installation/rollback selftest"
+    fail "graphify-out/graph.json invalid"
   fi
+else
+  warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast after product source exists"
+fi
+
+if git rev-parse --git-common-dir >/dev/null 2>&1; then
+  bash AI_Workflow_Kit/script/workflow_metrics.sh self-check >/dev/null \
+    && ok "workflow metrics runtime/private path" \
+    || fail "workflow metrics runtime/private path"
+  bash AI_Workflow_Kit/script/workflow_metrics.sh validate >/dev/null \
+    && ok "workflow metrics event store" \
+    || fail "workflow metrics event store"
+else
+  warn "metrics store unavailable outside a Git worktree; observer stays passive"
+fi
+bash AI_Workflow_Kit/script/workflow_metrics.sh selftest >/dev/null \
+  && ok "workflow metrics deterministic selftest" \
+  || fail "workflow metrics deterministic selftest"
+
+if migrate_output="$(bash AI_Workflow_Kit/script/workflow_migrate.sh check 2>&1)"; then
+  printf '%s\n' "$migrate_output"
+else
+  printf '%s\n' "$migrate_output" >&2
+  fail "workflow schema migration check"
 fi
 
 if (( failures > 0 )); then

@@ -1,43 +1,38 @@
-# Install Pavan's Workflow v3.3
+# Install Pavan's Workflow v3.4.2
 
-Experimental lean-pipeline overlay (smarter routing, fewer token repeats) lives
-on `experiment/lean-pipeline` and is reversible:
-
-```bash
-bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh apply /path/to/project
-bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh rollback /path/to/project
-```
-
-Version 3.3 makes context maintenance work during nonstop autonomous runs:
-OMP native threshold maintenance compacts the top-level interactive Main
-session at a 28% hard boundary with mid-turn checkpoints, while the soft
-window (warn at 23%) keeps compacting earlier whenever Main is fully settled.
-Quick Worker Focus, the v3.1 dashboard, Designer path, long-worker runtime
-policy, and manual OMP Stats are unchanged.
+v3.4.2 fixes the Main model/effort selector race. `DEFAULT` is the only editable
+Main-model slot; `workflow_orchestrator` remains a hidden managed alias used by
+launch and quick-switch behavior.
 
 ## Update an existing v2/v3 project
 
-First close OMP for that project. From its root:
+Close OMP for that project. From its root:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
 ```
 
-Prefer git explicitly? The long form does the same:
+Equivalent explicit-git form:
 
 ```bash
-( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
+(
+  set -Eeuo pipefail
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
+  bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply "$PWD"
+)
 ```
 
-The v3.3 updater automatically installs/repairs the Main context policy,
-keeps task/headless workers out of Main compaction, binds
-`workflow_orchestrator` to the authoritative `DEFAULT` Main model slot, and
-installs Quick Worker Focus. Existing project model selections and live workflow
-state are preserved.
+The updater preserves project model choices, workflow state, reports, product
+code, custom `.graphifyignore` rules, and the existing Graphify index. It repairs
+older Main-role layouts as follows:
 
-Workflow updates preserve the existing Graphify index and do not rebuild it by
-default. To request a bounded refresh during the same update, append
-`--refresh-graphify`.
+1. An existing `DEFAULT` remains authoritative.
+2. A direct `workflow_orchestrator` selection is copied to `DEFAULT` only when
+   no explicit `DEFAULT` exists.
+3. `workflow_orchestrator` is restored to `"@default"` and hidden from the role
+   picker.
 
 Framework backups are stored under:
 
@@ -45,7 +40,8 @@ Framework backups are stored under:
 <git-common-dir>/pavans-workflow/update-backups/<timestamp>/
 ```
 
-Restart OMP after a successful update.
+Append `--refresh-graphify` to request a bounded Graphify refresh. Restart OMP
+after a successful update.
 
 ## Install OMP
 
@@ -68,7 +64,7 @@ Windows PowerShell:
 irm https://omp.sh/install.ps1 | iex
 ```
 
-## New project from template
+## New project from the template
 
 ```bash
 git clone https://github.com/Pavan-Gopa/Pavans-Workflow.git my-project
@@ -88,23 +84,60 @@ bash install.sh .
 )
 ```
 
-The installer refuses to overwrite an existing workflow; use the updater for
-existing installations.
+The installer refuses to overwrite existing workflow paths. Use the updater for
+an existing installation.
+
+## Configure the Main model correctly
+
+Open **Alt+M → Roles** and edit **DEFAULT**. Complete both stages of OMP's
+selector: choose the model, then choose the effort/thinking level.
+
+Do not look for a separate editable `workflow_orchestrator` row in v3.4.2. It is
+intentionally hidden because it aliases `@default`.
+
+- To change the persistent primary: assign the new model + effort to `DEFAULT`.
+- To use the configured backup temporarily: use the quick-switch control
+  (`Alt+Q` in the workflow setup).
+- To change the backup mapping: edit `workflow_orchestrator_backup` in Roles.
+
+## Graphify
+
+Tested package version:
+
+```bash
+uv tool install "graphifyy==0.9.46"
+```
+
+A new installation attempts a local AST code-only graph with a portable
+120-second timeout. Skip the initial build with:
+
+```bash
+WF_INSTALL_SKIP_GRAPHIFY=1 bash install.sh .
+```
+
+Workflow updates preserve the current graph by default. Rebuild later with:
+
+```bash
+bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+```
+
+## Launch
+
+```bash
+bash AI_Workflow_Kit/script/omp_workflow.sh
+```
+
+Use **Alt+M → Roles** for worker primary/backup pairs. Design Advisor and
+Designer remain optional.
 
 ## Main context economy
 
 Context maintenance is Main-only. Worker/task sessions do not inherit automatic
-compaction. Main warns near 23% context use, waits while a worker is active, and
-performs the configured `shake -> soft` maintenance at the next safe Main idle
-boundary around the 28% upper target.
-
-The Main model has one authoritative slot: `DEFAULT`. The
-`workflow_orchestrator` role aliases `@default`, so changing the Main model does
-not leave the live session and workflow role mapping out of sync.
+Main compaction. OMP owns the native 28% hard threshold with mid-turn
+checkpoints; the workflow's soft window can compact earlier when Main is fully
+settled.
 
 ## Quick Worker Focus
-
-With an empty composer and one running workflow worker:
 
 ```text
 Main   -- Tab --> Worker
@@ -112,65 +145,24 @@ Worker -- Tab --> Main
 Worker -- Esc --> Main
 ```
 
-Tab remains normal OMP context-aware completion when text is present, an
-autocomplete popup/overlay owns input, or no running worker exists. Agent Hub
-(`Alt+A`) remains available for the full roster, history, abort, and intervention
-controls.
-
-## Graphify
-
-Tested version:
-
-```bash
-uv tool install "graphifyy==0.9.46"
-```
-
-A new installation attempts a local AST code-only graph with a 120-second
-portable timeout. Skip that initial build with:
-
-```bash
-WF_INSTALL_SKIP_GRAPHIFY=1 bash install.sh .
-```
-
-Workflow updates preserve the current graph by default. Rebuild later:
-
-```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
-```
-
-## Launch and model roles
-
-```bash
-bash AI_Workflow_Kit/script/omp_workflow.sh
-```
-
-Use **Alt+M → Roles** for the workflow role pairs. Design Advisor and Designer
-remain optional. Existing upgrades receive aliases to Reviewer/Architect models
-so nothing breaks; assign Kimi or another strong visual model to
-`workflow_designer` when desired.
-
-## Alt+W behavior
-
-The plan uses separate selected and live markers. It auto-follows live work until
-you navigate with Up/Down. Press `c` to return to the live step. The dashboard is
-a fullscreen mouse-tracked vertical viewport, so long plans/checklists/native
-Todo lists remain reachable by wheel, PageUp/PageDown, Shift+Up/Down, and `g/G`.
+Tab keeps OMP's normal completion behavior when text is present, a popup or
+overlay owns input, or no worker is running. `Alt+A` remains the full Agent Hub.
 
 ## OMP Stats
 
-Still manual. Alt+W shows `http://127.0.0.1:3847`; press `o` or run
-`/workflow-stats`. No startup server or persistent widget is installed. The
-workflow delegates sync/security/server behavior to the native `omp stats` CLI.
+Stats remains manual. Press `o` in Alt+W or run `/workflow-stats`. No startup
+server or persistent widget is installed.
 
 ## Verify
 
 ```bash
 cat VERSION
+python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 ```
 
 Expected version:
 
 ```text
-3.3.1
+3.4.2
 ```
