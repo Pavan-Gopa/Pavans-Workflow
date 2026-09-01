@@ -86,6 +86,17 @@ assert mod.validate_config_text(repaired_missing_task) == []
 visible = normalized.replace("hidden: true", "hidden: false", 1)
 assert "modelTags.workflow_orchestrator.hidden must be true" in mod.validate_config_text(visible)
 
+duplicate_tags = normalized.replace(
+    "modelTags:\n  workflow_orchestrator:\n    name: Main Orchestrator (managed by DEFAULT)\n    hidden: true",
+    "modelTags:\n  workflow_orchestrator:\n  workflow_orchestrator:\n    hidden: false",
+)
+repaired_duplicate_tags, duplicate_notes = mod.normalize_config_text(duplicate_tags)
+assert repaired_duplicate_tags.count("  workflow_orchestrator:\n") == 1
+assert "name: Main Orchestrator (managed by DEFAULT)" in repaired_duplicate_tags
+assert "hidden: true" in repaired_duplicate_tags
+assert any("removed duplicate model tag" in note for note in duplicate_notes)
+assert mod.validate_config_text(repaired_duplicate_tags) == []
+
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp) / "project"
     omp = root / ".omp"
