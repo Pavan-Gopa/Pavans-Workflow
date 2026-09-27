@@ -1,5 +1,4 @@
 import type { ConsistencyFinding } from "./workflow-consistency.ts";
-import type { ModelSetupSummary } from "./workflow-model-readiness.ts";
 import { deriveRoutingExplanation, type RoutingExplanation } from "./workflow-routing.ts";
 import type { RuntimeTodoLink, RuntimeTodoSnapshot } from "./workflow-runtime-todo.ts";
 
@@ -71,6 +70,7 @@ export type WorkflowState = {
 	modelFailureStatus: string;
 	modelFailureRole: string;
 	modelFailureInstruction: string;
+	modelFailureBackupAgent: string;
 };
 
 export type MetricRatio = {
@@ -226,8 +226,10 @@ export type DashboardData = {
 	runtimeTodo?: RuntimeTodoSnapshot;
 	runtimeTodoLink?: RuntimeTodoLink;
 	consistency?: ConsistencyFinding[];
-	modelSetup?: ModelSetupSummary;
 	freshness?: DataFreshness;
+	stateError?: string;
+	stepsError?: string;
+	sessionUsage?: SessionUsage;
 };
 
 export type StepRelation = "current" | "completed" | "planned" | "missing";
@@ -582,6 +584,7 @@ export function parseWorkflowState(source: string): WorkflowState {
 		modelFailureStatus: nestedSectionValue(source, "omp", "model_failure", "status"),
 		modelFailureRole: nestedSectionValue(source, "omp", "model_failure", "role"),
 		modelFailureInstruction: nestedSectionValue(source, "omp", "model_failure", "human_instruction"),
+		modelFailureBackupAgent: nestedSectionValue(source, "omp", "model_failure", "backup_agent"),
 	};
 }
 
@@ -1480,29 +1483,6 @@ function failureLines(report: MetricsReport): TextLine[] {
 	return lines;
 }
 
-export function modelSetupLines(setup: ModelSetupSummary | undefined, nextActor?: string): TextLine[] {
-	if (!setup) return [];
-	const lines: TextLine[] = [{ text: "MODEL SETUP", tone: "accent" }];
-	lines.push({ text: `Main · ${setup.mainReady ? "ready" : "not configured"}`, tone: setup.mainReady ? "normal" : "warning" });
-	lines.push({ text: `Execution · ${setup.executionReady ? "ready" : "pending Coder"}` });
-	const qualityStatus = setup.qualityReady
-		? (setup.sharedWithMainCount > 0 ? "shared with Main" : "ready")
-		: "pending Reviewer/Tester";
-	lines.push({ text: `Quality · ${qualityStatus}` });
-	const optionalReady = (setup.roles.architect?.primaryOk ? 1 : 0) + (setup.roles.security?.primaryOk ? 1 : 0);
-	lines.push({ text: `Optional roles · ${optionalReady}/2 configured` });
-	lines.push({ text: `Backups · ${setup.configuredBackupsCount}/${setup.totalRoles}` });
-	if (setup.sharedWithMainCount > 1) {
-		lines.push({ text: `INFO · ${setup.sharedWithMainCount} primary roles currently share Main`, tone: "muted" });
-	}
-	const roleKey = normalizeRole(nextActor);
-	if (roleKey && setup.roles[roleKey] && !setup.roles[roleKey].primaryOk) {
-		lines.push({ text: `WARN · ${roleLabel(roleKey)} model is not configured`, tone: "warning" });
-	}
-	lines.push({ text: "Alt+M → Roles", tone: "muted" });
-	return lines;
-}
-
 function buildStatisticsLines(view: DashboardViewModel, width: number, compact = false): TextLine[] {
 	const lines: TextLine[] = [{ text: "WORKFLOW HEALTH", tone: "accent" }];
 	const report = view.data.metrics;
@@ -1527,8 +1507,6 @@ function buildStatisticsLines(view: DashboardViewModel, width: number, compact =
 	if (failures.length > 0) lines.push({ text: "" }, ...failures);
 	const transitions = recentTransitionLines(report.recent_transitions);
 	if (transitions.length > 0) lines.push({ text: "" }, ...transitions);
-	const setup = modelSetupLines(view.data.modelSetup, view.data.state.nextActor);
-	if (setup.length > 0) lines.push({ text: "" }, ...setup);
 	lines.push({ text: "" }, ...sessionUsageLines(view.data.sessionUsage));
 	return lines;
 }

@@ -1,29 +1,63 @@
 #!/usr/bin/env python3
-"""Run backticked Objective Gate commands for the current (or named) step."""
+"""List or run the Objective Gate commands of the current (or named) step card.
+
+  workflow_gates.py list [--step S1] [--json]
+  workflow_gates.py run  [--step S1] [--json] [--require-commands] [--timeout 120]
+
+A gate runs when its line contains a backticked command:
+
+  - [ ] [S1.O1] `$ npm test -- --run` exits 0        explicit marker (always runs)
+  - [ ] [S1.O2] `pytest -q tests/unit` exits 0        recognised runner (npm, pytest, …)
+  - [ ] [S1.O3] `./script/check.sh` exits 0           executable path
+
+Backticked names that are not commands (`README.md`, `maxRetries`) stay manual
+evidence. Every command on a line must pass. Fenced code blocks and template
+cards are ignored, exactly like the Alt+W dashboard.
+
+Exit codes: 0 pass (or no command gates without --require-commands),
+1 a command gate failed, 2 usage/parse error, 3 no command gates with
+--require-commands (a `quick` close needs at least one deterministic gate).
+"""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
 
-STEP_HEADING = re.compile(
-    r"^##[ \t]+([A-Za-z0-9][A-Za-z0-9._/-]*)[ \t]+(?:—|-)[ \t]+(.+?)\s*$",
-    re.M,
-)
-OBJECTIVE_SECTION = re.compile(
-    r"(?:^|\n)(?:#{3,}\s+Objective gates\s*|\*\*Objective gates:\*\*[^\n]*)\n(.*?)(?=\n(?:#{2,}\s+|\*\*[A-Za-z][^:\n]{0,40}:\*\*)|\Z)",
-    re.I | re.S,
-)
-GATE_LINE = re.compile(
-    r"^\s*[-*]\s*\[(?P<done>[ xX])\]\s*(?:\[(?P<id>[^\]]+)\]\s*)?(?P<body>.+?)\s*$"
-)
-COMMAND = re.compile(r"`([^`]+)`")
+STEP_HEADING = re.compile(r"^##[ \t]+([A-Za-z0-9][A-Za-z0-9._/-]*)[ \t]+(?:—|-)[ \t]+(.+?)\s*$", re.M)
+SECTION_HEADING = re.compile(r"^(?:#{3,}[ \t]+(?P<hash>[^\n]+?)|\*\*(?P<bold>[A-Za-z][^:\n]{0,40}):\*\*[^\n]*)[ \t]*$", re.M)
+OBJECTIVE_NAMES = ("objective gates", "done when")
+GATE_LINE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s*\[(?P<done>[ xX])\]\s*(?:\[(?P<id>[^\]]+)\]\s*)?(?P<body>.+?)\s*$")
+BACKTICK = re.compile(r"`([^`\n]+)`")
 CURRENT_STEP = re.compile(r"^current_step:\s*(.+?)\s*$", re.M)
+RISK = re.compile(r"\*\*Risk:\*\*\s*(low|normal|high)", re.I)
+PROFILE = re.compile(r"\*\*Pipeline(?:\s+profile)?:\*\*\s*(quick|standard|critical)", re.I)
+TEMPLATE_TITLES = {"title", "short title", "step title", "placeholder"}
+RUNNERS = (
+    "npm", "npx", "pnpm", "yarn", "bun", "bunx", "deno", "node", "tsc", "vitest", "jest", "playwright",
+    "python", "python3", "pytest", "uv", "uvx", "tox", "nox", "poetry", "ruff", "mypy",
+    "cargo", "go", "make", "just", "task", "cmake", "ctest", "bazel",
+    "swift", "xcodebuild", "gradle", "mvn", "dotnet", "ruby", "bundle", "rake", "rspec", "php", "composer",
+    "bash", "sh", "zsh", "git", "omp", "graphify", "docker", "kubectl", "terraform", "shellcheck",
+)
+# Runners that are meaningful without arguments (`make`, `pytest`); every other
+# runner needs at least one argument so a backticked identifier such as `task`
+# or `node` is never executed by accident.
+BARE_RUNNERS = ("make", "pytest", "tox", "nox", "ctest", "rspec", "rake", "jest", "vitest", "tsc", "mypy", "just")
+_ENV_PREFIX = r"(?:[A-Z_][A-Z0-9_]*=\S*\s+)*"
+RUNNER = re.compile(
+    rf"^{_ENV_PREFIX}(?:(?:{'|'.join(re.escape(item) for item in RUNNERS)})\s+\S"
+    rf"|(?:{'|'.join(re.escape(item) for item in BARE_RUNNERS)})$)"
+)
+# Explicit relative executables (./x, ../x) or a script path with a directory.
+PATH_COMMAND = re.compile(rf"^{_ENV_PREFIX}(?:\.{{1,2}}/\S+|[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]*\.(?:sh|bash))(?:\s|$)")
 
 
 def repo_root_from_here() -> Path:
@@ -32,165 +66,225 @@ def repo_root_from_here() -> Path:
 
 def strip_scalar(value: str) -> str:
     text = value.strip()
-    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
-        text = text[1:-1]
     comment = re.search(r"\s+#", text)
     if comment:
         text = text[: comment.start()]
-    if text in {"null", "~", "-", ""}:
-        return ""
-    return text.strip()
+    text = text.strip()
+    if (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+        text = text[1:-1]
+    return "" if text in {"null", "~", "-", ""} else text.strip()
 
 
-def current_step_id(state_path: Path, explicit: str | None) -> str:
-    if explicit:
-        return explicit
-    text = state_path.read_text(encoding="utf-8")
-    match = CURRENT_STEP.search(text)
-    if not match:
-        raise SystemExit("ERROR: current_step missing from STATE.yaml")
-    step = strip_scalar(match.group(1))
+def current_step_id(state_path: Path) -> str:
+    match = CURRENT_STEP.search(state_path.read_text(encoding="utf-8"))
+    step = strip_scalar(match.group(1)) if match else ""
     if not step:
-        raise SystemExit("ERROR: current_step is empty")
+        raise SystemExit("ERROR: current_step missing or empty in STATE.yaml")
     return step
 
 
-def parse_cards(steps_text: str) -> dict[str, str]:
-    matches = list(STEP_HEADING.finditer(steps_text))
-    cards: dict[str, str] = {}
+def strip_fences(text: str) -> str:
+    """Blank fenced code blocks but keep line numbers stable (dashboard parity)."""
+    return re.sub(r"```[\s\S]*?```", lambda block: re.sub(r"[^\n]", " ", block.group(0)), text)
+
+
+def is_template_card(title: str, body: str) -> bool:
+    normalized = re.sub(r"^_\((.*)\)_$", r"\1", title).strip("_ ").lower().replace("(", "").replace(")", "").strip()
+    if normalized in TEMPLATE_TITLES or re.search(r"\btemplate(?: card)?\b", normalized):
+        return True
+    return bool(re.search(r"\{\{\s*(?:step|title|goal|item)", body, re.I))
+
+
+def parse_cards(steps_text: str) -> dict[str, dict[str, str]]:
+    visible = strip_fences(steps_text)
+    matches = list(STEP_HEADING.finditer(visible))
+    cards: dict[str, dict[str, str]] = {}
     for index, match in enumerate(matches):
         start = match.end()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(steps_text)
-        cards[match.group(1)] = steps_text[start:end]
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(visible)
+        body = visible[start:end]
+        if is_template_card(match.group(2), body):
+            continue
+        cards[match.group(1)] = {"title": match.group(2).strip(), "body": body}
     return cards
 
 
-def looks_like_command(command: str) -> bool:
-    text = command.strip()
-    if not text or " " not in text and "/" not in text and text in {"true", "false"}:
-        return False
-    if re.match(r"^(npm|pnpm|yarn|bun|cargo|go|pytest|python3?|node|bash|make|uv|deno|git|omp)\b", text):
-        return True
-    if text.startswith("./") or text.startswith("bash ") or text.endswith(".sh"):
-        return True
-    if re.search(r"\b(test|lint|build|typecheck|vitest|jest|mocha)\b", text):
-        return True
-    return bool(re.match(r"^[A-Za-z0-9._/-]+(\s+.+)?$", text)) and not text.endswith(".")
+def objective_lines(body: str) -> list[str]:
+    headings = list(SECTION_HEADING.finditer(body))
+    for preferred in OBJECTIVE_NAMES:
+        for index, heading in enumerate(headings):
+            name = (heading.group("hash") or heading.group("bold") or "").strip().lower()
+            if name != preferred:
+                continue
+            end = headings[index + 1].start() if index + 1 < len(headings) else len(body)
+            # A level-2 heading always ends the section.
+            chunk = body[heading.end():end]
+            stop = re.search(r"^##[ \t]", chunk, re.M)
+            return (chunk[: stop.start()] if stop else chunk).splitlines()
+    return []
+
+
+def command_from_span(span: str) -> str | None:
+    text = span.strip()
+    if text.startswith("$ "):
+        return text[2:].strip() or None
+    if RUNNER.match(text) or PATH_COMMAND.match(text):
+        return text
+    return None
 
 
 def extract_gates(body: str) -> list[dict[str, object]]:
-    section = OBJECTIVE_SECTION.search(body)
-    if not section:
-        return []
     gates: list[dict[str, object]] = []
-    for raw in section.group(1).splitlines():
+    for raw in objective_lines(body):
         match = GATE_LINE.match(raw)
         if not match:
             continue
-        body_text = match.group("body")
-        command_match = COMMAND.search(body_text)
-        command = command_match.group(1).strip() if command_match else ""
-        runnable = bool(command) and looks_like_command(command)
-        gates.append(
-            {
-                "id": (match.group("id") or "").strip() or None,
-                "done": match.group("done").lower() == "x",
-                "text": body_text.strip(),
-                "command": command if runnable else None,
-                "kind": "command" if runnable else "manual",
-            }
-        )
+        text = match.group("body").strip()
+        spans = BACKTICK.findall(text)
+        commands = [command for command in (command_from_span(span) for span in spans) if command]
+        gate: dict[str, object] = {
+            "id": (match.group("id") or "").strip() or None,
+            "done": match.group("done").lower() == "x",
+            "text": text,
+            "commands": commands,
+            "command": commands[0] if commands else None,
+            "kind": "command" if commands else "manual",
+        }
+        if spans and not commands:
+            gate["note"] = "backticked text is not a recognised command; write `$ <command>` to run it"
+        gates.append(gate)
     return gates
 
 
+def card_facts(card: dict[str, str]) -> dict[str, object]:
+    body = card["body"]
+    risk = RISK.search(body)
+    profile = PROFILE.search(body)
+    return {
+        "title": card["title"],
+        "risk": risk.group(1).lower() if risk else "normal",
+        "pipeline_profile": profile.group(1).lower() if profile else "standard",
+        "card_sha256": hashlib.sha256(body.strip().encode("utf-8")).hexdigest(),
+    }
+
+
+def _tail(value: object) -> str:
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "replace")
+    return (value or "")[-2000:] if isinstance(value, str) else ""
+
+
 def run_command(command: str, cwd: Path, timeout: int) -> dict[str, object]:
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
     try:
-        completed = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired as exc:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                break
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        else:
+            stdout, stderr = "", ""
         return {
             "exit_code": 124,
             "timed_out": True,
-            "stdout_tail": (exc.stdout or "")[-2000:] if isinstance(exc.stdout, str) else "",
-            "stderr_tail": (exc.stderr or "")[-2000:] if isinstance(exc.stderr, str) else f"timed out after {timeout}s",
+            "stdout_tail": _tail(stdout),
+            "stderr_tail": (_tail(stderr) + f"\ntimed out after {timeout}s").strip(),
         }
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
+    return {"exit_code": process.returncode, "timed_out": False, "stdout_tail": _tail(stdout), "stderr_tail": _tail(stderr)}
+
+
+def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str, object]:
+    steps_path = root / "AI_Workflow_Kit" / "docs" / "STEPS.md"
+    state_path = root / "AI_Workflow_Kit" / "docs" / "AI" / "STATE.yaml"
+    if not steps_path.is_file():
+        raise ValueError(f"missing {steps_path}")
+    if not step:
+        if not state_path.is_file():
+            raise ValueError("STATE.yaml missing and --step not given")
+        step = current_step_id(state_path)
+    cards = parse_cards(steps_path.read_text(encoding="utf-8"))
+    if step not in cards:
+        raise ValueError(f"step {step} not found in STEPS.md (template cards and fenced examples are ignored)")
+    gates = extract_gates(cards[step]["body"])
+    failed = 0
+    for gate in gates:
+        gate["ok"] = None
+        if not run or gate["kind"] != "command":
+            continue
+        runs = [dict(run_command(command, root, timeout), command=command) for command in gate["commands"]]  # type: ignore[union-attr]
+        gate["runs"] = runs
+        gate["ok"] = all(item["exit_code"] == 0 for item in runs)
+        # Backward-compatible single-command fields.
+        gate["exit_code"] = next((item["exit_code"] for item in runs if item["exit_code"] != 0), 0)
+        gate["timed_out"] = any(item["timed_out"] for item in runs)
+        if not gate["ok"]:
+            failed += 1
+    command_gates = sum(1 for gate in gates if gate["kind"] == "command")
+    status = "fail" if failed else ("pass" if command_gates else "no_commands")
+    if not run:
+        status = "listed" if command_gates else "no_commands"
     return {
-        "exit_code": completed.returncode,
-        "timed_out": False,
-        "stdout_tail": stdout[-2000:],
-        "stderr_tail": stderr[-2000:],
+        "step": step,
+        **card_facts(cards[step]),
+        "gate_count": len(gates),
+        "command_gates": command_gates,
+        "failed_commands": failed,
+        "status": status,
+        "gates": gates,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", nargs="?", default="run", choices=["run", "list"])
     parser.add_argument("--step", default=None)
     parser.add_argument("--project", default=None)
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "120")))
+    parser.add_argument("--require-commands", action="store_true", help="exit 3 when the card has no command gate")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     root = Path(args.project).resolve() if args.project else repo_root_from_here()
-    steps_path = root / "AI_Workflow_Kit" / "docs" / "STEPS.md"
-    state_path = root / "AI_Workflow_Kit" / "docs" / "AI" / "STATE.yaml"
-    if not steps_path.is_file():
-        print(f"ERROR: missing {steps_path}", file=sys.stderr)
+    try:
+        payload = evaluate(root, args.step, args.action == "run", args.timeout)
+    except (ValueError, OSError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
         return 2
-
-    step_id = current_step_id(state_path, args.step) if state_path.is_file() or args.step else ""
-    if not args.step and not state_path.is_file():
-        print("ERROR: STATE.yaml missing and --step not given", file=sys.stderr)
-        return 2
-    cards = parse_cards(steps_path.read_text(encoding="utf-8"))
-    if step_id not in cards:
-        print(f"ERROR: step {step_id} not found in STEPS.md", file=sys.stderr)
-        return 2
-
-    gates = extract_gates(cards[step_id])
-    results = []
-    failed = 0
-    for gate in gates:
-        item = dict(gate)
-        if args.action == "run" and gate["kind"] == "command":
-            outcome = run_command(str(gate["command"]), root, args.timeout)
-            item.update(outcome)
-            item["ok"] = outcome["exit_code"] == 0
-            if not item["ok"]:
-                failed += 1
-        elif gate["kind"] == "command":
-            item["ok"] = None
-        else:
-            item["ok"] = None
-        results.append(item)
-
-    payload = {
-        "step": step_id,
-        "gate_count": len(results),
-        "command_gates": sum(1 for item in results if item["kind"] == "command"),
-        "failed_commands": failed,
-        "status": "fail" if failed else "pass" if any(item["kind"] == "command" for item in results) else "no_commands",
-        "gates": results,
-    }
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
-        print(f"step {payload['step']} · {payload['status']} · {payload['command_gates']} command / {payload['gate_count']} gates")
-        for item in results:
-            mark = "OK  " if item.get("ok") is True else "FAIL" if item.get("ok") is False else "SKIP"
-            label = item.get("id") or "(ungated)"
-            detail = item.get("command") or item.get("text")
+        print(
+            f"step {payload['step']} · {payload['status']} · "
+            f"{payload['command_gates']} command / {payload['gate_count']} gates · "
+            f"risk {payload['risk']} · profile {payload['pipeline_profile']}"
+        )
+        for gate in payload["gates"]:  # type: ignore[union-attr]
+            mark = "OK  " if gate.get("ok") is True else "FAIL" if gate.get("ok") is False else "----"
+            label = gate.get("id") or "(no id)"
+            detail = " && ".join(gate["commands"]) if gate["commands"] else gate["text"]
             print(f"{mark} {label} · {detail}")
-    return 1 if failed else 0
+            if gate.get("note"):
+                print(f"     note: {gate['note']}")
+    if payload["failed_commands"]:
+        return 1
+    if args.require_commands and not payload["command_gates"]:
+        return 3
+    return 0
 
 
 if __name__ == "__main__":

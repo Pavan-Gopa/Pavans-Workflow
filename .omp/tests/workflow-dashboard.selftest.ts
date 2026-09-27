@@ -8,6 +8,7 @@ import {
 	renderDashboard,
 	type DashboardData,
 	type MetricsReport,
+	type RuntimeSnapshot,
 } from "../lib/workflow-dashboard-core.ts";
 import { checkWorkflowConsistency } from "../lib/workflow-consistency.ts";
 import { linkRuntimeTodo, type RuntimeTodoSnapshot } from "../lib/workflow-runtime-todo.ts";
@@ -402,6 +403,7 @@ const waitingState = {
 	modelFailureStatus: "awaiting_human",
 	modelFailureRole: "coder",
 	modelFailureInstruction: "Choose Coder backup or change the model",
+	modelFailureBackupAgent: "-",
 };
 const waiting = deriveDashboardViewModel({ ...data, state: waitingState }, { ...runtime, worker: undefined, mainActivity: "Waiting for Human direction" });
 const waitingText = renderDashboard(waiting, 80, 28).lines.map(line => line.text).join("\n");
