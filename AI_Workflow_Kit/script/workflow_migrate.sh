@@ -6,22 +6,23 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-cd "$PROJECT_ROOT"
+main() {
+  local script_dir project_root command="${1:-check}" status=0
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  project_root="$(cd "$script_dir/../.." && pwd)"
+  case "$command" in
+    check|apply) ;;
+    *) echo "usage: workflow_migrate.sh check|apply" >&2; return 2 ;;
+  esac
+  # shellcheck source=workflow_ts.sh
+  source "$script_dir/workflow_ts.sh"
+  cd "$project_root"
+  wf_run_ts .omp/lib/workflow-migrate-cli.ts "$command" "$project_root" || status=$?
+  if (( status == 125 )); then
+    echo "FAIL the migration helper needs Node >= 22.6, Bun, or tsx on PATH" >&2
+    return 1
+  fi
+  return "$status"
+}
 
-command="${1:-check}"
-case "$command" in
-  check|apply) ;;
-  *)
-    echo "usage: workflow_migrate.sh check|apply" >&2
-    exit 2
-    ;;
-esac
-
-if ! command -v node >/dev/null 2>&1; then
-  echo "FAIL node is required for the migration helper" >&2
-  exit 1
-fi
-
-exec node --no-warnings --experimental-strip-types .omp/lib/workflow-migrate-cli.ts "$command" "$PROJECT_ROOT"
+main ${1+"$@"}; exit $?

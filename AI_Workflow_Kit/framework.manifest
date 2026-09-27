@@ -1,0 +1,54 @@
+# Pavan's Workflow — managed file manifest.
+#
+# The single list of what the framework installs into a project. install.sh,
+# workflow_update.sh, workflow_doctor.sh, and CI all read this file through
+# AI_Workflow_Kit/script/workflow_framework.py.
+#
+# kind    path
+#
+# tree    Framework-owned directory. Every file is installed/replaced. On update,
+#         files that a previous release installed (AI_Workflow_Kit/installed.manifest)
+#         and that no longer exist upstream are removed when unmodified. Files a
+#         project added itself are never touched.
+# file    Framework-owned file, replaced on update.
+# seed    Copied only when missing; the project may customise it afterwards.
+# state   Project-owned durable memory. Rendered from AI_Workflow_Kit/templates/
+#         only when missing; never overwritten, never shipped from a used checkout.
+# config  .omp/config.yml: merged and repaired by workflow_config_repair.py.
+
+tree    .omp/agents
+tree    .omp/commands
+tree    .omp/extensions
+tree    .omp/lib
+tree    .omp/tests
+file    .omp/AGENTS.md
+file    .omp/workflow-context-policy.json
+config  .omp/config.yml
+
+tree    grilling
+tree    ponytail
+tree    ponytail-review
+tree    ponytail-audit
+tree    ponytail-debt
+tree    ui-designer
+
+tree    AI_Workflow_Kit/script
+tree    AI_Workflow_Kit/vendor
+tree    AI_Workflow_Kit/templates
+tree    AI_Workflow_Kit/docs/AI
+file    AI_Workflow_Kit/VERSION
+file    AI_Workflow_Kit/framework.manifest
+
+file    PIPELINE.md
+file    ORCHESTRATOR_FIRST_PROMPT.md
+seed    .graphifyignore
+
+state   AI_Workflow_Kit/docs/PROJECT_CONTEXT.md
+state   AI_Workflow_Kit/docs/STEPS.md
+state   AI_Workflow_Kit/docs/DECISIONS.md
+state   AI_Workflow_Kit/docs/AI/STATE.yaml
+state   AI_Workflow_Kit/docs/AI/FEEDBACK.md
+state   AI_Workflow_Kit/docs/AI/REPORT.md
+state   AI_Workflow_Kit/docs/AI/BUG_REPORT.md
+state   AI_Workflow_Kit/docs/AI/SECURITY_REPORT.md
+state   AI_Workflow_Kit/docs/AI/COVERAGE.md
