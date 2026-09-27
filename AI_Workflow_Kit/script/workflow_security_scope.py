@@ -82,6 +82,10 @@ CONTROL_PLANE_FILES = {
     "PIPELINE.md", "ORCHESTRATOR_FIRST_PROMPT.md", ".graphifyignore",
 }
 IGNORED_PREFIXES = ("graphify-out/",)
+# Caches and Main's migration backups are never a worker's blast radius.
+GENERATED_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".turbo", ".DS_Store"}
+GENERATED_SUFFIXES = (".pyc", ".pyo")
+MIGRATION_BACKUP = re.compile(r"^AI_Workflow_Kit/.*\.bak-[^/]*$")
 # Main-owned durable memory (mirrors the `state` entries of framework.manifest).
 DEFAULT_STATE_FILES = {
     "AI_Workflow_Kit/docs/PROJECT_CONTEXT.md", "AI_Workflow_Kit/docs/STEPS.md", "AI_Workflow_Kit/docs/DECISIONS.md",
@@ -130,9 +134,17 @@ def matches_any(path: str, patterns: tuple[str, ...]) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) or fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
 
 
+def is_generated(path: str) -> bool:
+    return (
+        any(part in GENERATED_DIRS for part in path.split("/"))
+        or path.endswith(GENERATED_SUFFIXES)
+        or bool(MIGRATION_BACKUP.match(path))
+    )
+
+
 def classify(path: str, state: set[str]) -> list[str]:
     path = normalize(path)
-    if not path or path.startswith(IGNORED_PREFIXES) or path in state:
+    if not path or path.startswith(IGNORED_PREFIXES) or path in state or is_generated(path):
         return []
     categories: list[str] = []
     name = PurePosixPath(path).name
@@ -189,7 +201,18 @@ def resolve_base(root: Path, base: str, step: str | None) -> str | None:
 
 
 def git_paths(root: Path, base: str | None) -> list[str]:
-    commands = [("diff", "--name-only"), ("diff", "--cached", "--name-only"), ("ls-files", "--others", "--exclude-standard")]
+    """Changed paths relative to the project directory ('../x' outside it).
+
+    git prints repository-relative names; a workflow living in a monorepo
+    subfolder classifies them relative to its own folder.
+    """
+    prefix_lines = _git_lines(root, "rev-parse", "--show-prefix")
+    prefix = prefix_lines[0] if prefix_lines else ""
+    commands = [
+        ("diff", "--name-only"),
+        ("diff", "--cached", "--name-only"),
+        ("ls-files", "--others", "--exclude-standard", "--full-name", ":/"),
+    ]
     if base:
         commands.insert(0, ("diff", "--name-only", base))
     names: list[str] = []
@@ -197,6 +220,8 @@ def git_paths(root: Path, base: str | None) -> list[str]:
     for command in commands:
         for path in _git_lines(root, *command) or []:
             path = normalize(path)
+            if prefix:
+                path = path[len(prefix):] if path.startswith(prefix) else "../" + path
             if path not in seen:
                 seen.add(path)
                 names.append(path)

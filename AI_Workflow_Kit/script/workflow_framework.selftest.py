@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import importlib.util
 import shutil
 import subprocess
@@ -34,7 +33,8 @@ def new_repo(path: Path) -> Path:
 def copy_release(destination: Path, version: str | None = None) -> Path:
     """A minimal release tree built from this checkout's manifest (never its used state)."""
     entries = fw.parse_manifest(ROOT / fw.MANIFEST_REL)
-    for rel, src in fw.managed_files(ROOT, entries).items():
+    # Plain file view: in an installed project the framework files may not be committed yet.
+    for rel, src in fw.managed_files(ROOT, entries, use_git=False).items():
         target = destination / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
@@ -93,11 +93,18 @@ def main() -> int:
 
         # --- the used state of a source checkout never leaks into a new project ----------
         dirty_release = copy_release(tmp / "dirty-release")
+        git(dirty_release, "init", "-q")
+        git(dirty_release, "add", "-A")
+        git(dirty_release, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "release")
         (dirty_release / "AI_Workflow_Kit/docs/AI").mkdir(parents=True, exist_ok=True)
         (dirty_release / "AI_Workflow_Kit/docs/AI/FEEDBACK.md").write_text("SECRET PROJECT LOG\n", encoding="utf-8")
+        (dirty_release / "AI_Workflow_Kit/docs/AI/STATE.yaml.bak-20260101").write_text("SECRET BACKUP\n", encoding="utf-8")
+        (dirty_release / ".omp/agents/my-private-agent.md").write_text("SECRET AGENT\n", encoding="utf-8")
         clean_target = new_repo(tmp / "clean-target")
         fw.cmd_install(dirty_release, clean_target)
         assert "SECRET" not in (clean_target / "AI_Workflow_Kit/docs/AI/FEEDBACK.md").read_text()
+        assert not (clean_target / "AI_Workflow_Kit/docs/AI/STATE.yaml.bak-20260101").exists(), "untracked files never ship"
+        assert not (clean_target / ".omp/agents/my-private-agent.md").exists(), "untracked files never ship"
 
         # --- update: removals, additions, local edits, custom files ---------------------
         next_release = copy_release(tmp / "next", version="9.9.0")
@@ -180,10 +187,15 @@ def main() -> int:
         (legacy / "AI_Workflow_Kit/script/workflow_experiment.sh").write_text("#!/bin/sh\n", encoding="utf-8")
         (legacy / "VERSION").write_text("3.4.2\n", encoding="utf-8")
         (legacy / fw.VERSION_REL).unlink()
-        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        old_backup = legacy / ".git/pavans-workflow/update-backups" / stamp
+        # The legacy updater's backup may be days old by the time the user
+        # finishes the update: restore anyway (the byte-identical check is the
+        # safety), skipping backups that hold a framework README themselves.
+        old_backup = legacy / ".git/pavans-workflow/update-backups" / "20260101T000000Z"
         old_backup.mkdir(parents=True)
         (old_backup / "README.md").write_text("# Legacy product\n", encoding="utf-8")
+        framework_backup = legacy / ".git/pavans-workflow/update-backups" / "20260102T000000Z"
+        framework_backup.mkdir(parents=True)
+        (framework_backup / "README.md").write_text("# Pavan's Workflow\n\nold framework readme\n", encoding="utf-8")
         (legacy / "README.md").write_text("# Framework README\n", encoding="utf-8")
         (next_release / "README.md").write_text("# Framework README\n", encoding="utf-8")
         upgraded = fw.cmd_update(next_release, legacy, check=False)

@@ -17,6 +17,8 @@
 # file is replaced (safe when a checkout updates itself).
 
 set -euo pipefail
+# Helpers and selftests must not leave __pycache__ in the project.
+export PYTHONDONTWRITEBYTECODE=1
 
 WF_TEMP_DIR=""
 cleanup() { if [[ -n "$WF_TEMP_DIR" ]]; then rm -rf "$WF_TEMP_DIR"; fi; }
@@ -121,6 +123,10 @@ main() {
     echo "Fetching Pavan's Workflow ($resolved) from $upstream_url"
     git clone -q --depth 1 --branch "$resolved" "$upstream_url" "$WF_TEMP_DIR/pw"
     source_root="$WF_TEMP_DIR/pw"
+    if [[ ! -f "$source_root/AI_Workflow_Kit/framework.manifest" ]]; then
+      echo "ERROR: $resolved predates 3.5 (no AI_Workflow_Kit/framework.manifest); use that release's own instructions." >&2
+      return 1
+    fi
   fi
 
   if [[ "$mode" == "update" ]]; then
@@ -154,6 +160,8 @@ main() {
 Pavan's Workflow v$version is installed.
 
 Next:
+  0. Commit the installed workflow files, so the first step's blast-radius
+     check starts from a clean tree.
   1. Fill AI_Workflow_Kit/docs/PROJECT_CONTEXT.md (or let Main onboard you).
   2. Launch: bash AI_Workflow_Kit/script/omp_workflow.sh
   3. Alt+M -> Roles -> DEFAULT: persistent Main model + effort.

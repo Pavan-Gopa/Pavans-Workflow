@@ -75,9 +75,10 @@ The update:
 - never touches files you added under `.omp/` or elsewhere;
 - keeps project state, model selections, custom `.graphifyignore` rules, and the
   Graphify index; runs the state migration and the doctor;
-- backs up every touched file to
+- backs up every framework file it touches to
   `<git-common-dir>/pavans-workflow/update-backups/<timestamp>/` and restores
-  them automatically if any step fails.
+  them automatically if the framework step fails (the state migration keeps its
+  own `.bak-*` copies; a failing doctor is reported, not rolled back).
 
 Restart OMP afterwards.
 
@@ -89,9 +90,11 @@ payloads and bridge scripts, removes the legacy config marker, and restores a
 before (from that updater's backup). Root `VERSION`/`CHANGELOG.md` files left by
 older releases are pointed out; delete them if they are not your product's.
 
-If you ran the old in-project updater (`bash AI_Workflow_Kit/script/workflow_update.sh apply`
-from a 3.4 install) and it stopped after copying files, run the command above
-once more — it completes the migration.
+The old in-project updater (`bash AI_Workflow_Kit/script/workflow_update.sh apply`
+from a 3.4 install) also works: while copying it replaces itself, lands on a
+hand-over line in the new script, and finishes with the 3.5 manager. If an
+older copy ever stops early, run the command above once more; OMP also warns
+at startup when `AI_Workflow_Kit/installed.manifest` is missing.
 
 ## Configure models
 

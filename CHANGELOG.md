@@ -23,19 +23,27 @@ transactional.
   update restores root files a legacy updater just overwrote (from its backup)
   and points out leftovers.
 - **Worker guard.** A new `workflow-guard` extension snapshots the repository
-  before every worker spawn and verifies it when the worker finishes
+  before every worker spawn (keyed by OMP's spawn key, and on `started` for
+  workers woken again via `agent://`) and verifies it when the worker finishes
   (`workflow_guard.py`): read-only roles may change nothing, Coder/Designer only
   `target_files`, Tester only test paths or `target_files`; no worker may commit
-  or edit workflow files. Violations are injected into Main's context.
+  or edit workflow files. Violations are injected into Main's context and stay
+  open until Main records the Human's decision (`workflow_guard.py resolve`).
+  Paths are judged relative to the project folder (monorepo subfolders work);
+  test caches are ignored; Main's own edits are exempted in every OMP edit mode.
 - **Backups need recorded Human authorization — enforced.** `-backup` agents are
   blocked at spawn unless `STATE.yaml` records `backup_authorized` for that role.
 - **Deterministic close decision.** `workflow_close.py check` combines Objective
-  Gates, the guard verdict, card risk, and blast radius into `close_quick` /
-  `review` / `reopen_coder` / `reject_worker_result`.
+  Gates (manual ones must already be checked for `quick`), every guard verdict
+  for the step (an open violation is never masked by a later clean run), card
+  risk, and blast radius into `close_quick` / `review` / `reopen_coder` /
+  `reject_worker_result`.
 - **Objective Gates.** Backticked names (`README.md`, `maxRetries`) are no
-  longer executed; `` `$ cmd` `` is the explicit marker; every command on a
-  line runs; fenced examples and template cards are ignored; timeouts kill the
-  whole process group; a card without command gates cannot close as `quick`.
+  longer executed; `` `$ cmd` `` is the explicit marker; recognised runners
+  include `cd dir && …` / `env …` prefixes and executables given by path; every
+  command on a line runs; fenced examples and template cards are ignored;
+  timeouts kill the whole process group; a card without command gates cannot
+  close as `quick`.
 - **Blast radius.** Token-based matching (`src/login.ts`, `rbac.go`,
   `stripeWebhook.ts` now hit; `authors.ts`, `urls.ts`, `lessons/` no longer
   do). New categories: secrets files, infra (CI, Docker, IaC), dependency
@@ -58,8 +66,15 @@ transactional.
   (fallback `main`) and accept `--ref`. `install.sh --update` no longer leaves a
   temporary clone behind or clones twice. Installing into a repository that
   already has its own `.omp/config.yml` merges the workflow roles into it.
-- A compatibility shim lets pre-3.5 project-local updaters finish against this
-  release; if they stop early, running the new updater once completes it.
+- Pre-3.5 in-project updaters (3.0–3.4) overwrite themselves while copying;
+  the new `workflow_update.sh` carries a whitespace landing pad at the byte
+  offsets where those old processes resume, so they hand over to the 3.5
+  manager and finish the migration (checked in CI for 3.4.1 and 3.4.2). OMP
+  warns at startup if `installed.manifest` is missing.
+- Installing from a git checkout ships tracked files only, so untracked local
+  files (private agents, backups) never reach another project.
+- Only the framework step is transactional: migrate and doctor failures are
+  reported, not rolled back (documented).
 
 ### Checks and tests
 
@@ -71,6 +86,9 @@ transactional.
 - The doctor warns when the Reviewer shares a model with the Coder primary or
   backup, or when one provider backs up most roles (`workflow_model_diversity.py`).
 - The doctor warns on an OMP major version other than the tested one.
+- Template default: `workflow_coder_backup` is now `nvidia/z-ai/glm-5.2:high`
+  (it was the Reviewer's model, so a Coder failover removed review
+  independence). Existing projects keep their own choice; the doctor warns.
 
 ### Changed
 

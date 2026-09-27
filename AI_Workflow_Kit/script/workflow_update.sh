@@ -16,8 +16,150 @@
 #
 # The script body lives in main() and the downloaded release performs the
 # update, so replacing this very file during apply is safe.
+#
+# Legacy landing pad: a pre-3.5 copy of this script overwrites itself while it
+# copies framework files, and bash then resumes reading THIS file at the byte
+# where the old loop ended (offsets 3.9-8.4 KB across 3.0-3.4). The block of
+# whitespace-only lines below spans those offsets, so the old process lands on
+# the handover line and finishes the update with the 3.5+ manager instead of
+# stopping silently. Keep the pad lines whitespace-only (ci/repo_checks.py).
+
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+                                                               
+# legacy landing: runs only inside a pre-3.5 updater process (TEMP_CLONE/PROJECT_ROOT are its variables)
+if [[ -n "${TEMP_CLONE:-}" && -n "${PROJECT_ROOT:-}" && "$(basename "${TEMP_CLONE:-x}")" == pavans-workflow-update.* \
+      && -f "${TEMP_CLONE:-/nonexistent}/AI_Workflow_Kit/framework.manifest" ]]; then
+  echo "Completing the legacy update with the 3.5+ manager"
+  WF_LEGACY_ARGS=(apply "$PROJECT_ROOT" --source "$TEMP_CLONE")
+  if [[ "${REFRESH_GRAPHIFY:-0}" == "1" ]]; then WF_LEGACY_ARGS+=(--refresh-graphify); fi
+  WF_LEGACY_UPDATER_RAN=1 bash "$TEMP_CLONE/AI_Workflow_Kit/script/workflow_update.sh" "${WF_LEGACY_ARGS[@]}"
+  exit $?
+fi
 
 set -euo pipefail
+# Helpers and selftests must not leave __pycache__ in the project.
+export PYTHONDONTWRITEBYTECODE=1
 
 WF_CLEANUP_DIR=""
 cleanup() { if [[ -n "$WF_CLEANUP_DIR" ]]; then rm -rf "$WF_CLEANUP_DIR"; fi; }
@@ -62,7 +204,7 @@ PYTIMEOUT
 }
 
 main() {
-  local action="apply" project="$PWD" source="" ref="${WF_UPSTREAM_REF:-}" cleanup_source=0
+  local action="apply" project="$PWD" source="" ref="${WF_UPSTREAM_REF:-}"
   local refresh_graphify="${WF_UPDATE_REFRESH_GRAPHIFY:-0}"
   local upstream_url="${WF_UPSTREAM_URL:-https://github.com/Pavan-Gopa/Pavans-Workflow.git}"
   while (( $# )); do
@@ -73,7 +215,6 @@ main() {
       --ref=*) ref="${1#--ref=}" ;;
       --refresh-graphify) refresh_graphify=1 ;;
       --skip-graphify) refresh_graphify=0 ;;
-      --cleanup-source) cleanup_source=1 ;;
       -h|--help) sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; return 0 ;;
       -*) echo "ERROR: unknown option: $1" >&2; return 2 ;;
       *)
@@ -100,13 +241,26 @@ main() {
     WF_CLEANUP_DIR="$temp"
     echo "Fetching Pavan's Workflow ($resolved) from $upstream_url"
     git clone -q --depth 1 --branch "$resolved" "$upstream_url" "$temp/pw"
-    local handoff=("$action" "$project" --source "$temp/pw" --cleanup-source)
+    if [[ ! -f "$temp/pw/AI_Workflow_Kit/framework.manifest" ]]; then
+      echo "ERROR: $resolved predates 3.5 (no AI_Workflow_Kit/framework.manifest); this updater cannot install it." >&2
+      return 1
+    fi
+    local handoff=("$action" "$project" --source "$temp/pw")
     if [[ "$refresh_graphify" == "1" ]]; then handoff+=(--refresh-graphify); fi
     WF_CLEANUP_DIR=""
-    exec bash "$temp/pw/AI_Workflow_Kit/script/workflow_update.sh" "${handoff[@]}"
+    # The downloaded copy removes its own temp dir (validated below).
+    WF_UPDATE_OWNED_TEMP="$temp" exec bash "$temp/pw/AI_Workflow_Kit/script/workflow_update.sh" "${handoff[@]}"
   fi
   source="$(cd "$source" && pwd)"
-  if (( cleanup_source )); then WF_CLEANUP_DIR="$(dirname "$source")"; fi
+  local owned="${WF_UPDATE_OWNED_TEMP:-}"
+  unset WF_UPDATE_OWNED_TEMP
+  if [[ -n "$owned" && "$source" == "$owned/pw" && "$(basename "$owned")" == pavans-workflow-update.* ]]; then
+    WF_CLEANUP_DIR="$owned"
+  fi
+  if [[ ! -f "$source/AI_Workflow_Kit/framework.manifest" ]]; then
+    echo "ERROR: $source is not a 3.5+ release (no AI_Workflow_Kit/framework.manifest)." >&2
+    return 1
+  fi
 
   local framework="$source/AI_Workflow_Kit/script/workflow_framework.py"
   local commit
@@ -118,7 +272,9 @@ main() {
   fi
 
   echo "Source: $source ($commit)"
-  python3 "$framework" update --source "$source" --target "$project"
+  local legacy_flag=()
+  if [[ "${WF_LEGACY_UPDATER_RAN:-0}" == "1" ]]; then legacy_flag=(--legacy-updater-ran); fi
+  python3 "$framework" update --source "$source" --target "$project" ${legacy_flag[@]+"${legacy_flag[@]}"}
   chmod +x "$project"/AI_Workflow_Kit/script/*.sh 2>/dev/null || true
 
   local status=0

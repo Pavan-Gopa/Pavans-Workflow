@@ -32,25 +32,45 @@ assert.equal(backupAuthorization(authorizedByAgent, "workflow-coder-backup").all
 assert.equal(backupAuthorization(authorizedByAgent, "workflow-reviewer-backup").allowed, false, "authorization is per role");
 const authorizedByRole = "omp:\n  model_failure:\n    status: backup_authorized\n    role: tester\n    backup_agent: null\n";
 assert.equal(backupAuthorization(authorizedByRole, "workflow-tester-backup").allowed, true);
+const designAdvisorRole = "omp:\n  model_failure:\n    status: backup_authorized\n    role: design_advisor\n";
+assert.equal(backupAuthorization(designAdvisorRole, "workflow-design-advisor-backup").allowed, true, "role spelling is normalized");
 assert.equal(backupAuthorization("", "workflow-security-backup").allowed, false, "missing state never authorizes");
 
-// Tracker: FIFO per agent, Main edits remembered only while a worker runs.
+// Tracker: spawnKey binding, aborted spawns, follow-up turns, Main edits.
 const tracker = new GuardTracker();
 tracker.recordMainEdit("ignored.md");
 assert.deepEqual(tracker.takeMainEdits(), [], "no worker running -> nothing recorded");
-tracker.open("workflow-coder", "s1");
-tracker.open("workflow-coder", "s2");
+tracker.open("workflow-coder", "snap-aborted", "job-0", 1);
+tracker.open("workflow-coder", "snap-1", "job-1", 2);
+assert.equal(tracker.bind("job-1", "workflow-coder"), true, "bound by spawnKey (= async job id)");
 tracker.recordMainEdit("AI_Workflow_Kit/docs/AI/STATE.yaml");
-assert.equal(tracker.active(), true);
-assert.equal(tracker.close("workflow-coder"), "s1");
-assert.deepEqual(tracker.takeMainEdits(), ["AI_Workflow_Kit/docs/AI/STATE.yaml"], "still running: edits kept");
-assert.equal(tracker.close("workflow-coder"), "s2");
-assert.equal(tracker.close("workflow-coder"), undefined);
+assert.equal(tracker.close("job-1", "workflow-coder"), "snap-1");
+assert.equal(tracker.close("job-0", "workflow-coder"), undefined, "the older spawn never started and was dropped on bind");
 assert.deepEqual(tracker.takeMainEdits(), ["AI_Workflow_Kit/docs/AI/STATE.yaml"]);
 assert.deepEqual(tracker.takeMainEdits(), [], "cleared once no worker remains");
 
+// A spawn that never started is dropped when the next run of that agent binds.
+tracker.open("workflow-reviewer", "snap-never-started", undefined, 10);
+tracker.open("workflow-reviewer", "snap-real", undefined, 11);
+assert.equal(tracker.bind("run-9", "workflow-reviewer"), true);
+assert.equal(tracker.close("run-9", "workflow-reviewer"), "snap-real");
+assert.equal(tracker.close(undefined, "workflow-reviewer"), undefined, "stale snapshot was discarded");
+
+// Follow-up turn: started without a spawn -> caller must snapshot.
+assert.equal(tracker.bind("run-parked", "workflow-tester"), false);
+
 assert.deepEqual(editedPaths("write", { path: "a.ts", content: "x" }), ["a.ts"]);
-assert.deepEqual(editedPaths("edit", { path: "b.ts", edits: [{ path: "c.ts" }, {}] }), ["b.ts", "c.ts"]);
+assert.deepEqual(editedPaths("edit", { path: "b.ts", edits: [{ path: "c.ts" }, { rename: "d.ts" }, {}] }), ["b.ts", "c.ts", "d.ts"]);
+assert.deepEqual(
+	editedPaths("edit", { input: "*** Begin Patch\n[src/app.ts#1a2B]\nPUT 3.=3:\n+x\n[\"docs/my file.md\"#ffff]\nMV docs/renamed.md\n+[not/a/header]\n*** End Patch\n" }),
+	["src/app.ts", "docs/my file.md", "docs/renamed.md"],
+	"hashline mode (OMP default)",
+);
+assert.deepEqual(
+	editedPaths("edit", { input: "*** Begin Patch\n*** Update File: src/a.py\n*** Move to: src/b.py\n*** Add File: new.txt\n*** End Patch\n" }),
+	["src/a.py", "src/b.py", "new.txt"],
+	"apply_patch mode",
+);
 assert.deepEqual(editedPaths("bash", { command: "echo > d" }), [], "bash writes cannot be attributed");
 
 // Messages for Main.

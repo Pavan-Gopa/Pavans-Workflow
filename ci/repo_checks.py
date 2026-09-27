@@ -29,6 +29,9 @@ NOT_SHIPPED = {
 }
 CONTRACT_DOCS = ("AI_Workflow_Kit/docs/", ".omp/AGENTS.md", ".omp/agents/", ".omp/commands/", "PIPELINE.md",
                  "ORCHESTRATOR_FIRST_PROMPT.md", "AI_Workflow_Kit/templates/")
+# Byte offsets where pre-3.5 workflow_update.sh copies (3.0.0-3.4.2) resume reading
+# after their copy loop overwrote them (computed from git history).
+LEGACY_RESUME_OFFSETS = (3967, 3976, 3986, 4076, 6913, 7413, 7561, 7922, 8406)
 # Files that must name removed paths in order to clean them up.
 LEGACY_AWARE = {"AI_Workflow_Kit/script/workflow_framework.py", "AI_Workflow_Kit/script/workflow_framework.selftest.py"}
 REMOVED_REFERENCES = ("workflow_experiment.sh", "workflow_lean.sh", "experiments/lean-pipeline",
@@ -98,6 +101,17 @@ def main() -> int:
         for removed in REMOVED_REFERENCES:
             if removed in text and path not in LEGACY_AWARE:
                 errors.append(f"{path}: references removed {removed}")
+
+    # 6. legacy landing pad in workflow_update.sh (see its header): pre-3.5
+    #    updaters resume reading at these byte offsets after overwriting themselves.
+    updater = (ROOT / "AI_Workflow_Kit/script/workflow_update.sh").read_bytes()
+    landing = updater.find(b"# legacy landing")
+    for offset in LEGACY_RESUME_OFFSETS:
+        if landing < 0 or offset >= landing or updater[offset:offset + 1] not in (b" ", b"\n"):
+            errors.append(f"workflow_update.sh: byte {offset} must lie in the whitespace landing pad before '# legacy landing'")
+    pad = updater[min(LEGACY_RESUME_OFFSETS):landing] if landing > 0 else b""
+    if pad.strip(b" \n"):
+        errors.append("workflow_update.sh: the landing pad must contain only spaces and newlines")
 
     if errors:
         print("\n".join(f"FAIL {error}" for error in errors), file=sys.stderr)

@@ -56,5 +56,5 @@ bash AI_Workflow_Kit/script/workflow_update.sh apply   # newest vX.Y.Z release
 
 Framework files come from `AI_Workflow_Kit/framework.manifest`; project state,
 model selections, custom `.omp` files, and the Graphify index are preserved.
-Every apply is backed up and rolled back automatically on failure. Restart OMP
-afterwards.
+Touched framework files are backed up and the framework step rolls back on
+failure. Restart OMP afterwards.

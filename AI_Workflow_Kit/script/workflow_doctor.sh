@@ -6,6 +6,8 @@
 # FAIL = the workflow cannot run correctly; WARN = degraded or advisory.
 
 set -euo pipefail
+# Helpers and selftests must not leave __pycache__ in the project.
+export PYTHONDONTWRITEBYTECODE=1
 
 main() {
   local script_dir project_root

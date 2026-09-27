@@ -125,6 +125,45 @@ def main() -> int:
         no_open = subprocess.run([sys.executable, str(SCRIPT), "--project", str(root), "verify"], capture_output=True, text=True)
         assert no_open.returncode == 2 and "no open guard snapshot" in no_open.stderr
 
+        # Caches from running tests are not changes; symlinks (even to
+        # directories) are hashed instead of aborting the guard.
+        def caches_and_links() -> None:
+            write(root, "src/__pycache__/app.cpython-311.pyc", "x")
+            write(root, ".pytest_cache/v/cache/lastfailed", "{}")
+            (root / "linkdir").symlink_to(Path(raw))
+        code, verdict = round_trip(root, "reviewer", caches_and_links)
+        assert code == 1 and [item["path"] for item in verdict["violations"]] == ["linkdir"], verdict
+        (root / "linkdir").unlink()
+
+        # Resolving records the Human decision next to the verdict.
+        _, resolved = guard(root, "resolve", "--id", verdict["id"], "--note", "Human: symlink removed")
+        assert resolved["note"] == "Human: symlink removed"
+        _, history = guard(root, "status", "--all", "--step", "S5")
+        assert any(item.get("resolution") for item in history), history
+
+    # A workflow living in a monorepo subfolder: paths are judged relative to it.
+    with tempfile.TemporaryDirectory() as raw:
+        mono = Path(raw) / "mono"
+        mono.mkdir()
+        git(mono, "init", "-q")
+        git(mono, "config", "user.email", "t@example.com")
+        git(mono, "config", "user.name", "t")
+        app = mono / "apps" / "web"
+        write(app, "AI_Workflow_Kit/docs/AI/STATE.yaml", "current_step: M1\ntarget_files:\n  - src/\n")
+        write(app, ".omp/AGENTS.md", "contract\n")
+        write(app, "src/page.ts", "export {}\n")
+        write(mono, "services/api/main.go", "package main\n")
+        git(mono, "add", "-A")
+        git(mono, "commit", "-qm", "base")
+        code, verdict = round_trip(app, "coder", lambda: write(app, "src/page.ts", "export const x = 1\n"))
+        assert code == 0 and verdict["verdict"] == "clean" and verdict["changed"] == ["src/page.ts"], verdict
+        assert verdict["step"] == "M1" and verdict["targets"] == ["src/"]
+        code, verdict = round_trip(app, "coder", lambda: write(app, ".omp/AGENTS.md", "weakened\n"))
+        assert code == 1 and verdict["violations"][0]["path"] == ".omp/AGENTS.md", verdict
+        git(mono, "checkout", "--", ".")
+        code, verdict = round_trip(app, "coder", lambda: write(mono, "services/api/main.go", "package api\n"))
+        assert code == 1 and verdict["violations"][0]["path"] == "../services/api/main.go", verdict
+
     print("workflow_guard.selftest: PASS")
     return 0
 

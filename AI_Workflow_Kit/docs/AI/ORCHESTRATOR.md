@@ -62,7 +62,8 @@ A `violation` or `unscoped` verdict arrives in Main's context as a
 `WORKFLOW GUARD` message — act on it before routing (R7). Manual equivalents:
 
 ```bash
-python3 AI_Workflow_Kit/script/workflow_guard.py status --step <step>
+python3 AI_Workflow_Kit/script/workflow_guard.py status --step <step> --all
+python3 AI_Workflow_Kit/script/workflow_guard.py resolve --id <id> --note "Human: reverted src/x.ts"
 python3 AI_Workflow_Kit/script/workflow_guard.py snapshot --role coder   # before a manual run
 python3 AI_Workflow_Kit/script/workflow_guard.py verify                  # after it
 ```
@@ -78,7 +79,7 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 | `close_quick` | close the step (R13): check items, record evidence path, checkpoint |
 | `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
 | `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
-| `reject_worker_result` | R7 |
+| `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
 
 If `offer_scoped_security` is true, set `security.next_run: offer_scoped` and ask
 the Human once.

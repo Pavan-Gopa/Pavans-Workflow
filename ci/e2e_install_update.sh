@@ -3,7 +3,7 @@
 # CI only (not installed into projects). Runs the real shell entry points.
 #
 #   bash ci/e2e_install_update.sh            # uses this checkout as release v3.5.x
-#   WF_E2E_LEGACY_REF=<sha|tag> bash ci/...  # legacy release to migrate from (default 7171011 = v3.4.2)
+#   WF_E2E_LEGACY_REFS="<sha> ..."          # legacy releases to migrate from (default: 3.4.2 and 3.4.1)
 #   WF_E2E_BASH=/bin/bash                    # interpreter for every nested bash (macOS 3.2 check)
 #   WF_E2E_KEEP=1                            # keep the work directory for debugging
 
@@ -12,7 +12,6 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/wf-e2e.XXXXXX")"
 if [[ "${WF_E2E_KEEP:-0}" == "1" ]]; then echo "work dir: $WORK"; else trap 'rm -rf "$WORK"' EXIT; fi
-LEGACY_REF="${WF_E2E_LEGACY_REF:-7171011}"
 FRAMEWORK_URL="https://github.com/Pavan-Gopa/Pavans-Workflow.git"
 
 pass() { printf 'PASS %s\n' "$*"; }
@@ -154,52 +153,61 @@ grep -q 'Workflow doctor: ready' "$WORK/update.log" || die "doctor did not pass 
 ls "$PRODUCT/.git/pavans-workflow/update-backups/"* > /dev/null 2>&1 || die "update backup missing"
 pass "update from newest tag: removes deleted files, keeps custom files and state, backs up"
 
-# --- 3. migration from a legacy (pre-3.5) install -----------------------------------------
-LEGACY_SRC="$WORK/legacy-src"
-if git -C "$REPO" cat-file -e "$LEGACY_REF^{commit}" 2>/dev/null \
-   && git clone -q --no-checkout "$REPO" "$LEGACY_SRC" && git -C "$LEGACY_SRC" checkout -q "$LEGACY_REF"; then
-  :
-elif rm -rf "$LEGACY_SRC" && git clone -q "$FRAMEWORK_URL" "$LEGACY_SRC" 2>/dev/null && git -C "$LEGACY_SRC" checkout -q "$LEGACY_REF" 2>/dev/null; then
-  :
-else
-  printf 'SKIP legacy migration: %s unavailable\n' "$LEGACY_REF"
-  LEGACY_SRC=""
-fi
-if [[ -n "$LEGACY_SRC" ]]; then
-  LEGACY="$WORK/legacy-product"
-  new_product "$LEGACY"
-  rm "$LEGACY/VERSION" "$LEGACY/CHANGELOG.md"  # the 3.4 installer refused projects that had them
-  git -C "$LEGACY" add -A && git -C "$LEGACY" commit -qm "drop colliding files"
-  fixture bash "$LEGACY_SRC/install.sh" "$LEGACY" > "$WORK/legacy-install.log" 2>&1 || true  # 3.4 doctor wants INSTALL.md
-  [[ -d "$LEGACY/AI_Workflow_Kit/experiments" ]] || { tail -20 "$WORK/legacy-install.log"; die "legacy fixture did not install"; }
-  git -C "$LEGACY" add -A && git -C "$LEGACY" commit -qm "workflow 3.4.2"
-  bash "$NEXT/install.sh" --update "$LEGACY" > "$WORK/legacy-update.log" 2>&1 || { cat "$WORK/legacy-update.log"; die "legacy update failed"; }
-  [[ ! -e "$LEGACY/AI_Workflow_Kit/experiments" ]] || die "obsolete experiments/ survived"
-  [[ ! -e "$LEGACY/AI_Workflow_Kit/script/workflow_experiment.sh" ]] || die "obsolete bridge survived"
-  grep -q 'PAVANS_WORKFLOW_EXPERIMENT' "$LEGACY/.omp/config.yml" && die "legacy config marker survived"
+# --- 3. migration from legacy (pre-3.5) installs ------------------------------------------
+legacy_source() {
+  local ref="$1" dest="$2"
+  if git -C "$REPO" cat-file -e "$ref^{commit}" 2>/dev/null \
+     && git clone -q --no-checkout "$REPO" "$dest" && git -C "$dest" checkout -q "$ref"; then
+    return 0
+  fi
+  rm -rf "$dest"
+  git clone -q "$FRAMEWORK_URL" "$dest" 2>/dev/null && git -C "$dest" checkout -q "$ref" 2>/dev/null
+}
+
+legacy_product() {
+  local dir="$1" src="$2"
+  new_product "$dir"
+  rm "$dir/VERSION" "$dir/CHANGELOG.md"  # the 3.4 installer refused projects that had them
+  git -C "$dir" add -A && git -C "$dir" commit -qm "drop colliding files"
+  fixture bash "$src/install.sh" "$dir" > "$WORK/legacy-install-$(basename "$dir").log" 2>&1 || true  # 3.4 doctor wants INSTALL.md
+  [[ -d "$dir/AI_Workflow_Kit/experiments" ]] || { tail -20 "$WORK/legacy-install-$(basename "$dir").log"; die "legacy fixture did not install"; }
+  git -C "$dir" add -A && git -C "$dir" commit -qm "workflow legacy install"
+}
+
+for LEGACY_REF in ${WF_E2E_LEGACY_REFS:-7171011 389f0bf}; do
+  LEGACY_SRC="$WORK/legacy-src-$LEGACY_REF"
+  if ! legacy_source "$LEGACY_REF" "$LEGACY_SRC"; then
+    printf 'SKIP legacy migration from %s: unavailable\n' "$LEGACY_REF"
+    continue
+  fi
+  label="$(tr -d '[:space:]' < "$LEGACY_SRC/VERSION")"
+
+  # (a) documented path: new installer --update
+  LEGACY="$WORK/legacy-$LEGACY_REF-curl"
+  legacy_product "$LEGACY" "$LEGACY_SRC"
+  bash "$NEXT/install.sh" --update "$LEGACY" > "$WORK/legacy-update.log" 2>&1 || { cat "$WORK/legacy-update.log"; die "$label update failed"; }
+  [[ ! -e "$LEGACY/AI_Workflow_Kit/experiments" ]] || die "obsolete experiments/ survived ($label)"
+  [[ ! -e "$LEGACY/AI_Workflow_Kit/script/workflow_experiment.sh" ]] || die "obsolete bridge survived ($label)"
+  grep -q 'PAVANS_WORKFLOW_EXPERIMENT' "$LEGACY/.omp/config.yml" && die "legacy config marker survived ($label)"
   expect_file_text "$LEGACY/README.md" "# Product"
   expect_file_text "$LEGACY/AI_Workflow_Kit/VERSION" "3.5.1"
-  grep -q 'no longer managed' "$WORK/legacy-update.log" || die "legacy root VERSION/CHANGELOG notice missing"
-  grep -q 'Workflow doctor: ready' "$WORK/legacy-update.log" || die "doctor did not pass after legacy migration"
-  pass "3.4.2 -> 3.5 migration removes obsolete files, repairs config, keeps README"
+  grep -q 'no longer managed' "$WORK/legacy-update.log" || die "legacy root VERSION/CHANGELOG notice missing ($label)"
+  grep -q 'Workflow doctor: ready' "$WORK/legacy-update.log" || die "doctor did not pass after $label migration"
+  pass "$label -> 3.5 via install.sh --update: obsolete files removed, config repaired, README kept"
 
-  # The 3.4 project-local updater (old code) against the new release, then self-heal.
-  LEGACY2="$WORK/legacy-product-2"
-  new_product "$LEGACY2"
-  rm "$LEGACY2/VERSION" "$LEGACY2/CHANGELOG.md"
-  git -C "$LEGACY2" add -A && git -C "$LEGACY2" commit -qm "drop colliding files"
-  fixture bash "$LEGACY_SRC/install.sh" "$LEGACY2" > /dev/null 2>&1 || true
-  git -C "$LEGACY2" add -A && git -C "$LEGACY2" commit -qm "workflow 3.4.2"
+  # (b) the legacy in-project updater itself (old code overwrites itself mid-run)
+  LEGACY2="$WORK/legacy-$LEGACY_REF-inproject"
+  legacy_product "$LEGACY2" "$LEGACY_SRC"
   (cd "$LEGACY2" && WF_UPSTREAM_URL="file://$NEXT" WF_UPSTREAM_BRANCH=v3.5.1 bash AI_Workflow_Kit/script/workflow_update.sh apply) \
-    > "$WORK/legacy-old-updater.log" 2>&1 || true
-  if [[ ! -f "$LEGACY2/AI_Workflow_Kit/installed.manifest" ]]; then
-    WF_UPSTREAM_URL="file://$NEXT" bash "$LEGACY2/AI_Workflow_Kit/script/workflow_update.sh" apply "$LEGACY2" \
-      > "$WORK/legacy-heal.log" 2>&1 || { cat "$WORK/legacy-heal.log"; die "self-heal update failed"; }
-  fi
+    > "$WORK/legacy-old-updater.log" 2>&1 || { cat "$WORK/legacy-old-updater.log"; die "$label in-project updater failed"; }
+  grep -q 'Completing the legacy update with the 3.5+ manager' "$WORK/legacy-old-updater.log" \
+    || { tail -20 "$WORK/legacy-old-updater.log"; die "$label updater did not reach the landing pad"; }
+  [[ -f "$LEGACY2/AI_Workflow_Kit/installed.manifest" ]] || die "$label in-project update left no install record"
   expect_file_text "$LEGACY2/README.md" "# Product"
-  bash "$LEGACY2/AI_Workflow_Kit/script/workflow_doctor.sh" > "$WORK/legacy2-doctor.log" 2>&1 || { cat "$WORK/legacy2-doctor.log"; die "doctor after legacy updater"; }
-  pass "3.4 project-local updater + new release converges to a healthy install with the product README"
-fi
+  [[ ! -e "$LEGACY2/INSTALL.md" ]] || die "$label: framework INSTALL.md the legacy updater created was left behind"
+  grep -q 'Workflow doctor: ready' "$WORK/legacy-old-updater.log" || die "doctor did not pass after the $label in-project update"
+  pass "$label in-project updater lands on the 3.5 manager and completes (README restored)"
+done
 
 # --- 4. template clone (in place) ---------------------------------------------------------
 CLONE="$WORK/template-clone"

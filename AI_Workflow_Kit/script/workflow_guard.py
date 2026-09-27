@@ -3,7 +3,8 @@
 
   workflow_guard.py snapshot --role ROLE [--agent NAME] [--step S] [--target PATH]... [--id ID]
   workflow_guard.py verify   [--id ID] [--exempt PATH]...
-  workflow_guard.py status   [--step S]
+  workflow_guard.py status   [--step S] [--all]
+  workflow_guard.py resolve  --id ID --note "Human decision"
   workflow_guard.py policy   --role ROLE
 
 The workflow-guard OMP extension calls `snapshot` before every workflow worker
@@ -19,6 +20,11 @@ Policy (enforced on the real repository state, not on the worker's report):
   * unknown agents are treated as read-only.
 
 Verdicts: clean | violation | unscoped (coder/designer ran without target_files).
+A violation stays open until Main records the Human's decision with `resolve`;
+workflow_close.py refuses to close a step while any verdict for it is open.
+Paths are judged relative to the project directory (the folder holding
+AI_Workflow_Kit/), so a workflow inside a monorepo subfolder works too. Caches
+(__pycache__, .pytest_cache, *.pyc, ...) and files git ignores are not changes.
 Records live under <git-common-dir>/pavans-workflow/guard/.
 Exit codes: verify → 0 clean/unscoped, 1 violation, 2 usage/git error.
 """
@@ -51,6 +57,9 @@ TEST_FILE = re.compile(
 )
 DELETED = "<deleted>"
 STATE_REL = "AI_Workflow_Kit/docs/AI/STATE.yaml"
+GENERATED_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".turbo", ".DS_Store"}
+GENERATED_SUFFIXES = (".pyc", ".pyo")
+MIGRATION_BACKUP = re.compile(r"^AI_Workflow_Kit/.*\.bak-[^/]*$")
 
 
 class GuardError(RuntimeError):
@@ -84,6 +93,18 @@ def clean_path(value: str) -> str:
     while text.startswith("./"):
         text = text[2:]
     return text
+
+
+def is_generated(path: str) -> bool:
+    parts = path.split("/")
+    return any(part in GENERATED_DIRS for part in parts) or path.endswith(GENERATED_SUFFIXES) or bool(MIGRATION_BACKUP.match(path))
+
+
+def to_project(path: str, prefix: str) -> str:
+    """Root-relative git path -> project-relative path ('../x' when outside the project)."""
+    if not prefix:
+        return path
+    return path[len(prefix):] if path.startswith(prefix) else "../" + path
 
 
 def matches_target(path: str, targets: list[str]) -> bool:
@@ -188,16 +209,47 @@ def dirty_paths(root: Path) -> list[str]:
     return sorted(set(paths))
 
 
+def _hash_text(root: Path, text: str) -> str:
+    return git(root, "hash-object", "--stdin", input_text=text).strip()
+
+
+def _special_blob(root: Path, path: str) -> str:
+    """Blob-comparable id for symlinks, submodules, and nested repositories."""
+    full = root / path.rstrip("/")
+    if full.is_symlink():
+        # git stores a symlink as a blob holding its target text.
+        return _hash_text(root, os.readlink(full))
+    if full.is_dir():
+        commit = git(full, "rev-parse", "-q", "--verify", "HEAD", check=False).strip() if (full / ".git").exists() else ""
+        return f"<commit:{commit}>" if commit else "<directory>"
+    return DELETED
+
+
 def worktree_blobs(root: Path, paths: list[str]) -> dict[str, str]:
     result: dict[str, str] = {}
-    existing = [path for path in paths if (root / path).is_file() or (root / path).is_symlink()]
+    regular: list[str] = []
     for path in paths:
-        if path not in existing:
+        full = root / path.rstrip("/")
+        if full.is_symlink() or full.is_dir():
+            try:
+                result[path] = _special_blob(root, path)
+            except (GuardError, OSError):
+                result[path] = "<unhashable>"
+        elif full.is_file():
+            regular.append(path)
+        else:
             result[path] = DELETED
-    if existing:
-        output = git(root, "hash-object", "--stdin-paths", input_text="\n".join(existing) + "\n")
-        for path, blob in zip(existing, output.split()):
-            result[path] = blob
+    if regular:
+        try:
+            output = git(root, "hash-object", "--stdin-paths", input_text="\n".join(regular) + "\n")
+            for path, blob in zip(regular, output.split()):
+                result[path] = blob
+        except GuardError:
+            for path in regular:
+                try:
+                    result[path] = git(root, "hash-object", "--", path).strip()
+                except GuardError:
+                    result[path] = "<unhashable>"
     return result
 
 
@@ -212,7 +264,8 @@ def tree_blobs(root: Path, commit: str | None, paths: list[str]) -> dict[str, st
             if not entry or "\t" not in entry:
                 continue
             meta, path = entry.split("\t", 1)
-            result[path] = meta.split()[2]
+            kind, object_id = meta.split()[1], meta.split()[2]
+            result[path] = f"<commit:{object_id}>" if kind == "commit" else object_id
     return result
 
 
@@ -220,9 +273,9 @@ def tree_blobs(root: Path, commit: str | None, paths: list[str]) -> dict[str, st
 # state helpers
 
 
-def state_value(root: Path, key: str) -> str | None:
+def state_value(project: Path, key: str) -> str | None:
     try:
-        text = (root / STATE_REL).read_text(encoding="utf-8")
+        text = (project / STATE_REL).read_text(encoding="utf-8")
     except OSError:
         return None
     match = re.search(rf"^{re.escape(key)}:[ \t]*(.*?)\s*$", text, re.M)
@@ -232,9 +285,9 @@ def state_value(root: Path, key: str) -> str | None:
     return value if value not in {"", "null", "~", "-"} else None
 
 
-def state_targets(root: Path) -> list[str]:
+def state_targets(project: Path) -> list[str]:
     try:
-        lines = (root / STATE_REL).read_text(encoding="utf-8").splitlines()
+        lines = (project / STATE_REL).read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     for index, line in enumerate(lines):
@@ -270,7 +323,15 @@ def write_json(path: Path, payload: dict[str, object]) -> None:
 # commands
 
 
-def cmd_snapshot(root: Path, role_input: str, agent: str | None, step: str | None, targets: list[str], snapshot_id: str | None) -> dict[str, object]:
+def project_prefix(root: Path, project: Path) -> str:
+    try:
+        rel = project.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        raise GuardError(f"project {project} is not inside git repository {root}")
+    return "" if rel in ("", ".") else rel.rstrip("/") + "/"
+
+
+def cmd_snapshot(root: Path, project: Path, role_input: str, agent: str | None, step: str | None, targets: list[str], snapshot_id: str | None) -> dict[str, object]:
     role = normalize_role(role_input or agent)
     directory = guard_dir(root)
     # Microsecond stamps keep ids in chronological order for status/verify lookups.
@@ -283,8 +344,9 @@ def cmd_snapshot(root: Path, role_input: str, agent: str | None, step: str | Non
         "id": identifier,
         "role": role,
         "agent": agent,
-        "step": step or state_value(root, "current_step"),
-        "targets": targets or state_targets(root),
+        "step": step or state_value(project, "current_step"),
+        "targets": targets or state_targets(project),
+        "project_prefix": project_prefix(root, project),
         "head": head(root),
         "branch": branch(root),
         "dirty": worktree_blobs(root, dirty),
@@ -321,6 +383,7 @@ def cmd_verify(root: Path, snapshot_id: str | None, exempt: list[str], base: Pat
     if path is None or not path.is_file():
         raise GuardError("no open guard snapshot to verify" if not snapshot_id else f"unknown snapshot: {snapshot_id}")
     snapshot = json.loads(path.read_text(encoding="utf-8"))
+    prefix = str(snapshot.get("project_prefix") or "")
     before_head = snapshot.get("head")
     current_head = head(root)
     head_moved = before_head != current_head or snapshot.get("branch") != branch(root)
@@ -330,10 +393,15 @@ def cmd_verify(root: Path, snapshot_id: str | None, exempt: list[str], base: Pat
         candidates |= {line for line in git(root, "diff", "--name-only", before_head, current_head).splitlines() if line}
     candidates = sorted(candidates)
     now = worktree_blobs(root, candidates)
-    at_head = tree_blobs(root, before_head, [path for path in candidates if path not in before_dirty])
-    before = {path: before_dirty.get(path, at_head.get(path, DELETED)) for path in candidates}
+    at_head = tree_blobs(root, before_head, [item for item in candidates if item not in before_dirty])
+    before = {item: before_dirty.get(item, at_head.get(item, DELETED)) for item in candidates}
     exempt_set = {rel for rel in (relative_to_root(root, base or root, item) for item in exempt) if rel}
-    changed = [path for path in candidates if now[path] != before[path] and path not in exempt_set]
+    changed_root = [
+        item
+        for item in candidates
+        if now[item] != before[item] and item not in exempt_set and not is_generated(to_project(item, prefix))
+    ]
+    changed = [to_project(item, prefix) for item in changed_root]
     verdict, violations, notes = judge(str(snapshot.get("role")), changed, list(snapshot.get("targets") or []), head_moved)
     payload: dict[str, object] = {
         "id": snapshot["id"],
@@ -358,22 +426,47 @@ def cmd_verify(root: Path, snapshot_id: str | None, exempt: list[str], base: Pat
     return payload
 
 
-def cmd_status(root: Path, step: str | None) -> dict[str, object]:
+def step_verdicts(root: Path, step: str | None) -> list[dict[str, object]]:
+    """All verdicts (oldest first) for a step, each with its resolution if any."""
     directory = guard_dir(root)
-    verdicts = sorted(directory.glob("*.verdict.json"))
-    for path in reversed(verdicts):
+    verdicts: list[dict[str, object]] = []
+    for path in sorted(directory.glob("*.verdict.json")):
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if step is None or payload.get("step") == step:
-            return payload
-    return {"verdict": "missing", "step": step}
+        if step is not None and payload.get("step") != step:
+            continue
+        resolution = directory / path.name.replace(".verdict.json", ".resolved.json")
+        if resolution.is_file():
+            payload["resolution"] = json.loads(resolution.read_text(encoding="utf-8"))
+        verdicts.append(payload)
+    return verdicts
+
+
+def cmd_status(root: Path, step: str | None) -> dict[str, object]:
+    verdicts = step_verdicts(root, step)
+    return verdicts[-1] if verdicts else {"verdict": "missing", "step": step}
+
+
+def cmd_resolve(root: Path, snapshot_id: str, note: str) -> dict[str, object]:
+    directory = guard_dir(root)
+    verdict_path = directory / f"{snapshot_id}.verdict.json"
+    if not verdict_path.is_file():
+        raise GuardError(f"unknown verdict: {snapshot_id}")
+    if not note.strip():
+        raise GuardError("--note must record the Human's decision")
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    resolution = {"id": snapshot_id, "note": note.strip(), "resolved_at": now_iso(), "verdict": verdict.get("verdict")}
+    write_json(directory / f"{snapshot_id}.resolved.json", resolution)
+    return resolution
 
 
 def format_verdict(payload: dict[str, object]) -> str:
-    lines = [f"guard {payload.get('verdict')} · {payload.get('role')} · {payload.get('agent') or '-'} · step {payload.get('step') or '-'}"]
+    lines = [f"guard {payload.get('verdict')} · {payload.get('role')} · {payload.get('agent') or '-'} · step {payload.get('step') or '-'} · {payload.get('id') or '-'}"]
     for item in payload.get("violations") or []:  # type: ignore[union-attr]
         lines.append(f"  VIOLATION {item['path']}: {item['reason']}")
     for note in payload.get("notes") or []:  # type: ignore[union-attr]
         lines.append(f"  NOTE {note}")
+    if payload.get("resolution"):
+        lines.append(f"  RESOLVED {payload['resolution'].get('note')}")  # type: ignore[union-attr]
     changed = payload.get("changed") or []
     if changed and payload.get("verdict") != "violation":
         lines.append("  changed: " + ", ".join(changed))  # type: ignore[arg-type]
@@ -382,7 +475,7 @@ def format_verdict(payload: dict[str, object]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--project", default=None)
+    parser.add_argument("--project", default=None, help="project directory (default: the folder holding AI_Workflow_Kit/)")
     sub = parser.add_subparsers(dest="command", required=True)
     snapshot = sub.add_parser("snapshot")
     snapshot.add_argument("--role", default="")
@@ -397,27 +490,40 @@ def main(argv: list[str] | None = None) -> int:
     verify.add_argument("--json", action="store_true")
     status = sub.add_parser("status")
     status.add_argument("--step", default=None)
+    status.add_argument("--all", action="store_true")
     status.add_argument("--json", action="store_true")
+    resolve = sub.add_parser("resolve")
+    resolve.add_argument("--id", required=True)
+    resolve.add_argument("--note", required=True)
+    resolve.add_argument("--json", action="store_true")
     policy = sub.add_parser("policy")
     policy.add_argument("--role", required=True)
     args = parser.parse_args(argv)
 
-    start = Path(args.project).resolve() if args.project else Path.cwd()
+    project = Path(args.project).resolve() if args.project else Path(__file__).resolve().parents[2]
     try:
-        root = repo_root(start)
         if args.command == "policy":
             role = normalize_role(args.role)
             kind = "read-only" if role in READ_ONLY_ROLES or role == "unknown" else "target_files" if role in SCOPED_ROLES else "tests + target_files"
             print(f"{role}: {kind}; never workflow files, commits, or branch changes")
             return 0
+        root = repo_root(project)
         if args.command == "snapshot":
-            payload = cmd_snapshot(root, args.role, args.agent, args.step, args.target, args.id)
+            payload = cmd_snapshot(root, project, args.role, args.agent, args.step, args.target, args.id)
             print(json.dumps(payload, indent=2) if args.json else f"guard snapshot {payload['id']} ({payload['role']})")
             return 0
         if args.command == "verify":
-            payload = cmd_verify(root, args.id, args.exempt, start)
+            payload = cmd_verify(root, args.id, args.exempt, project)
             print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else format_verdict(payload))
             return 1 if payload["verdict"] == "violation" else 0
+        if args.command == "resolve":
+            payload = cmd_resolve(root, args.id, args.note)
+            print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else f"resolved {args.id}: {payload['note']}")
+            return 0
+        if args.all:
+            verdicts = step_verdicts(root, args.step)
+            print(json.dumps(verdicts, indent=2, ensure_ascii=False) if args.json else "\n".join(format_verdict(item) for item in verdicts) or "no verdicts")
+            return 0
         payload = cmd_status(root, args.step)
         print(json.dumps(payload, indent=2, ensure_ascii=False) if args.json else format_verdict(payload))
         return 0

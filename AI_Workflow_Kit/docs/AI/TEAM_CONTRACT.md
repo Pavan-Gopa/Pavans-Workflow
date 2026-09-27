@@ -25,7 +25,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 | ID | Rule | Enforced by |
 |---|---|---|
 | R6 | Coder and Designer may change only `STATE.yaml target_files`; Tester only test/QA paths or `target_files`; Reviewer, Architect, Security, Design Advisor, and unrecognised subagents change nothing. Main records `target_files` before every Coder/Designer dispatch; an empty list makes the verdict `unscoped`. | code: `workflow_guard.py` snapshot/verify around every worker (automatic via the `workflow-guard` extension) |
-| R7 | A guard `violation` rejects the worker result. Main records it, restores or quarantines the listed changes with the Human, and dispatches a fresh worker. | code: the verdict is injected into Main's context; `workflow_close.py` returns `reject_worker_result` |
+| R7 | A guard `violation` rejects the worker result. Main records it, restores or quarantines the listed changes with the Human, records the Human's decision (`workflow_guard.py resolve --id <id> --note "…"`), and dispatches a fresh worker. A violation stays open until resolved; a later clean run never masks it. | code: the verdict is injected into Main's context; `workflow_close.py` returns `reject_worker_result` while any violation for the step is open |
 
 ## State
 
@@ -41,7 +41,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 |---|---|---|
 | R11 | Objective Gates are deterministic commands in the card's `### Objective gates` section (`` `$ cmd` `` or a recognised runner). Main re-runs them itself; a worker's "tests pass" is not evidence. | code: `workflow_gates.py` (inside `workflow_close.py`) |
 | R12 | Reviewer owns Judgment Gates; the Human owns final aesthetic acceptance after a direct redesign. `waiting_review` is not completion. | Main |
-| R13 | The close decision comes from `workflow_close.py check`. `close_quick` requires a `quick` card, risk not high, at least one green command gate, a clean guard verdict, and no blast-radius hit (security, secrets, contracts, infra, dependencies, control plane). Anything else continues with Reviewer and Tester. Main never closes a step as `quick` without a `close_quick` decision. | code: decision · Main: follows it |
+| R13 | The close decision comes from `workflow_close.py check`. `close_quick` requires a `quick` card, risk not high, at least one command gate with all command gates green, every manual Objective gate already checked by Main, a clean Coder/Designer guard verdict with no open violation or unscoped run, and no blast-radius hit (security, secrets, contracts, infra, dependencies, control plane). Anything else continues with Reviewer and Tester. Main never closes a step as `quick` without a `close_quick` decision. | code: decision · Main: follows it |
 | R14 | Reviewer runs unless the Human skips it; Tester is recommended unless the Human opts out; every skip is recorded with its reason. Security is offered once near release, or when the close check reports `offer_scoped_security`. | Main |
 
 ## Failure and models
@@ -70,9 +70,14 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 ## Known limits of enforcement
 
 - The guard sees what git sees: files ignored by `.gitignore` (for example a
-  local `.env`) are invisible to it.
-- Edits Main makes with the edit/write tools while a worker runs are exempted
-  automatically; changes Main makes through `bash` during a worker run are
-  attributed to the worker. Main does not edit files while a worker runs.
+  local `.env`) are invisible to it, and test caches (`__pycache__`,
+  `.pytest_cache`, `*.pyc`, …) are deliberately ignored.
+- Edits Main makes with the edit/write tools (every OMP edit mode) while a
+  worker runs are exempted automatically; changes Main makes through `bash`
+  during a worker run are attributed to the worker. Main does not edit files
+  while a worker runs.
+- A parked worker woken again with `agent://<id>` is snapshotted when its
+  `started` event arrives; a change made in the moment before that snapshot
+  completes can be missed.
 - Rules marked **Main** or **prompt** depend on the model following them; the
   dashboard's consistency warnings and the Reviewer are the backstop.

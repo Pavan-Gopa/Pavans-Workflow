@@ -28,20 +28,22 @@ After a verified Coder/Designer result:
 python3 AI_Workflow_Kit/script/workflow_close.py check --json
 ```
 
-It runs the card's Objective Gates (`workflow_gates.py`), reads the latest guard
-verdict (`workflow_guard.py`), and classifies the diff against the pre-step
+It runs the card's Objective Gates (`workflow_gates.py`), reads every guard
+verdict recorded for the step (`workflow_guard.py`), and classifies the diff against the pre-step
 checkpoint tag (`workflow_security_scope.py`). `close_quick` needs all of:
 
 - the card says `quick` and `**Risk:**` is not `high`;
-- at least one command gate, all green;
-- a `clean` guard verdict for the step (an empty `target_files` gives `unscoped`);
+- at least one command gate, all green, and every manual Objective gate
+  already checked (`[x]`) by Main;
+- a `clean` Coder/Designer guard verdict for the step and no open violation or
+  `unscoped` run (an empty `target_files` gives `unscoped`);
 - no blast-radius hit: security, secrets, contracts (API/schema/migration/
   proto/GraphQL), infra (CI, Docker, IaC), dependency manifests, or the
   workflow control plane.
 
 Otherwise the decision is `review` and the output lists `quick_blockers`.
 `reopen_coder` means a gate failed; `reject_worker_result` means a guard
-violation (R7).
+violation for the step is still open (R7) — a later clean run never hides it.
 
 ## Writing gates that run
 

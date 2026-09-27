@@ -45,7 +45,7 @@ workflow state, commit, or push — and the guard checks that on the real diff.
 |---|---|
 | Read-only roles change nothing; Coder/Designer stay in `target_files`; Tester in test paths; no worker commits or edits workflow files | `workflow-guard` extension + `workflow_guard.py` (snapshot before spawn, verify after) |
 | Backup workers need recorded Human authorization | `before_subagent_spawn` hook blocks the spawn |
-| `quick` closes only with green command gates, a clean guard verdict, no blast-radius hit, and risk not high | `workflow_close.py check` |
+| `quick` closes only with green command gates, manual gates checked, a clean Coder/Designer guard verdict and no open violation, no blast-radius hit, and risk not high | `workflow_close.py check` |
 | Objective Gates are re-run by Main, not trusted from worker reports | `workflow_gates.py` |
 | Reviewer is independent of the Coder model (primary and backup) | doctor warning (`workflow_model_diversity.py`) |
 | One worker at a time, no recursive spawning, no automatic model fallback | `.omp/config.yml` task/retry policy |
@@ -68,7 +68,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Your `README.md`, `CHANGELOG.md`, `VERSION`, and an existing `.omp/config.yml`
 are kept (workflow roles are merged into the config). The installer refuses
-to overwrite files it would otherwise replace and lists them.
+to overwrite files it would otherwise replace and lists them. Commit the
+installed files before the first step so the blast-radius check starts clean.
 
 ### New project
 
@@ -96,14 +97,17 @@ shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
 deleted (unless you modified them), keep project state, model selections,
-custom `.omp` files, `.graphifyignore` rules, and the Graphify index, back
-everything up under `<git-common-dir>/pavans-workflow/update-backups/`, and
-roll back automatically on failure. Restart OMP afterwards.
+custom `.omp` files, `.graphifyignore` rules, and the Graphify index, and back
+up every framework file they touch under
+`<git-common-dir>/pavans-workflow/update-backups/`. If the framework step fails
+it is rolled back automatically; the state migration keeps its own backups, and
+a failing doctor is reported (not rolled back). Restart OMP afterwards.
 
 Coming from 3.4.x: run the curl command above once. It removes the obsolete
 `experiments/` payloads, restores root files an old updater overwrote (from its
-backup), and tells you if a leftover root `VERSION`/`CHANGELOG.md` came from the
-workflow.
+backups), and tells you if a leftover root `VERSION`/`CHANGELOG.md` came from the
+workflow. The old in-project `workflow_update.sh apply` also works: it hands over
+to the 3.5 manager mid-run and completes the migration.
 
 ## Start
 
@@ -150,7 +154,7 @@ backups across providers; the doctor warns otherwise.
 | Reconcile and continue | `/workflow status` |
 | Explain routing | `/workflow why` |
 | Close decision for the current step | `python3 AI_Workflow_Kit/script/workflow_close.py check` |
-| Guard verdicts | `python3 AI_Workflow_Kit/script/workflow_guard.py status` |
+| Guard verdicts / record the Human's decision | `python3 AI_Workflow_Kit/script/workflow_guard.py status --all` / `resolve --id … --note …` |
 | Designer advice / edits | `/workflow designer advise <surface>` / `redesign <surface>` |
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
 | Diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |

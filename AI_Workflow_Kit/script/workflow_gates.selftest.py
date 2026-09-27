@@ -130,6 +130,28 @@ def main() -> int:
         missing = run(tmp, "run", "--step", "S9")
         assert missing.returncode == 2
 
+    # Command recognition: prefixes, runners that used to be caught by the old
+    # catch-all, and executables given by path; names are never executed.
+    import importlib.util
+    import os
+
+    spec = importlib.util.spec_from_file_location("workflow_gates", SCRIPT)
+    assert spec and spec.loader
+    gates = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gates)
+    for span in ("cd web && npm test", "env CI=1 npm test", "flutter test", "turbo run test", "mix test", "sbt test"):
+        assert gates.command_from_span(span) == span, span
+    for span in ("README.md", "maxRetries", "task", "src/app.ts", "install.sh", "cd docs && README.md"):
+        assert gates.command_from_span(span) is None, span
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        tool = root / "vendor" / "bin" / "phpunit"
+        tool.parent.mkdir(parents=True)
+        tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        assert gates.command_from_span("vendor/bin/phpunit", root) is None, "not executable yet"
+        os.chmod(tool, 0o755)
+        assert gates.command_from_span("vendor/bin/phpunit --testsuite unit", root) == "vendor/bin/phpunit --testsuite unit"
+
     print("workflow_gates.selftest: PASS")
     return 0
 

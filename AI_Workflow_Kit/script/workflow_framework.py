@@ -37,6 +37,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Never leave __pycache__ in a project's AI_Workflow_Kit/ (it would show up as
+# an untracked control-plane change in the blast-radius check).
+sys.dont_write_bytecode = True
+
 MANIFEST_REL = "AI_Workflow_Kit/framework.manifest"
 RECORD_REL = "AI_Workflow_Kit/installed.manifest"
 VERSION_REL = "AI_Workflow_Kit/VERSION"
@@ -72,7 +76,7 @@ LEGACY_ROOT_FILES = ("VERSION", "CHANGELOG.md")
 # Root files the pre-3.5 updater overwrote in projects (legacy-cleanup restores).
 LEGACY_UPDATER_CLOBBERED = ("README.md", "INSTALL.md", "CHANGELOG.md", "VERSION")
 GRAPHIFYIGNORE_REQUIRED = ("/ui-designer/",)
-GITIGNORE_REQUIRED = ("graphify-out/",)
+GITIGNORE_REQUIRED = ("graphify-out/", "__pycache__/")
 FRAMEWORK_REPO_PATTERN = re.compile(r"github\.com[:/]Pavan-Gopa/Pavans-Workflow(\.git)?/?$", re.I)
 
 
@@ -179,9 +183,30 @@ def template_for(rel: str) -> str:
     return f"{TEMPLATES_REL}/{rel[len(TEMPLATE_ROOT_PREFIX):]}"
 
 
-def managed_files(source: Path, entries: list[Entry]) -> dict[str, Path]:
-    """Framework-owned files (tree + file kinds) keyed by project-relative path."""
+def tracked_files(source: Path) -> set[str] | None:
+    """Tracked paths when `source` is the top of a git checkout, else None."""
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-toplevel"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        if Path(top).resolve() != source.resolve():
+            return None
+        output = subprocess.run(
+            ["git", "-C", str(source), "ls-files", "-z"], check=True, capture_output=True, text=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return {path for path in output.split("\0") if path}
+
+
+def managed_files(source: Path, entries: list[Entry], use_git: bool = True) -> dict[str, Path]:
+    """Framework-owned files (tree + file kinds) keyed by project-relative path.
+
+    From a git checkout only tracked files count, so untracked local files in a
+    used checkout (private agents, backups) can never be shipped.
+    """
     excluded = state_paths(entries) | {RECORD_REL}
+    tracked = tracked_files(source) if use_git else None
     files: dict[str, Path] = {}
     for entry in entries:
         root = source / entry.path
@@ -196,7 +221,7 @@ def managed_files(source: Path, entries: list[Entry]) -> dict[str, Path]:
                 if not path.is_file() and not path.is_symlink():
                     continue
                 rel = path.relative_to(source).as_posix()
-                if ignored(rel) or rel in excluded:
+                if ignored(rel) or rel in excluded or (tracked is not None and rel not in tracked):
                     continue
                 files[rel] = path
     return files
@@ -552,7 +577,7 @@ def backup_root_for(target: Path) -> Path:
     return candidate
 
 
-def cmd_update(source: Path, target: Path, check: bool) -> dict[str, object]:
+def cmd_update(source: Path, target: Path, check: bool, legacy_updater_ran: bool = False) -> dict[str, object]:
     if source.resolve() == target.resolve():
         raise FrameworkError("update source and target are the same directory", 2)
     if not is_installed(target):
@@ -578,7 +603,7 @@ def cmd_update(source: Path, target: Path, check: bool) -> dict[str, object]:
     if read_record(target) is None and not check:
         # First 3.5+ update of a legacy project: undo root files a pre-3.5
         # updater overwrote moments ago (only with its fresh backup).
-        legacy_cleanup = cmd_legacy_cleanup(source, target, allow_remove=False)
+        legacy_cleanup = cmd_legacy_cleanup(source, target, allow_remove=legacy_updater_ran)
     plan = plan_update(source, target, entries, files)
     clobbered = [
         rel
@@ -615,10 +640,12 @@ def cmd_update(source: Path, target: Path, check: bool) -> dict[str, object]:
             transaction.touch(rel)
         render_state(source, target, entries)
         seed_files(source, target, entries)
-        for rel in (".omp/config.yml", ".graphifyignore", RECORD_REL):
+        for rel in (".omp/config.yml", ".graphifyignore", ".gitignore", RECORD_REL):
             transaction.touch(rel)
         result["config"] = repair_config(source, target)
         ensure_lines(target / ".graphifyignore", GRAPHIFYIGNORE_REQUIRED)
+        if (target / ".gitignore").exists() or common_git_dir(target):
+            ensure_lines(target / ".gitignore", GITIGNORE_REQUIRED)
         write_record(target, upstream_version, list(files))
     except BaseException:
         transaction.rollback()
@@ -674,51 +701,73 @@ def cmd_verify(target: Path) -> tuple[int, list[tuple[str, str]]]:
     return code, lines
 
 
-def recent_legacy_backup(target: Path, max_age_seconds: int = 7200) -> Path | None:
-    """Newest update backup, only if it was created moments ago by the running legacy updater."""
+def update_backups(target: Path) -> list[Path]:
+    """Update backup directories, newest first."""
     base = common_git_dir(target)
     root = (base / "pavans-workflow" / "update-backups") if base else None
     if root is None or not root.is_dir():
-        return None
-    candidates = sorted((path for path in root.iterdir() if path.is_dir()), key=lambda item: item.name)
-    if not candidates:
-        return None
-    newest = candidates[-1]
+        return []
+    return sorted((path for path in root.iterdir() if path.is_dir()), key=lambda item: item.name, reverse=True)
+
+
+def backup_age_seconds(path: Path) -> float | None:
     try:
-        stamp = _dt.datetime.strptime(newest.name[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=_dt.timezone.utc)
+        stamp = _dt.datetime.strptime(path.name[:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=_dt.timezone.utc)
     except ValueError:
         return None
-    age = (_dt.datetime.now(_dt.timezone.utc) - stamp).total_seconds()
-    return newest if 0 <= age <= max_age_seconds else None
+    return (_dt.datetime.now(_dt.timezone.utc) - stamp).total_seconds()
+
+
+def is_framework_copy(path: Path) -> bool:
+    try:
+        first = path.read_text(encoding="utf-8", errors="replace").splitlines()[:1]
+    except OSError:
+        return False
+    return bool(first) and first[0].lstrip("# ").startswith(("Pavan's Workflow", "Install Pavan's Workflow"))
 
 
 def cmd_legacy_cleanup(source: Path, target: Path, allow_remove: bool = True) -> dict[str, object]:
-    """Undo root-file clobbering by a pre-3.5 workflow_update.sh that is running this release.
+    """Undo root files a pre-3.5 workflow_update.sh overwrote with framework copies.
 
-    Restores files from the legacy updater's fresh backup. Removing a file the
-    legacy updater created is allowed only from the compatibility shim, where
-    we know that updater just ran.
+    A root file is considered clobbered only when it is byte-identical to this
+    release's copy. It is then restored from the newest update backup holding
+    a different version (README/INSTALL only when that version is not itself
+    a framework copy). Deleting a file the legacy updater created is allowed
+    only from the compatibility shim and only with that updater's fresh backup.
     """
-    backup = recent_legacy_backup(target)
+    backups = update_backups(target)
+    fresh = backups[0] if backups and (backup_age_seconds(backups[0]) or 1e9) <= 7200 else None
     restored: list[str] = []
     removed: list[str] = []
-    if backup is None:
-        # Without the legacy updater's fresh backup we cannot tell a product
-        # file from a framework copy, so change nothing.
-        return {"action": "legacy-cleanup", "backup": None, "restored": restored, "removed": removed}
     for rel in LEGACY_UPDATER_CLOBBERED:
         current = target / rel
         upstream = source / rel
-        if not current.is_file() or not upstream.is_file() or sha256(current) != sha256(upstream):
+        if source.resolve() == target.resolve() or not current.is_file() or not upstream.is_file():
             continue
-        previous = backup / rel
-        if previous.is_file():
+        if rel in ("VERSION", "CHANGELOG.md") and not allow_remove:
+            # Only right after a legacy updater ran do we know these were just
+            # overwritten; otherwise leave them alone (and point them out).
+            continue
+        current_sha = sha256(current)
+        if current_sha != sha256(upstream):
+            continue
+        previous = next(
+            (
+                backup / rel
+                for backup in backups
+                if (backup / rel).is_file()
+                and sha256(backup / rel) != current_sha
+                and not (rel in ("README.md", "INSTALL.md") and is_framework_copy(backup / rel))
+            ),
+            None,
+        )
+        if previous is not None:
             copy_file(previous, current)
             restored.append(rel)
-        elif allow_remove and rel in ("README.md", "INSTALL.md"):
+        elif allow_remove and fresh is not None and rel in ("README.md", "INSTALL.md") and not (fresh / rel).exists():
             current.unlink()
             removed.append(rel)
-    return {"action": "legacy-cleanup", "backup": str(backup) if backup else None, "restored": restored, "removed": removed}
+    return {"action": "legacy-cleanup", "backups": len(backups), "restored": restored, "removed": removed}
 
 
 # ---------------------------------------------------------------------------
@@ -787,6 +836,7 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--json", action="store_true")
         if name == "update":
             command.add_argument("--check", action="store_true")
+            command.add_argument("--legacy-updater-ran", action="store_true", help=argparse.SUPPRESS)
     verify = sub.add_parser("verify")
     verify.add_argument("--target", type=Path, required=True)
     verify.add_argument("--json", action="store_true")
@@ -802,7 +852,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "install":
             print_result(cmd_install(args.source.resolve(), args.target.resolve()), args.json)
         elif args.command == "update":
-            print_result(cmd_update(args.source.resolve(), args.target.resolve(), args.check), args.json)
+            print_result(cmd_update(args.source.resolve(), args.target.resolve(), args.check, args.legacy_updater_ran), args.json)
         elif args.command == "legacy-cleanup":
             print_result(cmd_legacy_cleanup(args.source.resolve(), args.target.resolve()), args.json)
         elif args.command == "verify":

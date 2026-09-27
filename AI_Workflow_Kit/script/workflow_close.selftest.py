@@ -47,6 +47,15 @@ STEPS = """# Steps
 
 - [ ] [Q4.O1] `$ false` exits 0
 
+## Q5 — Quick with a manual gate
+
+**Pipeline profile:** quick
+
+### Objective gates
+
+- [ ] [Q5.O1] `$ true` exits 0
+- [ ] [Q5.O2] the settings screen still loads
+
 ## S1 — Standard
 
 ### Objective gates
@@ -97,7 +106,7 @@ def main() -> int:
         write(root, "src/feature.ts", "export {}\n")
         code, decision = close(root, "Q1")
         assert code == 0 and decision["decision"] == "review", decision
-        assert "no guard verdict for this step" in decision["quick_blockers"]
+        assert "no guard verdict for a Coder/Designer run of this step" in decision["quick_blockers"], decision
 
         git(root, "rm", "-q", "--cached", "-r", "--ignore-unmatch", "src")
         (root / "src/feature.ts").unlink()
@@ -118,6 +127,30 @@ def main() -> int:
         code, decision = close(root, "Q1")
         assert code == 1 and decision["decision"] == "reject_worker_result", decision
         write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS)
+        violation_id = decision["guard"]["open_violations"][0]["id"]
+
+        # A later clean verdict (another agent, or a re-run that sees the leftover
+        # change as pre-existing) must not mask the open violation.
+        guarded_worker(root, "Q1", "explore", lambda: None)
+        code, decision = close(root, "Q1")
+        assert code == 1 and decision["decision"] == "reject_worker_result", "open violations are never masked"
+
+        subprocess.run(
+            [sys.executable, str(GUARD), "--project", str(root), "resolve", "--id", violation_id, "--note", "Human: reverted STEPS.md"],
+            check=True, capture_output=True,
+        )
+        code, decision = close(root, "Q1")
+        assert code == 0 and decision["decision"] == "close_quick", decision
+
+        guarded_worker(root, "Q5", "coder", lambda: write(root, "src/q5.ts", "export {}\n"))
+        code, decision = close(root, "Q5")
+        assert decision["decision"] == "review", decision
+        assert any("manual Objective gate(s) not verified" in blocker and "Q5.O2" in blocker for blocker in decision["quick_blockers"])
+        write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS.replace("- [ ] [Q5.O2]", "- [x] [Q5.O2]"))
+        code, decision = close(root, "Q5")
+        assert decision["decision"] == "close_quick", decision
+        write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS)
+        (root / "src/q5.ts").unlink()
 
         code, decision = close(root, "Q2")
         assert decision["decision"] == "review" and "card risk is high" in decision["quick_blockers"]

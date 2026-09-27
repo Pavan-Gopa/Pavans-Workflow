@@ -46,6 +46,8 @@ RUNNERS = (
     "cargo", "go", "make", "just", "task", "cmake", "ctest", "bazel",
     "swift", "xcodebuild", "gradle", "mvn", "dotnet", "ruby", "bundle", "rake", "rspec", "php", "composer",
     "bash", "sh", "zsh", "git", "omp", "graphify", "docker", "kubectl", "terraform", "shellcheck",
+    "flutter", "dart", "turbo", "nx", "lerna", "mix", "sbt", "phpunit", "pest", "rails", "xcrun",
+    "eslint", "prettier", "biome", "stylelint", "golangci-lint", "swiftlint", "ktlint", "mvnw", "gradlew",
 )
 # Runners that are meaningful without arguments (`make`, `pytest`); every other
 # runner needs at least one argument so a backticked identifier such as `task`
@@ -124,16 +126,28 @@ def objective_lines(body: str) -> list[str]:
     return []
 
 
-def command_from_span(span: str) -> str | None:
+# `cd dir && …`, `cd dir; …`, and `env [VAR=x] …` prefixes are skipped when
+# deciding whether the rest is a command (the full text still runs).
+_PREFIX = re.compile(r"^(?:cd\s+\S+\s*(?:&&|;)\s*|env(?:\s+-\S+)*\s+)+")
+
+
+def command_from_span(span: str, root: Path | None = None) -> str | None:
     text = span.strip()
     if text.startswith("$ "):
         return text[2:].strip() or None
-    if RUNNER.match(text) or PATH_COMMAND.match(text):
+    core = _PREFIX.sub("", text)
+    if RUNNER.match(core) or PATH_COMMAND.match(core):
         return text
+    # An existing executable given by path (`vendor/bin/phpunit`, `bin/test`).
+    first = core.split()[0] if core.split() else ""
+    if root is not None and "/" in first and not first.startswith("/"):
+        candidate = root / first
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return text
     return None
 
 
-def extract_gates(body: str) -> list[dict[str, object]]:
+def extract_gates(body: str, root: Path | None = None) -> list[dict[str, object]]:
     gates: list[dict[str, object]] = []
     for raw in objective_lines(body):
         match = GATE_LINE.match(raw)
@@ -141,7 +155,7 @@ def extract_gates(body: str) -> list[dict[str, object]]:
             continue
         text = match.group("body").strip()
         spans = BACKTICK.findall(text)
-        commands = [command for command in (command_from_span(span) for span in spans) if command]
+        commands = [command for command in (command_from_span(span, root) for span in spans) if command]
         gate: dict[str, object] = {
             "id": (match.group("id") or "").strip() or None,
             "done": match.group("done").lower() == "x",
@@ -220,7 +234,7 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
     cards = parse_cards(steps_path.read_text(encoding="utf-8"))
     if step not in cards:
         raise ValueError(f"step {step} not found in STEPS.md (template cards and fenced examples are ignored)")
-    gates = extract_gates(cards[step]["body"])
+    gates = extract_gates(cards[step]["body"], root)
     failed = 0
     for gate in gates:
         gate["ok"] = None

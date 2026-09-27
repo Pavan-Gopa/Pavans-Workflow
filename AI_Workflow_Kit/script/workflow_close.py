@@ -5,18 +5,22 @@
 
 Combines, in code, everything a `quick` close used to rely on Main remembering:
 
-  1. Objective gates   (workflow_gates.py)  — every command gate must pass.
-  2. Worker guard      (workflow_guard.py)  — the latest verdict for the step.
+  1. Objective gates   (workflow_gates.py)  — every command gate must pass;
+                       for quick, manual gates must already be checked by Main.
+  2. Worker guard      (workflow_guard.py)  — every verdict recorded for the step.
   3. Blast radius      (workflow_security_scope.py, diff vs the pre-step tag).
   4. Card facts        — **Risk:** and **Pipeline profile:** from STEPS.md.
 
 decision:
-  close_quick          quick card, all objective gates green, >=1 command gate,
-                       clean guard, no blast-radius hit, risk not high
+  close_quick          quick card, risk not high, >=1 command gate and all green,
+                       every manual Objective gate checked, a clean Coder/Designer
+                       guard verdict and no open violation, no blast-radius hit
   review               continue with Reviewer (and Tester) — includes quick
                        cards that were refused, with the reasons listed
   reopen_coder         an Objective gate failed
-  reject_worker_result the guard found a boundary violation
+  reject_worker_result a guard violation for this step is still open (resolve it
+                       with `workflow_guard.py resolve --id ... --note ...` after
+                       the Human decided)
 
 Exit: 0 close_quick/review · 1 reopen_coder/reject_worker_result · 2 error.
 The decision is also written to <git-common-dir>/pavans-workflow/close-checks/<step>.json.
@@ -34,6 +38,8 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+# Loading sibling scripts must not leave __pycache__ inside the project.
+sys.dont_write_bytecode = True
 
 
 def load(name: str):
@@ -66,13 +72,22 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
     resolved_base = scope_mod.resolve_base(root, base, step_id)
     scope = scope_mod.scope(scope_mod.git_paths(root, resolved_base), root, resolved_base)
     try:
-        guard = guard_mod.cmd_status(guard_mod.repo_root(root), step_id)
+        verdicts = guard_mod.step_verdicts(guard_mod.repo_root(root), step_id)
+        guard_error = None
     except guard_mod.GuardError as error:
-        guard = {"verdict": "unavailable", "error": str(error)}
+        verdicts, guard_error = [], str(error)
+    open_violations = [v for v in verdicts if v.get("verdict") == "violation" and not v.get("resolution")]
+    open_unscoped = [v for v in verdicts if v.get("verdict") == "unscoped" and not v.get("resolution")]
+    builders = [v for v in verdicts if v.get("role") in ("coder", "designer")]
+    latest = verdicts[-1] if verdicts else None
 
     profile = str(gates["pipeline_profile"])
     risk = str(gates["risk"])
-    guard_verdict = str(guard.get("verdict"))
+    unchecked_manual = [
+        str(gate.get("id") or gate.get("text"))
+        for gate in gates["gates"]  # type: ignore[union-attr]
+        if gate.get("kind") == "manual" and not gate.get("done")
+    ]
     quick_blockers: list[str] = []
     if risk == "high":
         quick_blockers.append("card risk is high")
@@ -80,14 +95,18 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
         quick_blockers.append("blast radius: " + ", ".join(scope["reasons"]))  # type: ignore[arg-type]
     if not gates["command_gates"]:
         quick_blockers.append("no deterministic Objective gate (a quick close needs at least one command gate)")
-    if guard_verdict in {"missing", "unavailable"}:
-        quick_blockers.append("no guard verdict for this step")
-    elif guard_verdict == "unscoped":
-        quick_blockers.append("Coder scope unverified: STATE.yaml target_files was empty")
+    if unchecked_manual:
+        quick_blockers.append("manual Objective gate(s) not verified by Main yet: " + ", ".join(unchecked_manual))
+    if guard_error:
+        quick_blockers.append(f"guard unavailable: {guard_error}")
+    elif not builders:
+        quick_blockers.append("no guard verdict for a Coder/Designer run of this step")
+    if open_unscoped:
+        quick_blockers.append("Coder scope unverified: STATE.yaml target_files was empty (" + ", ".join(str(v.get("id")) for v in open_unscoped) + ")")
 
     if gates["status"] == "fail":
         decision = "reopen_coder"
-    elif guard_verdict == "violation":
+    elif open_violations:
         decision = "reject_worker_result"
     elif profile == "quick" and not quick_blockers and run_gates:
         decision = "close_quick"
@@ -110,13 +129,20 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
             "command_gates": gates["command_gates"],
             "failed": [gate.get("id") for gate in gates["gates"] if gate.get("ok") is False],  # type: ignore[union-attr]
         },
-        "guard": {key: guard.get(key) for key in ("verdict", "id", "role", "agent", "violations", "notes", "error") if key in guard},
+        "guard": {
+            "verdicts": len(verdicts),
+            "latest": {key: latest.get(key) for key in ("verdict", "id", "role", "agent")} if latest else None,
+            "open_violations": [
+                {"id": v.get("id"), "agent": v.get("agent"), "violations": v.get("violations")} for v in open_violations
+            ],
+            "error": guard_error,
+        },
         "scope": {key: scope[key] for key in ("base", "reasons", "forbid_hits", "hits", "checked")},
         "checked_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
-def record(root: Path, payload: dict[str, object]) -> str | None:
+def write_evidence(root: Path, payload: dict[str, object]) -> str | None:
     common = common_git_dir(root)
     if common is None:
         return None
@@ -145,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, RuntimeError, SystemExit) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
-    payload["evidence"] = record(root, payload)
+    payload["evidence"] = write_evidence(root, payload)
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
@@ -154,8 +180,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  quick refused: {blocker}")
         if payload["offer_scoped_security"]:
             print("  offer a scoped Security pass (blast radius: " + ", ".join(payload["scope"]["reasons"]) + ")")  # type: ignore[index]
-        for violation in payload["guard"].get("violations") or []:  # type: ignore[union-attr]
-            print(f"  guard violation: {violation['path']}: {violation['reason']}")
+        for item in payload["guard"]["open_violations"]:  # type: ignore[index]
+            for violation in item.get("violations") or []:
+                print(f"  open guard violation {item['id']}: {violation['path']}: {violation['reason']}")
         for gate in payload["objective"]["failed"]:  # type: ignore[index]
             print(f"  objective gate failed: {gate}")
     return 1 if payload["decision"] in {"reopen_coder", "reject_worker_result"} else 0

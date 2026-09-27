@@ -1,8 +1,8 @@
 // Pure decision logic for the workflow-guard extension. Dependency-free so the
 // selftest runs without OMP. The extension wires these into OMP hooks:
-//   before_subagent_spawn  -> backup authorization + guard snapshot
-//   task:subagent:lifecycle -> guard verify when the worker finishes
-//   tool_call (Main only)  -> remember Main's own edits so they are not blamed on the worker
+//   before_subagent_spawn   -> backup authorization + guard snapshot (keyed by spawnKey)
+//   task:subagent:lifecycle -> bind on `started` (snapshot follow-up turns), verify on finish
+//   tool_call (Main only)   -> remember Main's own edits so they are not blamed on the worker
 
 import { normalizeRole, parseWorkflowState } from "./workflow-dashboard-core.ts";
 
@@ -36,8 +36,9 @@ export function backupAuthorization(stateText: string, agent: string): BackupDec
 	if (!isBackupAgent(agent)) return { allowed: true };
 	const state = parseWorkflowState(stateText);
 	const recordedAgent = state.modelFailureBackupAgent === "-" ? "" : state.modelFailureBackupAgent;
-	const recordedRole = normalizeRole(state.modelFailureRole === "-" ? undefined : state.modelFailureRole);
-	const role = normalizeRole(agent);
+	const canonical = (value: string | undefined) => value?.replace(/_/g, "-");
+	const recordedRole = canonical(normalizeRole(state.modelFailureRole === "-" ? undefined : state.modelFailureRole));
+	const role = canonical(normalizeRole(agent));
 	const matches = recordedAgent ? recordedAgent === agent : Boolean(recordedRole && recordedRole === role);
 	if (state.modelFailureStatus === "backup_authorized" && matches) return { allowed: true };
 	return {
@@ -48,26 +49,53 @@ export function backupAuthorization(stateText: string, agent: string): BackupDec
 	};
 }
 
-/** FIFO of open guard snapshots per agent name (workflow runs one worker at a time). */
+type OpenSnapshot = { snapshotId: string; agent: string; spawnKey?: string; runId?: string; openedAt: number };
+
+/**
+ * Open guard snapshots. A snapshot is taken at spawn time (keyed by OMP's
+ * spawnKey, which equals the async job id), bound to the worker's lifecycle id
+ * on `started`, and verified on the terminal lifecycle event. Workers woken
+ * again with `agent://<id>` (no spawn hook) get a snapshot on `started`.
+ */
 export class GuardTracker {
-	#pending = new Map<string, string[]>();
+	#open: OpenSnapshot[] = [];
 	#mainTouched = new Set<string>();
 
-	open(agent: string, snapshotId: string): void {
-		const queue = this.#pending.get(agent) ?? [];
-		queue.push(snapshotId);
-		this.#pending.set(agent, queue);
+	open(agent: string, snapshotId: string, spawnKey?: string, now = Date.now()): void {
+		this.#open.push({ snapshotId, agent, spawnKey, openedAt: now });
 	}
 
-	close(agent: string): string | undefined {
-		const queue = this.#pending.get(agent);
-		const id = queue?.shift();
-		if (queue && queue.length === 0) this.#pending.delete(agent);
-		return id;
+	/**
+	 * Bind a started worker to its snapshot. Returns true when a snapshot is
+	 * bound, false when the caller must take one (follow-up turn). Older unbound
+	 * snapshots of the same agent belong to spawns that never started (aborted
+	 * or blocked before running) and are dropped.
+	 */
+	bind(runId: string, agent: string): boolean {
+		if (this.#open.some(entry => entry.runId === runId)) return true;
+		const byKey = this.#open.find(entry => !entry.runId && entry.spawnKey === runId);
+		const candidates = this.#open.filter(entry => !entry.runId && entry.agent === agent);
+		const chosen = byKey ?? candidates[candidates.length - 1];
+		if (!chosen) return false;
+		chosen.runId = runId;
+		this.#open = this.#open.filter(entry => entry === chosen || entry.runId || entry.agent !== agent || entry.openedAt > chosen.openedAt);
+		return true;
+	}
+
+	/** Snapshot to verify for a finished run (bound id, then spawn key, then oldest of the agent). */
+	close(runId: string | undefined, agent: string): string | undefined {
+		const index = [
+			this.#open.findIndex(entry => runId !== undefined && entry.runId === runId),
+			this.#open.findIndex(entry => runId !== undefined && !entry.runId && entry.spawnKey === runId),
+			this.#open.findIndex(entry => !entry.runId && entry.agent === agent),
+		].find(value => value >= 0);
+		if (index === undefined) return undefined;
+		const [entry] = this.#open.splice(index, 1);
+		return entry.snapshotId;
 	}
 
 	active(): boolean {
-		return this.#pending.size > 0;
+		return this.#open.length > 0;
 	}
 
 	recordMainEdit(path: string | undefined): void {
@@ -82,13 +110,36 @@ export class GuardTracker {
 	}
 }
 
+const HASHLINE_HEADER = /^\[(.+?)(?:#[0-9A-Fa-f]{4})?\]\s*$/;
+const HASHLINE_MOVE = /^MV\s+(.+?)\s*$/;
+const APPLY_PATCH_FILE = /^\*\*\* (?:Update|Add|Delete) File:\s*(.+?)\s*$/;
+const APPLY_PATCH_MOVE = /^\*\*\* Move to:\s*(.+?)\s*$/;
+
+function unquote(value: string): string {
+	const text = value.trim();
+	return text.length >= 2 && (text[0] === '"' || text[0] === "'") && text[0] === text[text.length - 1] ? text.slice(1, -1) : text;
+}
+
+/**
+ * Paths an edit/write call touches, for every OMP edit mode: replace/patch
+ * (`path`, `edits[].path|rename`) and the `input` text modes (hashline
+ * `[path#TAG]` / `MV dest`, apply_patch `*** Update File: path`).
+ */
 export function editedPaths(toolName: string, input: unknown): string[] {
 	if (toolName !== "edit" && toolName !== "write") return [];
-	const record = (input ?? {}) as { path?: unknown; edits?: Array<{ path?: unknown }> };
+	const record = (input ?? {}) as { path?: unknown; edits?: Array<{ path?: unknown; rename?: unknown }>; input?: unknown };
 	const paths = new Set<string>();
 	if (typeof record.path === "string") paths.add(record.path);
 	for (const edit of Array.isArray(record.edits) ? record.edits : []) {
 		if (typeof edit?.path === "string") paths.add(edit.path);
+		if (typeof edit?.rename === "string") paths.add(edit.rename);
+	}
+	if (typeof record.input === "string") {
+		for (const rawLine of record.input.replace(/^\uFEFF/, "").split("\n")) {
+			const line = rawLine.replace(/\r$/, "");
+			const match = HASHLINE_HEADER.exec(line) ?? HASHLINE_MOVE.exec(line) ?? APPLY_PATCH_FILE.exec(line) ?? APPLY_PATCH_MOVE.exec(line);
+			if (match) paths.add(unquote(match[1]));
+		}
 	}
 	return [...paths];
 }
