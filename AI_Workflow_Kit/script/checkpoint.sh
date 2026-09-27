@@ -44,8 +44,8 @@ if [[ -n "${WF_STAGE_PATHS:-}" ]]; then
       [[ -n "$stage_path" ]] && STAGE_PATHS+=("$stage_path")
     done <<<"$WF_STAGE_PATHS"
   else
-    # shellcheck disable=SC2206
-    STAGE_PATHS=($WF_STAGE_PATHS)
+    # Whitespace-separated list; read -a never glob-expands entries.
+    read -r -a STAGE_PATHS <<<"$WF_STAGE_PATHS"
   fi
 fi
 
@@ -115,7 +115,7 @@ changed_paths() {
 path_is_allowed() {
   local changed="$1"
   local allowed
-  for allowed in "${STAGE_PATHS[@]}"; do
+  for allowed in ${STAGE_PATHS[@]+"${STAGE_PATHS[@]}"}; do
     if [[ "$allowed" == "." || "$changed" == "$allowed" || "$changed" == "$allowed/"* ]]; then
       return 0
     fi
@@ -146,7 +146,7 @@ assert_scope_safe() {
 
 stage_scoped() {
   local p
-  for p in "${STAGE_PATHS[@]}"; do
+  for p in ${STAGE_PATHS[@]+"${STAGE_PATHS[@]}"}; do
     git add -A -- "$p"
   done
 }
@@ -225,8 +225,23 @@ cmd_rollback() {
   esac
   git rev-parse "$tag" >/dev/null 2>&1 || die "missing tag $tag"
   echo "WARNING: hard reset to $tag ($(git rev-parse --short "$tag"))"
-  echo "Uncommitted work will be lost. Press Ctrl+C within 3s to abort..."
-  sleep 3
+  if [[ "${WF_CONFIRM_ROLLBACK:-}" != "$tag" ]]; then
+    if [[ -t 0 ]]; then
+      local answer
+      read -r -p "Type the tag name ($tag) to confirm: " answer
+      [[ "$answer" == "$tag" ]] || die "rollback cancelled"
+    else
+      die "non-interactive rollback needs WF_CONFIRM_ROLLBACK=$tag (agents must ask the Human first)"
+    fi
+  fi
+  # Keep uncommitted tracked changes recoverable: reset --hard would drop them.
+  local saved stamp
+  saved="$(git stash create "pre-rollback to $tag" 2>/dev/null || true)"
+  if [[ -n "$saved" ]]; then
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    git update-ref "refs/pavans-workflow/rollback/$stamp" "$saved"
+    echo "saved uncommitted changes as refs/pavans-workflow/rollback/$stamp (restore: git stash apply $saved)"
+  fi
   git reset --hard "$tag"
   echo "reset to $tag"
 }
@@ -263,4 +278,4 @@ main() {
   esac
 }
 
-main "$@"
+main ${1+"$@"}

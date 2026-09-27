@@ -17,7 +17,7 @@ const fakeController = {
 	shutdown() {
 		shutdownCalls += 1;
 		status = "idle";
-		return { status: "idle", url: STATS_DEFAULT_URL };
+		return { status: "idle" as const, url: STATS_DEFAULT_URL };
 	},
 };
 

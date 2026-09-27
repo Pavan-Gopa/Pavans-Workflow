@@ -4,8 +4,16 @@ import { fileURLToPath } from "node:url";
 import {
 	MAIN_ORCHESTRATOR_ALIAS,
 	planMainAliasRepair,
+	resolveRoleStorage,
 	shouldRepairMainAlias,
 } from "../lib/workflow-main-model-sync.ts";
+
+// OMP <= 17 settings.get(), OMP 18 raw project/global views, and failure fallback.
+assert.equal(resolveRoleStorage({ get: (key: string) => (key === "modelRoleStorage" ? "global" : undefined) }), "global");
+assert.equal(resolveRoleStorage({ getProjectSettings: () => ({ modelRoleStorage: "project" }) }), "project");
+assert.equal(resolveRoleStorage({ getProjectSettings: () => ({}), getGlobalSettings: () => ({ modelRoleStorage: "global" }) }), "global");
+assert.equal(resolveRoleStorage({ get: () => { throw new Error("not initialized"); } }), "project");
+assert.equal(resolveRoleStorage(undefined), "project");
 
 assert.deepEqual(planMainAliasRepair(MAIN_ORCHESTRATOR_ALIAS), { kind: "noop" });
 assert.deepEqual(planMainAliasRepair(undefined), { kind: "restore-alias", previousValue: undefined });

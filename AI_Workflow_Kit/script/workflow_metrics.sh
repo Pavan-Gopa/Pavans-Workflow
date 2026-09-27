@@ -8,11 +8,11 @@ HELPER="$SCRIPT_DIR/workflow_metrics.py"
 COMMAND="${1:-}"
 
 if command -v python3 >/dev/null 2>&1; then
-  exec python3 "$HELPER" "$@"
+  exec python3 "$HELPER" ${1+"$@"}
 fi
 
 if command -v uv >/dev/null 2>&1; then
-  exec uv run --no-project "$HELPER" "$@"
+  exec uv run --no-project "$HELPER" ${1+"$@"}
 fi
 
 PIPX_HOME_VALUE="${PIPX_HOME:-$HOME/.local/pipx}"
@@ -20,7 +20,7 @@ for python_path in \
   "$PIPX_HOME_VALUE/venvs/graphifyy/bin/python" \
   "$PIPX_HOME_VALUE/venvs/graphify/bin/python"; do
   if [[ -x "$python_path" ]]; then
-    exec "$python_path" "$HELPER" "$@"
+    exec "$python_path" "$HELPER" ${1+"$@"}
   fi
 done
 

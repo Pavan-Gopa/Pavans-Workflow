@@ -19,3 +19,30 @@ export function planMainAliasRepair(roleValue: string | undefined): MainAliasRep
 export function shouldRepairMainAlias(hasUI: boolean): boolean {
 	return hasUI;
 }
+
+export type RoleStorage = "project" | "global";
+
+type SettingsLike = {
+	get?: (key: string) => unknown;
+	getProjectSettings?: () => Record<string, unknown> | undefined;
+	getGlobalSettings?: () => Record<string, unknown> | undefined;
+};
+
+/**
+ * Where OMP persists model roles. OMP <= 17 exposed `settings.get(key)`; OMP 18
+ * moved to a typed registry and only keeps the raw project/global views. Read
+ * whichever exists; the workflow config itself declares `modelRoleStorage: project`.
+ */
+export function resolveRoleStorage(settingsLike: unknown): RoleStorage {
+	const candidate = (settingsLike ?? {}) as SettingsLike;
+	try {
+		const value =
+			typeof candidate.get === "function"
+				? candidate.get("modelRoleStorage")
+				: (candidate.getProjectSettings?.()?.modelRoleStorage ?? candidate.getGlobalSettings?.()?.modelRoleStorage);
+		if (value === "project" || value === "global") return value;
+	} catch {
+		// Fall through to the workflow default below.
+	}
+	return "project";
+}

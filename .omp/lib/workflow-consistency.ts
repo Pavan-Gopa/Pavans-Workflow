@@ -191,7 +191,7 @@ export function checkWorkflowConsistency(input: ConsistencyInput): ConsistencyFi
 			message: `unknown qa.status "${state.qaStatus}"`,
 		});
 	}
-	if (state.pipelineProfile && state.pipelineProfile !== "-" && !PIPELINE_PROFILES.has(state.pipelineProfile)) {
+	if (state.pipelineProfile && (state.pipelineProfile as string) !== "-" && !PIPELINE_PROFILES.has(state.pipelineProfile)) {
 		findings.push({
 			code: "enum_invalid",
 			severity: "warn",

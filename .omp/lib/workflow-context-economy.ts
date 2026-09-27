@@ -32,7 +32,7 @@ let activeContext: ExtensionContext | undefined;
 let activeSessionId: string | undefined;
 let policy: ContextEconomyPolicy = DEFAULT_CONTEXT_ECONOMY_POLICY;
 let state: ContextEconomyRuntimeState = initialContextEconomyState();
-let scheduled: Timer | undefined;
+let scheduled: ReturnType<typeof setTimeout> | undefined;
 let checkRunning = false;
 let installed = false;
 

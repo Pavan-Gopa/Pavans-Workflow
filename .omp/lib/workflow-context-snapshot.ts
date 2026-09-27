@@ -224,7 +224,7 @@ export function installWorkflowContextSnapshot(pi: ExtensionAPI): void {
 		approval: "read",
 		strict: true,
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const snapshot = await buildWorkflowContextSnapshot(pi, ctx, { includeGit: params.includeGit !== false });
+			const snapshot = await buildWorkflowContextSnapshot(pi, ctx, { includeGit: (params as { includeGit?: boolean }).includeGit !== false });
 			return {
 				content: [{ type: "text", text: JSON.stringify(snapshot, null, 2) }],
 				details: snapshot,
