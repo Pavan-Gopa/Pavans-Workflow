@@ -1,5 +1,97 @@
 # Changelog
 
+## 3.5.0 — 2026-09-27
+
+Hardening release: the rules that used to live only in prompts are now checked
+in code, installs no longer collide with product files, and updates are
+transactional.
+
+### Security and correctness
+
+- **Template contamination removed.** `PROJECT_CONTEXT.md`, `FEEDBACK.md`, and
+  `REPORT.md` shipped another project's real context and QA log since 3.1
+  (commit `da3addf`). Project state now lives only as pristine templates in
+  `AI_Workflow_Kit/templates/` and is rendered into a project when missing — a
+  used checkout can never leak its memory into a new install. CI refuses
+  committed project state.
+- **`/workflow-update` and `/work-update` work again.** Since 3.2 they always
+  called a removed experiment bridge and exited 2.
+- **The updater no longer overwrites product files.** Pre-3.5 updates replaced
+  the project's `README.md`, `INSTALL.md`, `CHANGELOG.md`, and `VERSION`, and
+  the installer refused any repository that had a `CHANGELOG.md` or `VERSION`.
+  The framework version now lives in `AI_Workflow_Kit/VERSION`. The first 3.5
+  update restores root files a legacy updater just overwrote (from its backup)
+  and points out leftovers.
+- **Worker guard.** A new `workflow-guard` extension snapshots the repository
+  before every worker spawn and verifies it when the worker finishes
+  (`workflow_guard.py`): read-only roles may change nothing, Coder/Designer only
+  `target_files`, Tester only test paths or `target_files`; no worker may commit
+  or edit workflow files. Violations are injected into Main's context.
+- **Backups need recorded Human authorization — enforced.** `-backup` agents are
+  blocked at spawn unless `STATE.yaml` records `backup_authorized` for that role.
+- **Deterministic close decision.** `workflow_close.py check` combines Objective
+  Gates, the guard verdict, card risk, and blast radius into `close_quick` /
+  `review` / `reopen_coder` / `reject_worker_result`.
+- **Objective Gates.** Backticked names (`README.md`, `maxRetries`) are no
+  longer executed; `` `$ cmd` `` is the explicit marker; every command on a
+  line runs; fenced examples and template cards are ignored; timeouts kill the
+  whole process group; a card without command gates cannot close as `quick`.
+- **Blast radius.** Token-based matching (`src/login.ts`, `rbac.go`,
+  `stripeWebhook.ts` now hit; `authors.ts`, `urls.ts`, `lessons/` no longer
+  do). New categories: secrets files, infra (CI, Docker, IaC), dependency
+  manifests, and the workflow control plane (`.omp/`). The diff includes
+  commits since the `pre-<step>` checkpoint tag.
+- **OMP 18 compatibility.** The Main alias guard called `settings.get()`, which
+  OMP 18 removed; it now reads the role storage safely. Quick Focus loads its
+  InputController seam dynamically and disables itself instead of breaking
+  input if OMP changes that internal.
+
+### Updates and releases
+
+- One manifest (`AI_Workflow_Kit/framework.manifest`) drives install, update,
+  doctor, and CI. `AI_Workflow_Kit/installed.manifest` records what was
+  installed, so files a release deletes are removed (unless locally modified),
+  and project-added files are never touched.
+- Updates are backed up and rolled back automatically on failure; the updater
+  hands over to the downloaded release, so replacing itself is safe.
+- `install.sh` and `workflow_update.sh` default to the newest `vX.Y.Z` tag
+  (fallback `main`) and accept `--ref`. `install.sh --update` no longer leaves a
+  temporary clone behind or clones twice. Installing into a repository that
+  already has its own `.omp/config.yml` merges the workflow roles into it.
+- A compatibility shim lets pre-3.5 project-local updaters finish against this
+  release; if they stop early, running the new updater once completes it.
+
+### Checks and tests
+
+- CI: Python 3.9 and 3.12, shellcheck, `tsc` against the pinned OMP release
+  (`dependencies.lock`), end-to-end install/update/legacy-migration on Linux
+  and macOS (`/bin/bash` 3.2), and repository hygiene checks.
+- New selftests: framework manager (install, update, rollback, legacy),
+  guard, close decision, update command, Quick Focus seam, model diversity.
+- The doctor warns when the Reviewer shares a model with the Coder primary or
+  backup, or when one provider backs up most roles (`workflow_model_diversity.py`).
+- The doctor warns on an OMP major version other than the tested one.
+
+### Changed
+
+- `TEAM_CONTRACT.md` is the single rule set (R1–R22) with what enforces each
+  rule; `AGENTS.md`, `ORCHESTRATOR.md`, `PIPELINE.md`, and the `/workflow`
+  command reference rule IDs instead of repeating them. Main's core read set
+  (those five files) went from about 36 KB to 22 KB and `.omp/AGENTS.md` alone
+  from 10 KB to 2 KB. Release numbers were removed
+  from contract docs.
+- `checkpoint.sh rollback` needs explicit confirmation (`WF_CONFIRM_ROLLBACK`)
+  and saves uncommitted tracked changes first.
+- Graphify missing is a doctor warning, not a failure.
+
+### Removed
+
+- `AI_Workflow_Kit/experiments/` payloads (≈390 KB of unused base64 archives),
+  the lean-pipeline overlay and its rollback, `workflow_experiment*.{sh,py}`,
+  `EXPERIMENT_CONTEXT_ECONOMY.md` — context economy and the lean pipeline are
+  core. Dead code: the unused Stats controller and the never-rendered model
+  setup panel.
+
 ## 3.4.2 — 2026-09-01
 
 ### Fixed
