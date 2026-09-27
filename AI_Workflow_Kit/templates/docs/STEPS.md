@@ -7,8 +7,11 @@
 
 ## How to write a card
 
-`**Pipeline profile:** quick` is ignored when `**Risk:**` is high or the
-verified diff hits auth/API/schema/migration paths.
+`**Pipeline profile:** quick` closes without Reviewer/Tester only when
+`python3 AI_Workflow_Kit/script/workflow_close.py check` returns `close_quick`
+(green command gates, clean worker guard, risk not high, no blast-radius hit).
+Write runnable Objective gates as `` `$ command` `` (or a recognised runner such
+as `npm test`, `pytest`); backticked file or symbol names are never executed.
 
 Every checklist item carries a stable ID: `<step>.<D|O|J><n>` — `D` for `Do`
 work items, `O` for Objective gates, `J` for Judgment gates. IDs are unique
@@ -38,7 +41,7 @@ active item by `current_work_item_id`, not by text. Run
 
 ### Objective gates
 
-- [ ] [S1.O1] `exact command` exits 0
+- [ ] [S1.O1] `$ exact command` exits 0
 - [ ] [S1.O2] required artifact or behavior is deterministically present
 
 ### Judgment gates

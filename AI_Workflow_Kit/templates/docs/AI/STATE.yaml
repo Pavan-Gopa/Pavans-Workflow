@@ -73,11 +73,14 @@ qa:
   enabled: true
   # use status: skipped only after an explicit Human opt-out; record why in note
 security:
+  # none | pending | offer_scoped | declined (see SECURITY.md)
   next_run: none
   note: >-
-    Offer once near release when work is ready (optional). Top models only:
-    GLM 5.2 max, Sol max, or Opus 5 max. Not every step. Not Terra/Luna.
-# Lean-pipeline experiment. Default standard keeps Coder -> Reviewer -> Tester.
+    Offer once near release when work is ready (optional), or when
+    workflow_security_scope.py reports a security hit. Model choice lives in
+    .omp/config.yml (workflow_security), not in this file.
+# Pipeline profile copied from the active STEPS.md card (quick|standard|critical).
+# Unlabeled cards stay standard: Coder -> Reviewer -> Tester.
 pipeline:
   profile: standard
   authorized_by: null
