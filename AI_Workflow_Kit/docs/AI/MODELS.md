@@ -1,4 +1,4 @@
-# Recommended models by role — Workflow v3.1
+# Recommended models by role
 
 These are defaults and intent guidelines, not hard bindings. Runtime selection
 is controlled through project aliases in `.omp/config.yml` and **Alt+M -> Roles**.
@@ -29,9 +29,8 @@ is controlled through project aliases in `.omp/config.yml` and **Alt+M -> Roles*
 | Design Advisor | `@workflow_design_advisor` | `@workflow_design_advisor_backup` |
 | Designer | `@workflow_designer` | `@workflow_designer_backup` |
 
-For backward-compatible upgrades, v3.1 adds missing design aliases as references
-to existing roles. **Role-alias values beginning with `@` must be quoted in
-YAML**:
+The updater adds missing design aliases as references to existing roles.
+**Role-alias values beginning with `@` must be quoted in YAML**:
 
 ```yaml
 workflow_design_advisor: "@workflow_reviewer"
@@ -40,10 +39,9 @@ workflow_design_advisor_backup: "@workflow_reviewer_backup"
 workflow_designer_backup: "@workflow_architect_backup"
 ```
 
-v3.1.1 also repairs the v3.1.0 regression where these four values could be
-written without quotes. If OMP already moved the invalid project configuration
-to `.omp/config.yml.broken-*`, the normal updater restores the newest project
-mapping automatically before the doctor runs.
+`workflow_config_repair.py` quotes bare aliases automatically. If OMP already
+moved an invalid project configuration to `.omp/config.yml.broken-*`, the
+updater restores the newest project mapping before the doctor runs.
 
 The aliases make the optional path immediately usable without overwriting any
 existing selection. Assign a dedicated model later through Alt+M. For example,
@@ -89,5 +87,19 @@ bash AI_Workflow_Kit/script/workflow_models.sh validate-role designer
 ```
 
 Existing workers keep their resolved model. New workers use the updated alias.
-Use separate providers when practical; same-provider backup does not protect
-against provider-wide outages.
+
+## Model independence (R17)
+
+```bash
+python3 AI_Workflow_Kit/script/workflow_model_diversity.py
+```
+
+The doctor runs this check and warns when:
+
+- the Reviewer uses the same model as the Coder primary **or the Coder backup**
+  (after a failover the Reviewer would grade its own model's work);
+- a role's backup is on the same provider as its primary;
+- one provider backs up most core roles and also runs a core primary, so one
+  outage removes both.
+
+It is advisory: model choice stays with the Human.

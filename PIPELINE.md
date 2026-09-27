@@ -1,118 +1,60 @@
-# Pipeline — Pavan's Workflow v3.4.0
+# Pipeline — Pavan's Workflow
 
-A file-backed, multi-model OMP development loop with fresh specialized workers,
-Main-owned state, conditional Graphify, Coder-only Ponytail, a live plan cursor,
-and optional Human-requested design escalation.
-
-## Start
+A file-backed, multi-model OMP development loop: fresh specialized workers,
+Main-owned state, code-checked boundaries, and optional Human-requested design
+escalation. Rules: `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md`. Procedure:
+`AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`.
 
 ```bash
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-## Default step loop — unchanged
+## Step loop
 
 ```text
 Human <-> Main
-  -> fresh Coder + assignment-local Ponytail
-  -> Main verifies source, diff, stable IDs, and Objective evidence
-  -> fresh Reviewer checks Judgment Gates and material complexity
-  -> Main verifies findings
-  -> fresh Tester runs runtime/QA gates and gap-hunts coverage
-  -> Main verifies tests/reports
-  -> green: close step and continue
-  -> red: persist compact verified retry memory and start a fresh Coder
+  -> state transaction (step, work item, profile, target_files)        R8
+  -> fresh Coder (+ Ponytail)          guard snapshot -> verify         R6
+  -> workflow_close.py check           gates + guard + blast radius     R13
+       close_quick ........... quick card, everything green -> close
+       review ................ fresh Reviewer -> Main verifies
+                               -> fresh Tester  -> Main verifies -> close
+       reopen_coder .......... gate failed -> verified retry memory -> fresh Coder
+       reject_worker_result .. guard violation -> Human decides -> fresh Coder
 ```
 
-Step cards may set `**Pipeline profile:** quick|standard|critical`. Unlabeled
-cards stay `standard`. `quick` skips Reviewer/Tester after Main re-runs
-Objective Gates and is ignored when `**Risk:** high` or the verified diff hits
-auth/API/schema/migration paths (`workflow_security_scope.py`).
+Profiles and gate syntax: `AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md`.
 
-Designer is never inserted automatically.
-
-## Optional visual-quality loop
-
-### Advisory
+## Design escalation (never automatic)
 
 ```text
-Human visual feedback
-  -> Main captures exact complaint and target surface
-  -> Design Advisor (read-only)
-  -> Main verifies the brief
-  -> ordinary Coder implements
-  -> Reviewer -> Tester -> Human visual acceptance when required
+Advice:   Human feedback -> Design Advisor (read-only) -> Coder -> Reviewer -> Tester
+Redesign: Human authorizes -> Designer (UI target_files) -> Reviewer -> Tester
+          -> Human visual acceptance
 ```
-
-### Direct implementation
-
-```text
-Human explicitly authorizes Designer edits
-  -> Main confirms target files, preserve-list, visual evidence, gates
-  -> Designer edits only presentation/UI scope
-  -> Main verifies real diff and captures
-  -> Reviewer -> Tester -> Human visual acceptance
-```
-
-Designer may not silently change backend behavior, API/schema, persistence,
-security, business logic, routing, localization meaning, or unrelated screens.
-
-## Live plan cursor
-
-Alt+W distinguishes selected (`*`) and live (`>`) steps. Auto-follow uses strong
-runtime evidence when canonical state is stale:
-
-```text
-current_work_item_id -> active Todo -> active worker -> STATE current_step
-```
-
-Arrow navigation pauses follow. `c` resumes live follow. Runtime recovery is
-read-only and surfaces state drift for Main reconciliation.
-
-## Ponytail
-
-Only Coder and backup Coder autoload `ponytail`. Designer/Advisor autoload
-`ui-designer`; they preserve meaningful visual, responsive, interaction, and
-accessibility behavior rather than minimizing it away.
-
-## Graphify
-
-```text
-non-trivial discovery -> Graphify -> focused real source -> verify
-known exact local symbol -> focused source tools -> verify
-```
-
-Main owns freshness. Graphify failure is advisory. Update/install bounds its
-refresh time when `--refresh-graphify` is explicitly requested.
-
-## Gates
-
-- Objective Gates: deterministic commands/artifacts.
-- Reviewer Judgment Gates: correctness, contracts, scope, architecture.
-- Human visual gate: final aesthetic acceptance after a direct redesign.
-- Reviewer is on by default; Tester is recommended; Security is optional near release.
 
 ## Failure and recovery
 
-Three materially identical no-progress failures stop. Runtime interruption and
-provider/model failure do not count as product attempts. Every backup—including
-Advisor and Designer—requires explicit Human authorization.
+Three materially identical no-progress failures stop (R15). Runtime
+interruption and provider/model failure are not product attempts. Every backup
+worker needs recorded Human authorization; the spawn hook refuses it otherwise
+(R16).
 
-## Dashboard and observability
+## Observability
 
-- `Alt+W`: plan, selected/live cursor, dual Todo, gates, workers, metrics, tokens,
-  and manual Stats URL.
-- `Alt+A`: transcripts and intervention.
-- `Alt+M`: core and optional design model roles.
-- `/workflow-stats`: explicit Stats start/sync/open only.
+- `Alt+W` plan, live cursor, gates, workers, metrics, tokens (read-only).
+- `Alt+A` Agent Hub: transcripts, intervention, abort.
+- `Alt+M` model roles; the doctor warns when the Reviewer shares the Coder's model.
+- `/workflow-stats` or `o` in Alt+W: manual OMP Stats.
 
 ## Update
 
 ```bash
-( tmp_dir="$(mktemp -d)" && git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw" && bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply; rc=$?; rm -rf "${tmp_dir:-}"; exit "$rc" )
+bash AI_Workflow_Kit/script/workflow_update.sh check   # plan only
+bash AI_Workflow_Kit/script/workflow_update.sh apply   # newest vX.Y.Z release
 ```
 
-Graphify refresh is deferred by default; use `--refresh-graphify` for an
-explicit bounded refresh. The updater preserves live project
-memory and model selections, adds only missing design aliases, stores a framework
-backup, runs migration/doctor, and requires an OMP restart.
+Framework files come from `AI_Workflow_Kit/framework.manifest`; project state,
+model selections, custom `.omp` files, and the Graphify index are preserved.
+Every apply is backed up and rolled back automatically on failure. Restart OMP
+afterwards.

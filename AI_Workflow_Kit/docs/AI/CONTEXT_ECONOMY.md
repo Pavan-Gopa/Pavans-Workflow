@@ -1,8 +1,8 @@
 # Context Economy
 
-This is the stable Main-only context policy (v3.3+). Lean-pipeline additionally
-makes targeted reconciliation the default for ordinary transitions. It never
-replaces canonical workflow authority, worker scopes, or verification gates.
+This is the Main-only context policy. Targeted reconciliation is the default
+for ordinary transitions (`ORCHESTRATOR.md` §1). It never replaces canonical
+workflow authority, worker scopes, or verification gates.
 
 ## Authority
 
@@ -27,7 +27,7 @@ Perform full reconciliation at:
 - canonical hash drift;
 - active-worker/runtime disagreement;
 - ambiguous evidence or gate transition;
-- experiment install, update, rollback, or OMP restart.
+- framework install/update or OMP restart.
 
 For an ordinary transition, call `workflow_context` first. Then read only:
 
@@ -70,7 +70,7 @@ shake -> soft
 `shake` removes recoverable heavy content locally. `soft` creates a portable
 text summary suitable for switching between providers. Provider-native remote
 compaction, speculative async compaction, idle timers, and context promotion are
-disabled for this experiment.
+disabled (managed by `workflow_config_repair.py`).
 
 Manual `/compact` aborts the current Main operation before compaction. Never run
 it while a worker is active. The floating controller calls OMP only from a safe
@@ -94,7 +94,7 @@ repository evidence before changing gates or routing.
 
 ## Main model toggle
 
-The experiment config limits role cycling to:
+The managed config limits role cycling to:
 
 ```yaml
 cycleOrder:

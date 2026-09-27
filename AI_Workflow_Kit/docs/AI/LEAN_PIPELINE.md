@@ -1,44 +1,62 @@
-# Lean Pipeline — pipeline profiles, deterministic gates, retry economy
+# Pipeline profiles, close decision, retry economy
 
-Core routing since v3.4.0. Unlabeled cards run the default loop: Coder → Main
-verification → Reviewer → Tester.
+Unlabeled step cards run the default loop: Coder → close check → Reviewer →
+Tester. Rules: `TEAM_CONTRACT.md` R11–R15.
 
-`TEAM_CONTRACT.md` still wins on role boundaries. Lean never lets economy
-outrank a high-risk card.
+## Profiles
 
-## Pipeline profiles
+Written on the `STEPS.md` card and copied into `STATE.yaml` before dispatch:
 
-Read from the current `STEPS.md` card, then copy into `STATE.yaml`:
-
-```yaml
-pipeline:
-  profile: standard   # quick | standard | critical
-  authorized_by: null
-  authorized_at: null
-  note: null
+```markdown
+**Risk:** normal            # low | normal | high
+**Pipeline profile:** quick # quick | standard | critical
 ```
 
 | Profile | Reviewer | Tester | Security |
 |---|---|---|---|
-| `standard` (default) | on unless Human skipped | recommended | offer near release |
-| `quick` | skip after green Objective Gates | skip | no |
-| `critical` | on | on unless Human skipped | offer scoped pass if blast-radius hits |
+| `standard` (default) | on unless the Human skips it | recommended | offered near release |
+| `quick` | skipped only on a `close_quick` decision | skipped with it | no |
+| `critical` | on | on unless the Human skips it | scoped pass offered on a blast-radius hit |
 
-`quick` is ignored when the card `**Risk:**` is `high`, or when
-`workflow_security_scope.py` reports `forbid_quick` (auth, credentials, trust
-boundaries, `/api/`, schema, OpenAPI, GraphQL, protobuf, or migrations). Main
-writes `pipeline.quick_forbidden: true` and keeps Reviewer/Tester. Writing
-`quick` on the card is the Human authorization; Main does not invent `quick`.
+Writing `quick` on the card is the Human's authorization; Main never invents it.
 
-Before closing a `quick` step or dispatching Reviewer on `standard`/`critical`,
-run:
+## Close decision (code, not memory)
+
+After a verified Coder/Designer result:
 
 ```bash
-python3 AI_Workflow_Kit/script/workflow_gates.py run --json
+python3 AI_Workflow_Kit/script/workflow_close.py check --json
 ```
 
-A missing or failed command gate is not `waiting_review`. Reopen the Coder
-item. Gates without a backticked command stay manual Judgment/artifact checks.
+It runs the card's Objective Gates (`workflow_gates.py`), reads the latest guard
+verdict (`workflow_guard.py`), and classifies the diff against the pre-step
+checkpoint tag (`workflow_security_scope.py`). `close_quick` needs all of:
+
+- the card says `quick` and `**Risk:**` is not `high`;
+- at least one command gate, all green;
+- a `clean` guard verdict for the step (an empty `target_files` gives `unscoped`);
+- no blast-radius hit: security, secrets, contracts (API/schema/migration/
+  proto/GraphQL), infra (CI, Docker, IaC), dependency manifests, or the
+  workflow control plane.
+
+Otherwise the decision is `review` and the output lists `quick_blockers`.
+`reopen_coder` means a gate failed; `reject_worker_result` means a guard
+violation (R7).
+
+## Writing gates that run
+
+```markdown
+### Objective gates
+
+- [ ] [S3.O1] `$ npm test -- --run src/cart` exits 0     explicit: always runs
+- [ ] [S3.O2] `pytest -q tests/cart` exits 0             recognised runner
+- [ ] [S3.O3] `./script/smoke.sh` exits 0                explicit relative path
+- [ ] [S3.O4] `CHANGELOG.md` mentions the cart fix       manual evidence (not run)
+```
+
+Every command on a line must pass. Backticked file or symbol names are never
+executed. `python3 AI_Workflow_Kit/script/workflow_gates.py list` shows how a
+card is parsed.
 
 ## Retry economy
 
@@ -48,37 +66,12 @@ item. Gates without a backticked command stay manual Judgment/artifact checks.
 | Reviewer `changes_requested` or Tester `bugs` | `lite` |
 | `repeated_failure_count >= 2` | `off` |
 
-On Tester `bugs`, require a failing test in approved test paths before
-dispatching Coder. That test becomes an Objective Gate for the retry.
+On Tester `bugs`, require a failing test in approved test paths before the next
+Coder run; that test becomes an Objective Gate for the retry.
 
 ## Assignment-first
 
-Every worker assignment is self-contained: goal, stable IDs, target files,
-exclusions, gates, compact retry facts, and the matching digest from
-`WORKER_INPUT_DIGEST.md`. Do not tell workers to re-read TEAM_CONTRACT,
-KICK_*, or PROJECT_CONTEXT. Incomplete assignments should `blocked`, not
-trigger a full-contract reread.
-
-Main targeted reconciliation (see `CONTEXT_ECONOMY.md`) is the default for an
-ordinary transition. Full reread remains required at startup/resume,
-`/workflow status`, Human interrupt, compaction recovery, and hash drift.
-
-## Scoped Security
-
-After a verified Coder diff, run:
-
-```bash
-python3 AI_Workflow_Kit/script/workflow_security_scope.py
-```
-
-A security hit sets `security.next_run: offer_scoped` and asks the Human.
-A contract/auth hit also sets `pipeline.quick_forbidden: true`. Decline on
-Security records `declined`. This is not a full pre-release campaign.
-
-## Rollback
-
-The overlay is removable:
-
-```bash
-bash AI_Workflow_Kit/experiments/lean-pipeline/install.sh rollback
-```
+Every assignment is self-contained (goal, stable IDs, `target_files`,
+exclusions, gates, compact retry facts, the role block from
+`WORKER_INPUT_DIGEST.md`). An incomplete assignment makes the worker return
+`blocked`; it does not trigger a full-contract reread.
