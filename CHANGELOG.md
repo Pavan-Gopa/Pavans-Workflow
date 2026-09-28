@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.5.1 — 2026-09-28
+
+Guard fixes found by running the 3.5.0 guard in live OMP sessions.
+
+### Fixed
+
+- **Model changes no longer count as worker violations.** OMP re-serializes the
+  whole `.omp/config.yml` whenever the Human changes a model or setting (Alt+M)
+  and creates `.omp/config.yml.lock` on its first settings save. If that
+  happened while a worker ran, the guard recorded a boundary violation against
+  the worker, and the step could not close until it was resolved by hand. The
+  lock file is now ignored; a change to `.omp/config.yml` during a worker run is
+  reported to Main as a note to confirm with the Human instead of a violation.
+  Every other `.omp/` file stays protected.
+- **Headless Main is recognised as Main.** The guard told Main apart from its
+  workers by `hasUI`, so in print or RPC sessions without a UI, Main's own
+  edit/write calls during a worker run were attributed to the worker. It now
+  uses OMP's agent identity (`ctx.agent.kind`) and falls back to `hasUI` only
+  on hosts without it.
+- Notes on a clean guard verdict now reach Main; before, only violations and
+  unscoped runs did.
+
+### Changed
+
+- CI and release workflows use `actions/checkout`, `actions/setup-node`, and
+  `actions/setup-python` v7 (Node 24). GitHub deprecated the Node 20 runtime
+  of the previous majors.
+
 ## 3.5.0 — 2026-09-27
 
 Hardening release: the rules that used to live only in prompts are now checked
