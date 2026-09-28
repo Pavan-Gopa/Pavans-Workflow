@@ -8,6 +8,7 @@ import {
 	GuardTracker,
 	guardMessage,
 	guardRole,
+	isMainSession,
 	parseVerdict,
 	TERMINAL_STATUSES,
 } from "../lib/workflow-guard.ts";
@@ -89,7 +90,7 @@ function installLifecycleListener(pi: ExtensionAPI): void {
 
 export default function workflowGuard(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
-		if (!ctx.hasUI) return;
+		if (!isMainSession(ctx.agent, ctx.hasUI)) return;
 		parentContext = ctx;
 		installLifecycleListener(pi);
 		try {
@@ -97,7 +98,7 @@ export default function workflowGuard(pi: ExtensionAPI): void {
 		} catch {
 			try {
 				await access(`${ctx.cwd}/${STATE_PATH}`);
-				ctx.ui.notify(
+				notify(
 					"Workflow update incomplete: AI_Workflow_Kit/installed.manifest is missing. Run: bash AI_Workflow_Kit/script/workflow_update.sh apply",
 					"warning",
 				);
@@ -125,7 +126,7 @@ export default function workflowGuard(pi: ExtensionAPI): void {
 
 	// Main's own edits during a worker run are Main's, not the worker's.
 	pi.on("tool_call", async (event, ctx) => {
-		if (!ctx.hasUI || !tracker.active()) return undefined;
+		if (!isMainSession(ctx.agent, ctx.hasUI) || !tracker.active()) return undefined;
 		for (const path of editedPaths(event.toolName, event.input)) tracker.recordMainEdit(path);
 		return undefined;
 	});

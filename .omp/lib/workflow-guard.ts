@@ -18,6 +18,15 @@ export function isBackupAgent(agent: string | undefined): boolean {
 	return Boolean(agent && /[-_]backup$/i.test(agent));
 }
 
+/**
+ * The guard extension also runs inside every worker session. Main is the
+ * top-level session in every mode (TUI, RPC, print); `hasUI` only says whether
+ * a UI is attached, so it decides only on hosts without agent identity.
+ */
+export function isMainSession(agent: { kind: string } | undefined, hasUI: boolean): boolean {
+	return agent ? agent.kind === "main" : hasUI;
+}
+
 /** Guard role for an agent name; non-workflow agents are checked as read-only "unknown". */
 export function guardRole(agent: string): string {
 	if (!isWorkflowAgent(agent)) return "unknown";
@@ -166,8 +175,11 @@ export function parseVerdict(stdout: string): GuardVerdict | undefined {
 
 /** Message injected into Main's context; undefined when there is nothing to act on. */
 export function guardMessage(verdict: GuardVerdict): string | undefined {
-	if (verdict.verdict === "clean") return undefined;
 	const who = `${verdict.agent ?? verdict.role ?? "worker"} (step ${verdict.step ?? "-"})`;
+	if (verdict.verdict === "clean") {
+		const notes = verdict.notes ?? [];
+		return notes.length ? [`WORKFLOW GUARD — note on ${who}:`, ...notes.map(note => `- ${note}`)].join("\n") : undefined;
+	}
 	if (verdict.verdict === "violation") {
 		const lines = (verdict.violations ?? []).slice(0, 12).map(item => `- ${item.path}: ${item.reason}`);
 		return [

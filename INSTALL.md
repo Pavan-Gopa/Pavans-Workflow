@@ -55,7 +55,7 @@ What happens:
 Your `README.md`, `INSTALL.md`, `CHANGELOG.md`, and `VERSION` are never
 touched; the framework version lives in `AI_Workflow_Kit/VERSION`.
 
-Pin a release with `--ref v3.5.0` (default: the newest `vX.Y.Z` tag, else `main`).
+Pin a release with `--ref v3.5.1` (default: the newest `vX.Y.Z` tag, else `main`).
 
 ## Update
 
@@ -127,5 +127,5 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.5.0
+3.5.1
 ```

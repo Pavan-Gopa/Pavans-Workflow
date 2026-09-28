@@ -1,6 +1,6 @@
 # Pavan's Workflow
 
-[![Version](https://img.shields.io/badge/version-3.5.0-1f6feb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.5.1-1f6feb)](CHANGELOG.md)
 [![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
 [![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -12,7 +12,7 @@ scoped [Graphify](https://github.com/Graphify-Labs/graphify) navigation,
 Coder-only Ponytail, and optional product-design roles — with the important
 boundaries checked in code, not only in prompts.
 
-> **3.5.0 is a hardening release.** Worker boundaries, backup authorization, and
+> **3.5 is a hardening release.** Worker boundaries, backup authorization, and
 > the `quick` close are enforced by code; installs no longer collide with your
 > `README.md`, `CHANGELOG.md`, or `VERSION`; updates are manifest-driven,
 > backed up, and rolled back on failure; `/workflow-update` works again.
@@ -92,7 +92,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Inside OMP: `/workflow-update check` (plan) or `/workflow-update`. From a
 shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
-`--ref v3.5.0` to pin a release, `--refresh-graphify` to rebuild the graph.
+`--ref v3.5.1` to pin a release, `--refresh-graphify` to rebuild the graph.
 
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
@@ -169,7 +169,7 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.5.0
+3.5.1
 ```
 
 ## Repository map

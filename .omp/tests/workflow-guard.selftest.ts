@@ -6,6 +6,7 @@ import {
 	guardMessage,
 	guardRole,
 	isBackupAgent,
+	isMainSession,
 	parseVerdict,
 } from "../lib/workflow-guard.ts";
 
@@ -17,6 +18,12 @@ assert.equal(guardRole("workflow-designer-backup"), "designer");
 assert.equal(guardRole("explore"), "unknown");
 assert.equal(isBackupAgent("workflow-tester-backup"), true);
 assert.equal(isBackupAgent("workflow-tester"), false);
+
+// Main vs worker session: agent identity decides; hasUI only without it.
+assert.equal(isMainSession({ kind: "main" }, false), true, "headless Main (print/RPC) is still Main");
+assert.equal(isMainSession({ kind: "sub" }, true), false, "a worker never counts as Main");
+assert.equal(isMainSession(undefined, true), true);
+assert.equal(isMainSession(undefined, false), false);
 
 // Backup workers need a recorded Human authorization in STATE.yaml.
 const noFailure = "omp:\n  model_failure:\n    status: none\n";
@@ -75,6 +82,9 @@ assert.deepEqual(editedPaths("bash", { command: "echo > d" }), [], "bash writes 
 
 // Messages for Main.
 assert.equal(guardMessage({ verdict: "clean" }), undefined);
+const note = guardMessage({ verdict: "clean", agent: "workflow-coder", step: "S3", notes: ["only modelRoles changed"] });
+assert.match(note ?? "", /note on workflow-coder \(step S3\)/, "clean verdicts still surface their notes");
+assert.doesNotMatch(note ?? "", /Do not accept/);
 const violation = guardMessage({
 	verdict: "violation",
 	agent: "workflow-reviewer",

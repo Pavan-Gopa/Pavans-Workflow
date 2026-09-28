@@ -24,7 +24,11 @@ A violation stays open until Main records the Human's decision with `resolve`;
 workflow_close.py refuses to close a step while any verdict for it is open.
 Paths are judged relative to the project directory (the folder holding
 AI_Workflow_Kit/), so a workflow inside a monorepo subfolder works too. Caches
-(__pycache__, .pytest_cache, *.pyc, ...) and files git ignores are not changes.
+(__pycache__, .pytest_cache, *.pyc, ...), OMP's .omp/config.yml.lock, and files
+git ignores are not changes. OMP itself re-serializes all of .omp/config.yml
+whenever the Human changes a model or setting (Alt+M), so a change to that file
+cannot be attributed: it is a NOTE for Main to confirm with the Human, not a
+violation.
 Records live under <git-common-dir>/pavans-workflow/guard/.
 Exit codes: verify → 0 clean/unscoped, 1 violation, 2 usage/git error.
 """
@@ -60,6 +64,17 @@ STATE_REL = "AI_Workflow_Kit/docs/AI/STATE.yaml"
 GENERATED_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox", ".turbo", ".DS_Store"}
 GENERATED_SUFFIXES = (".pyc", ".pyo")
 MIGRATION_BACKUP = re.compile(r"^AI_Workflow_Kit/.*\.bak-[^/]*$")
+# OMP writes these itself while a worker runs: every settings save (model roles
+# under modelRoleStorage: project, other project settings) re-serializes the
+# whole project config — comments dropped, values re-quoted, keys pruned — and
+# holds a flock on `<file>.lock`, which OMP leaves behind.
+HOST_CONFIG = ".omp/config.yml"
+HOST_LOCK = ".omp/config.yml.lock"
+HOST_CONFIG_NOTE = (
+    ".omp/config.yml changed while this worker ran. OMP rewrites it when the Human changes a model or "
+    "setting (Alt+M), so the guard cannot attribute it: confirm with the Human, and treat it as a "
+    "worker violation if nobody changed settings (git diff .omp/config.yml)."
+)
 
 
 class GuardError(RuntimeError):
@@ -97,7 +112,12 @@ def clean_path(value: str) -> str:
 
 def is_generated(path: str) -> bool:
     parts = path.split("/")
-    return any(part in GENERATED_DIRS for part in parts) or path.endswith(GENERATED_SUFFIXES) or bool(MIGRATION_BACKUP.match(path))
+    return (
+        any(part in GENERATED_DIRS for part in parts)
+        or path.endswith(GENERATED_SUFFIXES)
+        or path == HOST_LOCK
+        or bool(MIGRATION_BACKUP.match(path))
+    )
 
 
 def to_project(path: str, prefix: str) -> str:
@@ -402,7 +422,11 @@ def cmd_verify(root: Path, snapshot_id: str | None, exempt: list[str], base: Pat
         if now[item] != before[item] and item not in exempt_set and not is_generated(to_project(item, prefix))
     ]
     changed = [to_project(item, prefix) for item in changed_root]
-    verdict, violations, notes = judge(str(snapshot.get("role")), changed, list(snapshot.get("targets") or []), head_moved)
+    host_config_changed = HOST_CONFIG in changed
+    judged = [item for item in changed if item != HOST_CONFIG]
+    verdict, violations, notes = judge(str(snapshot.get("role")), judged, list(snapshot.get("targets") or []), head_moved)
+    if host_config_changed:
+        notes.append(HOST_CONFIG_NOTE)
     payload: dict[str, object] = {
         "id": snapshot["id"],
         "role": snapshot.get("role"),
