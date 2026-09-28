@@ -73,9 +73,15 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
   local `.env`) are invisible to it, and test caches (`__pycache__`,
   `.pytest_cache`, `*.pyc`, …) are deliberately ignored.
 - Edits Main makes with the edit/write tools (every OMP edit mode) while a
-  worker runs are exempted automatically; changes Main makes through `bash`
-  during a worker run are attributed to the worker. Main does not edit files
-  while a worker runs.
+  worker runs are exempted automatically, in the TUI and in headless (print or
+  RPC) sessions alike; changes Main makes through `bash` during a worker run
+  are attributed to the worker. Main does not edit files while a worker runs.
+- OMP rewrites `.omp/config.yml` itself whenever the Human changes a model or
+  setting (Alt+M), and leaves `.omp/config.yml.lock` behind. The guard cannot
+  tell that rewrite from a worker's edit, so a change to `.omp/config.yml`
+  during a worker run is a note, not a violation: Main confirms it with the
+  Human and records a violation if nobody changed settings. The lock file is
+  ignored. Every other `.omp/` file stays protected.
 - A parked worker woken again with `agent://<id>` is snapshotted when its
   `started` event arrives; a change made in the moment before that snapshot
   completes can be missed.

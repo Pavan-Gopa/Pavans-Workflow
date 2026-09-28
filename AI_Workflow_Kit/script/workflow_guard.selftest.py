@@ -110,6 +110,28 @@ def main() -> int:
         code, verdict = round_trip(root, "security", lambda: git(root, "checkout", "--", "notes/pre-existing.md"))
         assert code == 1 and verdict["violations"][0]["path"] == "notes/pre-existing.md", verdict
 
+        # OMP re-serializes .omp/config.yml itself when the Human changes a model
+        # (Alt+M) while a worker runs, and leaves its settings lock file behind:
+        # the config change is a note for Main, never a violation; the lock is
+        # never a change; every other .omp/ file stays protected.
+        write(root, ".omp/config.yml", 'modelRoles:\n  # Main slot.\n  workflow_orchestrator: "@default"\ntools:\n  dirs:\n    - .\n')
+        git(root, "add", "-A")
+        git(root, "commit", "-qm", "config")
+
+        def omp_saves_model_role() -> None:
+            write(root, ".omp/config.yml", 'modelRoles:\n  workflow_orchestrator: "@default"\n  default: x/y:high\ntools:\n  dirs:\n    - "."\n')
+            write(root, ".omp/config.yml.lock", "")
+
+        code, verdict = round_trip(root, "reviewer", omp_saves_model_role)
+        assert code == 0 and verdict["verdict"] == "clean", verdict
+        assert any(item.startswith(".omp/config.yml changed") for item in verdict["notes"]), verdict
+        assert verdict["changed"] == [".omp/config.yml"], verdict
+        git(root, "checkout", "--", ".omp/config.yml")
+
+        code, verdict = round_trip(root, "coder", lambda: write(root, ".omp/extensions/workflow-guard.ts", "// disabled\n"))
+        assert code == 1 and verdict["violations"][0]["path"] == ".omp/extensions/workflow-guard.ts", verdict
+        (root / ".omp/extensions/workflow-guard.ts").unlink()
+
         write(root, "AI_Workflow_Kit/docs/AI/STATE.yaml", "current_step: S5\ntarget_files: []\n")
         code, verdict = round_trip(root, "coder", lambda: write(root, "src/other.ts", "export {}\n"))
         assert code == 0 and verdict["verdict"] == "unscoped" and verdict["notes"], verdict
