@@ -1,15 +1,30 @@
-# Install Pavan's Workflow v3.4.2
+# Install Pavan's Workflow
 
-v3.4.2 fixes the Main model/effort selector race. `DEFAULT` is the only editable
-Main-model slot; `workflow_orchestrator` remains a hidden managed alias used by
-launch and quick-switch behavior.
+## Requirements
 
-## Update an existing v2/v3 project
+- OMP (`omp`):
 
-Close OMP for that project. From its root:
+  ```bash
+  curl -fsSL https://omp.sh/install | sh          # macOS / Linux
+  brew install can1357/tap/omp                    # or Homebrew
+  bun install -g @oh-my-pi/pi-coding-agent        # or Bun
+  irm https://omp.sh/install.ps1 | iex            # Windows PowerShell
+  ```
+
+  The extensions are type-checked against the OMP release pinned in
+  `AI_Workflow_Kit/vendor/dependencies.lock`; the doctor warns on a different
+  major version.
+- `git`, Python 3.9+ (the macOS system `python3` is fine).
+- Optional: Graphify (tested `graphifyy==0.9.46`). The installer installs it
+  with `uv`, `pipx`, or `pip --user` when missing; without it the workflow uses
+  source tools.
+
+## Install into a project
+
+From the project root (existing repository or a fresh `git init`):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
+bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) .
 ```
 
 Equivalent explicit-git form:
@@ -20,106 +35,81 @@ Equivalent explicit-git form:
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
   git clone -q --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
-  bash "$tmp_dir/pw/AI_Workflow_Kit/script/workflow_update.sh" apply "$PWD"
+  bash "$tmp_dir/pw/install.sh" "$PWD"
 )
 ```
 
-The updater preserves project model choices, workflow state, reports, product
-code, custom `.graphifyignore` rules, and the existing Graphify index. It repairs
-older Main-role layouts as follows:
+What happens:
 
-1. An existing `DEFAULT` remains authoritative.
-2. A direct `workflow_orchestrator` selection is copied to `DEFAULT` only when
-   no explicit `DEFAULT` exists.
-3. `workflow_orchestrator` is restored to `"@default"` and hidden from the role
-   picker.
+1. Framework files listed in `AI_Workflow_Kit/framework.manifest` are copied.
+   Files you already have with different content (for example your own
+   `.omp/AGENTS.md`) stop the install with a list — nothing is written.
+2. Project state (`STATE.yaml`, `STEPS.md`, `PROJECT_CONTEXT.md`, reports) is
+   rendered from `AI_Workflow_Kit/templates/`.
+3. `.omp/config.yml` is created, or — if you already have one — the workflow
+   roles, task policy, and Main-only context settings are merged into it.
+4. `graphify-out/` is added to `.gitignore`; an initial code graph is built
+   (skip with `WF_INSTALL_SKIP_GRAPHIFY=1`, timeout `WF_GRAPHIFY_INSTALL_TIMEOUT`).
+5. The doctor runs.
 
-Framework backups are stored under:
+Your `README.md`, `INSTALL.md`, `CHANGELOG.md`, and `VERSION` are never
+touched; the framework version lives in `AI_Workflow_Kit/VERSION`.
 
-```text
-<git-common-dir>/pavans-workflow/update-backups/<timestamp>/
-```
+Pin a release with `--ref v3.5.0` (default: the newest `vX.Y.Z` tag, else `main`).
 
-Append `--refresh-graphify` to request a bounded Graphify refresh. Restart OMP
-after a successful update.
+## Update
 
-## Install OMP
-
-macOS/Linux:
-
-```bash
-curl -fsSL https://omp.sh/install | sh
-```
-
-Other options:
+Close OMP for the project, then:
 
 ```bash
-brew install can1357/tap/omp
-bun install -g @oh-my-pi/pi-coding-agent
+bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/main/install.sh) --update
 ```
 
-Windows PowerShell:
+or, inside an installed project, `/workflow-update` in OMP, or
+`bash AI_Workflow_Kit/script/workflow_update.sh check|apply [--ref <tag>] [--refresh-graphify]`.
 
-```powershell
-irm https://omp.sh/install.ps1 | iex
-```
+The update:
 
-## New project from the template
+- replaces framework files from the release manifest and removes files the
+  release deleted — unless you modified them locally (they are kept and listed);
+- never touches files you added under `.omp/` or elsewhere;
+- keeps project state, model selections, custom `.graphifyignore` rules, and the
+  Graphify index; runs the state migration and the doctor;
+- backs up every framework file it touches to
+  `<git-common-dir>/pavans-workflow/update-backups/<timestamp>/` and restores
+  them automatically if the framework step fails (the state migration keeps its
+  own `.bak-*` copies; a failing doctor is reported, not rolled back).
 
-```bash
-git clone https://github.com/Pavan-Gopa/Pavans-Workflow.git my-project
-cd my-project
-bash install.sh .
-```
+Restart OMP afterwards.
 
-## Install into an existing repository without the workflow
+### From 3.4.x or older
 
-```bash
-(
-  set -Eeuo pipefail
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT
-  git clone --depth 1 https://github.com/Pavan-Gopa/Pavans-Workflow.git "$tmp_dir/pw"
-  bash "$tmp_dir/pw/install.sh" /absolute/path/to/your/project
-)
-```
+Run the curl update once. It removes the old `AI_Workflow_Kit/experiments/`
+payloads and bridge scripts, removes the legacy config marker, and restores a
+`README.md`/`CHANGELOG.md`/`VERSION` that a pre-3.5 updater overwrote moments
+before (from that updater's backup). Root `VERSION`/`CHANGELOG.md` files left by
+older releases are pointed out; delete them if they are not your product's.
 
-The installer refuses to overwrite existing workflow paths. Use the updater for
-an existing installation.
+The old in-project updater (`bash AI_Workflow_Kit/script/workflow_update.sh apply`
+from a 3.4 install) also works: while copying it replaces itself, lands on a
+hand-over line in the new script, and finishes with the 3.5 manager. If an
+older copy ever stops early, run the command above once more; OMP also warns
+at startup when `AI_Workflow_Kit/installed.manifest` is missing.
 
-## Configure the Main model correctly
+## Configure models
 
-Open **Alt+M → Roles** and edit **DEFAULT**. Complete both stages of OMP's
-selector: choose the model, then choose the effort/thinking level.
+Open **Alt+M → Roles**:
 
-Do not look for a separate editable `workflow_orchestrator` row in v3.4.2. It is
-intentionally hidden because it aliases `@default`.
+- **DEFAULT** — the persistent Main model and effort (complete both selector steps).
+- `workflow_*` — worker primaries; `workflow_*_backup` — Human-authorized backups.
+- Keep `workflow_reviewer` on a different model than `workflow_coder` **and**
+  `workflow_coder_backup`, and spread backups across providers:
 
-- To change the persistent primary: assign the new model + effort to `DEFAULT`.
-- To use the configured backup temporarily: use the quick-switch control
-  (`Alt+Q` in the workflow setup).
-- To change the backup mapping: edit `workflow_orchestrator_backup` in Roles.
+  ```bash
+  python3 AI_Workflow_Kit/script/workflow_model_diversity.py
+  ```
 
-## Graphify
-
-Tested package version:
-
-```bash
-uv tool install "graphifyy==0.9.46"
-```
-
-A new installation attempts a local AST code-only graph with a portable
-120-second timeout. Skip the initial build with:
-
-```bash
-WF_INSTALL_SKIP_GRAPHIFY=1 bash install.sh .
-```
-
-Workflow updates preserve the current graph by default. Rebuild later with:
-
-```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
-```
+`workflow_orchestrator` is intentionally hidden: it aliases `@default`.
 
 ## Launch
 
@@ -127,42 +117,15 @@ bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
 bash AI_Workflow_Kit/script/omp_workflow.sh
 ```
 
-Use **Alt+M → Roles** for worker primary/backup pairs. Design Advisor and
-Designer remain optional.
-
-## Main context economy
-
-Context maintenance is Main-only. Worker/task sessions do not inherit automatic
-Main compaction. OMP owns the native 28% hard threshold with mid-turn
-checkpoints; the workflow's soft window can compact earlier when Main is fully
-settled.
-
-## Quick Worker Focus
-
-```text
-Main   -- Tab --> Worker
-Worker -- Tab --> Main
-Worker -- Esc --> Main
-```
-
-Tab keeps OMP's normal completion behavior when text is present, a popup or
-overlay owns input, or no worker is running. `Alt+A` remains the full Agent Hub.
-
-## OMP Stats
-
-Stats remains manual. Press `o` in Alt+W or run `/workflow-stats`. No startup
-server or persistent widget is installed.
-
 ## Verify
 
 ```bash
-cat VERSION
-python3 AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
+cat AI_Workflow_Kit/VERSION
 bash AI_Workflow_Kit/script/workflow_doctor.sh
 ```
 
 Expected version:
 
 ```text
-3.4.2
+3.5.0
 ```

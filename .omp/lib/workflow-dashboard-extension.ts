@@ -1,4 +1,3 @@
-import { access } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { Key } from "@oh-my-pi/pi-tui";
 import type { AssistantUsageMessage } from "./workflow-dashboard-core.ts";
@@ -18,6 +17,7 @@ import {
 	type WorkerProgress,
 } from "./workflow-dashboard-data.ts";
 import { requestDashboardRender, showDashboard } from "./workflow-dashboard-panel.ts";
+import { UPDATE_TIMEOUT_MS, updaterInvocation } from "./workflow-update-command.ts";
 
 let listenersInstalled = false;
 
@@ -32,35 +32,6 @@ function installListeners(pi: ExtensionAPI): void {
 		recordWorkerLifecycle(data as { id?: string; agent?: string; status?: "started" | WorkerProgress["status"] });
 		requestDashboardRender();
 	});
-}
-
-async function experimentInstalled(cwd: string): Promise<boolean> {
-	try {
-		await access(`${cwd}/.omp/workflow-context-policy.json`);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function runExperimentAction(pi: ExtensionAPI, action: string, ctx: ExtensionContext): Promise<void> {
-	const allowed = ["status", "doctor", "update", "rollback"];
-	const normalized = allowed.includes(action) ? action : "status";
-	if (normalized === "rollback") {
-		const confirmed = await ctx.ui.confirm(
-			"Roll back context-economy experiment?",
-			"Restore the pre-experiment workflow overlay and managed config/keybinding sections. Product files and live workflow state are preserved.",
-		);
-		if (!confirmed) return;
-	}
-	const result = await pi.exec("bash", ["AI_Workflow_Kit/script/workflow_experiment.sh", normalized], {
-		cwd: ctx.cwd,
-		timeout: 300_000,
-	});
-	ctx.ui.notify(
-		(result.code === 0 ? result.stdout : result.stderr || result.stdout).trim() || `Experiment action exited ${result.code}`,
-		result.code === 0 ? "info" : "error",
-	);
 }
 
 export default function workflowDashboard(pi: ExtensionAPI): void {
@@ -129,15 +100,13 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 	});
 
 	const update = async (args: string, ctx: ExtensionContext) => {
-		const tokens = args.trim().split(/\s+/).filter(Boolean);
-		if (await experimentInstalled(ctx.cwd)) {
-			await runExperimentAction(pi, tokens.includes("check") ? "status" : "update", ctx);
+		const invocation = updaterInvocation(args);
+		if (invocation.errors.length > 0) {
+			ctx.ui.notify(`${invocation.errors.join("\n")}\nUsage: /workflow-update [check] [--ref <tag>] [--refresh-graphify]`, "error");
 			return;
 		}
-		const updater = ["AI_Workflow_Kit/script/workflow_update.sh", tokens.includes("check") ? "check" : "apply"];
-		if (tokens.includes("--refresh-graphify")) updater.push("--refresh-graphify");
-		ctx.ui.notify("Updating workflow framework...", "info");
-		const result = await pi.exec("bash", updater, { cwd: ctx.cwd, timeout: 300_000 });
+		ctx.ui.notify(invocation.mode === "check" ? "Checking for workflow updates..." : "Updating workflow framework...", "info");
+		const result = await pi.exec("bash", invocation.argv, { cwd: ctx.cwd, timeout: UPDATE_TIMEOUT_MS });
 		ctx.ui.notify(
 			(result.code === 0 ? result.stdout : result.stderr || result.stdout).trim() || `Update exited ${result.code}`,
 			result.code === 0 ? "info" : "error",
@@ -145,12 +114,4 @@ export default function workflowDashboard(pi: ExtensionAPI): void {
 	};
 	pi.registerCommand("workflow-update", { description: "Safely update workflow framework", handler: update });
 	pi.registerCommand("work-update", { description: "Fast workflow update alias", handler: update });
-
-	pi.registerCommand("workflow-experiment", {
-		description: "Manage the context-economy experiment: status, doctor, update, rollback",
-		handler: async (args, ctx) => {
-			if (!ctx.hasUI) return;
-			await runExperimentAction(pi, args.trim() || "status", ctx);
-		},
-	});
 }

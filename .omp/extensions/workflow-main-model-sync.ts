@@ -3,17 +3,13 @@ import {
 	MAIN_ORCHESTRATOR_ALIAS,
 	MAIN_ORCHESTRATOR_ROLE,
 	planMainAliasRepair,
+	resolveRoleStorage,
 	shouldRepairMainAlias,
 	type MainAliasRepair,
+	type RoleStorage,
 } from "../lib/workflow-main-model-sync.ts";
 
-type MainModelScope = "project" | "global";
-
-function preferredScope(): MainModelScope {
-	return settings.get("modelRoleStorage") === "project" ? "project" : "global";
-}
-
-function setRole(scope: MainModelScope, role: string, value: string): void {
+function setRole(scope: RoleStorage, role: string, value: string): void {
 	if (scope === "project") settings.setProjectModelRole(role, value);
 	else settings.setModelRole(role, value);
 }
@@ -22,7 +18,7 @@ function repairAlias(ctx: ExtensionContext): MainAliasRepair {
 	const repair = planMainAliasRepair(settings.getModelRole(MAIN_ORCHESTRATOR_ROLE));
 	if (repair.kind === "noop") return repair;
 
-	setRole(preferredScope(), MAIN_ORCHESTRATOR_ROLE, MAIN_ORCHESTRATOR_ALIAS);
+	setRole(resolveRoleStorage(settings), MAIN_ORCHESTRATOR_ROLE, MAIN_ORCHESTRATOR_ALIAS);
 	if (ctx.hasUI && repair.previousValue) {
 		ctx.ui.notify(
 			"Main model: workflow_orchestrator is a managed alias. Change DEFAULT in Alt+M; its model and effort are applied by OMP.",

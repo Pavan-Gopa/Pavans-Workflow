@@ -19,8 +19,36 @@ DESIGN_DEFAULTS = (
     ("workflow_designer_backup", "@workflow_architect_backup"),
 )
 
+CORE_ROLES = (
+    "workflow_coder",
+    "workflow_reviewer",
+    "workflow_tester",
+    "workflow_architect",
+    "workflow_security",
+)
+BACKUP_ROLES = tuple(f"{role}_backup" for role in ("workflow_orchestrator", *CORE_ROLES))
+
 MIN_RUNTIME_MS = 14_400_000  # 4 hours
 SOFT_REQUEST_BUDGET = 0      # disable request-count forced-yield guard
+
+# Main-only context economy: OMP owns the native 28% hard boundary with mid-turn
+# checkpoints. These top-level sections are workflow-managed on every repair.
+LEGACY_EXPERIMENT_MARKER = "# PAVANS_WORKFLOW_EXPERIMENT: context-economy-v1"
+MANAGED_CYCLE_ORDER = ("workflow_orchestrator", "workflow_orchestrator_backup")
+MANAGED_COMPACTION_SCALARS = (
+    ("enabled", "true"),
+    ("thresholdPercent", "28"),
+    ("thresholdTokens", "-1"),
+    ("midTurnEnabled", "true"),
+    ("autoContinue", "true"),
+    ("idleEnabled", "false"),
+    ("asyncEnabled", "false"),
+    ("remoteEnabled", "false"),
+    ("supersedeReads", "true"),
+    ("dropUseless", "true"),
+)
+MANAGED_COMPACTION_METHODS = ("shake", "soft")
+TOP_LEVEL_KEY = re.compile(r"^(?P<key>[A-Za-z0-9_.-]+):(?:[ \t]*(?:#.*)?)?$")
 
 SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
 ROLE_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
@@ -309,7 +337,204 @@ def _normalize_task_policy(lines: list[str], notes: list[str]) -> list[str]:
     return lines
 
 
-def normalize_config_text(source: str) -> tuple[str, list[str]]:
+def _top_section_bounds(lines: list[str], key: str) -> tuple[int, int] | None:
+    """Bounds of a top-level mapping key (start line, end line exclusive)."""
+    for start, line in enumerate(lines):
+        match = TOP_LEVEL_KEY.match(line)
+        if not match or match.group("key") != key:
+            continue
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            if TOP_LEVEL_KEY.match(lines[index]):
+                end = index
+                break
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        return start, end
+    return None
+
+
+def _replace_top_section(lines: list[str], key: str, block: list[str]) -> list[str]:
+    result = list(lines)
+    # Drop duplicate top-level sections first; YAML would keep only the last.
+    while True:
+        first = _top_section_bounds(result, key)
+        if first is None:
+            break
+        rest = _top_section_bounds(result[first[1]:], key)
+        if rest is None:
+            break
+        start, end = first[1] + rest[0], first[1] + rest[1]
+        del result[start:end]
+    first = _top_section_bounds(result, key)
+    if first is not None:
+        result[first[0]:first[1]] = block
+    else:
+        if result and result[-1].strip():
+            result.append("")
+        result.extend(block)
+    return result
+
+
+def _top_child_bounds(lines: list[str], section: str, child: str) -> tuple[int, int, str] | None:
+    bounds = _top_section_bounds(lines, section)
+    if bounds is None:
+        return None
+    start, end = bounds
+    for index in range(start + 1, end):
+        match = ROLE_LINE.match(lines[index])
+        if not match or match.group("key") != child:
+            continue
+        indent = match.group("indent")
+        width = len(indent)
+        child_end = end
+        for next_index in range(index + 1, end):
+            candidate = lines[next_index]
+            if not candidate.strip() or candidate.lstrip().startswith("#"):
+                continue
+            if _indent_width(candidate) <= width:
+                child_end = next_index
+                break
+        while child_end > index + 1 and not lines[child_end - 1].strip():
+            child_end -= 1
+        return index, child_end, indent
+    return None
+
+
+def _set_top_child(lines: list[str], section: str, child: str, value_lines: list[str]) -> list[str]:
+    """Set `section.child` (top-level section) to value_lines, keeping sibling keys."""
+    result = list(lines)
+    if _top_section_bounds(result, section) is None:
+        result = _replace_top_section(result, section, [f"{section}:"])
+    info = _top_child_bounds(result, section, child)
+    if info is None:
+        bounds = _top_section_bounds(result, section)
+        assert bounds is not None
+        indent = "  "
+        result[bounds[1]:bounds[1]] = [f"{indent}{child}:{value_lines[0]}", *(f"{indent}{line}" for line in value_lines[1:])]
+        return result
+    start, end, indent = info
+    block = [f"{indent}{child}:{value_lines[0]}", *(f"{indent}{line}" for line in value_lines[1:])]
+    result[start:end] = block
+    # YAML keeps the last duplicate key; drop later duplicates of this child.
+    cursor = start + len(block)
+    while True:
+        bounds = _top_section_bounds(result, section)
+        assert bounds is not None
+        later = next(
+            (
+                index
+                for index in range(cursor, bounds[1])
+                if (match := ROLE_LINE.match(result[index])) and match.group("key") == child and match.group("indent") == indent
+            ),
+            None,
+        )
+        if later is None:
+            return result
+        later_end = bounds[1]
+        for index in range(later + 1, bounds[1]):
+            candidate = result[index]
+            if candidate.strip() and not candidate.lstrip().startswith("#") and _indent_width(candidate) <= len(indent):
+                later_end = index
+                break
+        del result[later:later_end]
+
+
+def _apply_managed_sections(lines: list[str], notes: list[str]) -> list[str]:
+    before = "\n".join(lines)
+    result = [line for line in lines if line.strip() != LEGACY_EXPERIMENT_MARKER]
+    result = _replace_top_section(
+        result,
+        "cycleOrder",
+        ["cycleOrder:", *(f"  - {role}" for role in MANAGED_CYCLE_ORDER)],
+    )
+    result = _set_top_child(result, "contextPromotion", "enabled", [" false"])
+    for child, value in MANAGED_COMPACTION_SCALARS:
+        result = _set_top_child(result, "compaction", child, [f" {value}"])
+    result = _set_top_child(
+        result,
+        "compaction",
+        "methodOrder",
+        ["", *(f"  - {method}" for method in MANAGED_COMPACTION_METHODS)],
+    )
+    if "\n".join(result) != before:
+        notes.append("applied managed context-economy sections (cycleOrder, contextPromotion, compaction)")
+    return result
+
+
+def _upstream_roles(upstream_text: str | None) -> list[tuple[str, str]]:
+    if not upstream_text:
+        return []
+    lines = upstream_text.splitlines()
+    bounds = _model_roles_bounds(lines)
+    if bounds is None:
+        return []
+    start, end, _ = bounds
+    roles: list[tuple[str, str]] = []
+    for line in lines[start + 1:end]:
+        match = ROLE_LINE.match(line)
+        if match and match.group("key").startswith("workflow_"):
+            roles.append((match.group("key"), _scalar(match.group("rest"))))
+    return roles
+
+
+def _merge_upstream_roles(lines: list[str], upstream_text: str | None, notes: list[str]) -> list[str]:
+    """Add workflow roles that exist upstream but are missing locally (never overwrite)."""
+    upstream = _upstream_roles(upstream_text)
+    if not upstream:
+        return lines
+    bounds = _model_roles_bounds(lines)
+    assert bounds is not None
+    start, end, child_indent = bounds
+    existing = set()
+    for line in lines[start + 1:end]:
+        match = ROLE_LINE.match(line)
+        if match:
+            existing.add(match.group("key"))
+    missing = [(key, value) for key, value in upstream if key not in existing]
+    if missing:
+        lines[end:end] = [f"{child_indent}{key}: {value}" for key, value in missing]
+        notes.append("added upstream default role(s): " + ", ".join(key for key, _ in missing))
+    return lines
+
+
+def validate_managed_sections(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    if LEGACY_EXPERIMENT_MARKER in (line.strip() for line in lines):
+        errors.append("legacy context-economy experiment marker must be removed")
+    cycle = _top_section_bounds(lines, "cycleOrder")
+    cycle_items = []
+    if cycle is not None:
+        cycle_items = [
+            match.group(1)
+            for match in (re.match(r"^\s+-\s+(.+?)\s*$", line) for line in lines[cycle[0] + 1:cycle[1]])
+            if match
+        ]
+    if tuple(cycle_items) != MANAGED_CYCLE_ORDER:
+        errors.append("cycleOrder must contain workflow_orchestrator then workflow_orchestrator_backup only")
+    promotion = _top_child_bounds(lines, "contextPromotion", "enabled")
+    if promotion is None or _scalar(lines[promotion[0]].split(":", 1)[1]) != "false":
+        errors.append("contextPromotion.enabled must be false")
+    for child, value in MANAGED_COMPACTION_SCALARS:
+        info = _top_child_bounds(lines, "compaction", child)
+        if info is None or _scalar(lines[info[0]].split(":", 1)[1]) != value:
+            errors.append(f"compaction.{child} must be {value}")
+    methods_info = _top_child_bounds(lines, "compaction", "methodOrder")
+    methods: list[str] = []
+    if methods_info is not None:
+        start, end, _ = methods_info
+        methods = [
+            match.group(1)
+            for match in (re.match(r"^\s+-\s+(.+?)\s*$", line) for line in lines[start + 1:end])
+            if match
+        ]
+    if tuple(methods) != MANAGED_COMPACTION_METHODS:
+        errors.append("compaction.methodOrder must be [shake, soft]")
+    return errors
+
+
+def normalize_config_text(source: str, upstream_text: str | None = None) -> tuple[str, list[str]]:
     lines = source.splitlines()
     notes: list[str] = []
     bounds = _model_roles_bounds(lines)
@@ -341,9 +566,11 @@ def normalize_config_text(source: str) -> tuple[str, list[str]]:
             lines[end:end] = insertion
             notes.append("added " + ", ".join(key for key, _ in missing))
 
+    lines = _merge_upstream_roles(lines, upstream_text, notes)
     lines = _normalize_main_role(lines, notes)
     lines = _normalize_main_tag(lines, notes)
     lines = _normalize_task_policy(lines, notes)
+    lines = _apply_managed_sections(lines, notes)
     return "\n".join(lines).rstrip() + "\n", notes
 
 
@@ -367,6 +594,11 @@ def validate_config_text(source: str) -> list[str]:
             if BARE_ALIAS_VALUE.match(role_match.group("rest")):
                 errors.append(f"{key} uses an unquoted @ role alias")
         for key, _ in DESIGN_DEFAULTS:
+            if counts.get(key, 0) == 0:
+                errors.append(f"missing model role: {key}")
+            elif counts[key] > 1:
+                errors.append(f"duplicate model role: {key}")
+        for key in (*CORE_ROLES, *BACKUP_ROLES):
             if counts.get(key, 0) == 0:
                 errors.append(f"missing model role: {key}")
             elif counts[key] > 1:
@@ -442,6 +674,7 @@ def validate_config_text(source: str) -> list[str]:
             errors.append(
                 f"task policy softRequestBudget must be {SOFT_REQUEST_BUDGET}, got {budget_entries[0] or '<empty>'}"
             )
+    errors.extend(validate_managed_sections(source))
     return errors
 
 
@@ -515,7 +748,8 @@ def repair_project(project_root: Path, upstream_config: Path, common_git_dir: Pa
             original_mode = source_path.stat().st_mode & 0o777
 
     source = source_path.read_text(encoding="utf-8")
-    normalized, notes = normalize_config_text(source)
+    upstream_text = upstream_config.read_text(encoding="utf-8") if upstream_config.exists() else None
+    normalized, notes = normalize_config_text(source, upstream_text)
     errors = validate_config_text(normalized)
     if errors:
         raise RuntimeError("; ".join(errors))

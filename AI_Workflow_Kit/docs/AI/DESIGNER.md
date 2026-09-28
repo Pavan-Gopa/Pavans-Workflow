@@ -79,6 +79,6 @@ Designer, or Coder assignment; never retry with only "make it nicer".
 ## Observability
 
 Alt+W and Agent Hub show the active design worker and current-session model
-usage. Canonical passive metrics remain core-role-only in v3.1; Main records
+usage. Canonical passive metrics remain core-role-only; Main records
 design mode, result, evidence, and Human visual acceptance in ordinary
 feedback/state rather than sending unsupported metrics events.

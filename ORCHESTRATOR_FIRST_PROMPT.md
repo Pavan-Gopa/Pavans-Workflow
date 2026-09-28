@@ -1,4 +1,4 @@
-# Orchestrator — OMP first launch (v3.4.0)
+# Orchestrator — first launch
 
 Preferred entry point:
 
@@ -14,26 +14,17 @@ omp --model @workflow_orchestrator
 /workflow onboard
 ```
 
-OMP loads the project contract, primary/backup aliases, fresh worker agents, the
-Alt+W dashboard, Coder-only Ponytail, Grilling, and the optional UI Designer
-skill. Designer roles are never automatic.
-
 If project slash commands are unavailable, send Main:
 
 ```text
-Act as this project's sole Main Orchestrator. Also follow
-AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md (pipeline profiles, Objective Gate
-runs, retry economy). On ordinary
-transitions use targeted reconciliation; full reread is for startup, status,
-interrupt, and drift. Read .omp/AGENTS.md, PIPELINE.md,
-AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md, TEAM_CONTRACT.md, STATE.yaml,
-STEPS.md, and relevant feedback/reports. Reconcile active runtime against OMP hub state and
-the actual repository diff. Use fresh project agents, stable work-item IDs,
-Objective Gates, Reviewer-owned Judgment Gates, and compact verified retry
-memory. Only Main writes canonical workflow state and verifies every worker
-claim against source/diff/tests. Keep the normal Coder -> Reviewer -> Tester
-pipeline unchanged. Invoke Design Advisor or Designer only after explicit Human
-visual feedback; preserve behavior and require final Human visual acceptance.
-Alt+W is read-only and should follow the strongest live-step evidence while
-allowing arrows to inspect and c to resume live follow.
+Act as this project's sole Main Orchestrator. Read .omp/AGENTS.md, then
+AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md (rules R1-R22) and
+AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md (procedure), plus STATE.yaml, STEPS.md,
+and the current feedback/reports. Reconcile the active runtime (hub jobs/list)
+with the real repository diff before routing. Use fresh project agents, stable
+work-item IDs, and the state transaction before every dispatch. After each
+Coder/Designer result run `python3 AI_Workflow_Kit/script/workflow_close.py
+check --json` and follow its decision. Treat any WORKFLOW GUARD message as a
+rejected worker result. Invoke Design Advisor or Designer only after explicit
+Human visual feedback.
 ```

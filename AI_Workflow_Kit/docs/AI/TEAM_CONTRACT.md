@@ -1,112 +1,83 @@
-# AI Team Contract — Workflow v3.4.0
+# Team Contract — canonical rules
 
-Human process control goes through Main. Workers return structured evidence only.
+This file is the single statement of the workflow's rules. Every other
+document (`.omp/AGENTS.md`, `ORCHESTRATOR.md`, `PIPELINE.md`, role files,
+commands) refers to these rule IDs instead of restating them. When documents
+disagree, this file wins.
 
-## Source-of-truth priority
+**Enforced by** says what actually stops a violation:
+**code** — a script or the workflow extension refuses or flags it on real
+repository state; **config** — OMP settings; **Main** — Main's procedure
+(`ORCHESTRATOR.md`), no code check; **prompt** — role instructions only.
 
-1. Authoritative plan files listed in `PROJECT_CONTEXT.md`
-2. `STATE.yaml`
-3. `STEPS.md`
-4. `DECISIONS.md`
-5. `PROJECT_CONTEXT.md`
-6. `PIPELINE.md`
+## Authority
 
-Higher wins. A material system-design conflict routes to Architect before large
-implementation. A visual preference conflict routes to Human clarification or
-the optional design path, not silent Coder taste.
+| ID | Rule | Enforced by |
+|---|---|---|
+| R1 | Main is the only control plane: it routes, writes canonical workflow memory (`STATE.yaml`, `STEPS.md` checkboxes, `DECISIONS.md`, feedback and reports), creates checkpoints, and commits. | code: worker guard flags any worker edit of workflow files |
+| R2 | Source-of-truth order: plan files named in `PROJECT_CONTEXT.md` > `STATE.yaml` > `STEPS.md` > `DECISIONS.md` > `PROJECT_CONTEXT.md` > `PIPELINE.md`. Conversation history and worker reports are never authoritative. | Main |
+| R3 | Workers never route, spawn workers, commit, tag, push, switch branches, or edit workflow files; their output returns only to Main. | code: guard (commits, branch, workflow files) · config: `task.maxRecursionDepth: 1` |
+| R4 | One specialized worker at a time. Every run and retry is a fresh session with a compact, self-contained assignment — never a transcript or hidden reasoning. | config: `task.maxConcurrency: 1` · Main |
+| R5 | Main does not implement product code unless the Human authorizes it for that task. | Main |
 
-## Roles and write boundaries
+## Write scope
 
-| Role | Product writes | Boundary |
-|---|---:|---|
-| Main | No | State, plans, reports, checkpoints, routing, passive metrics |
-| Coder | Yes | Assignment target files only; Ponytail autoloaded |
-| Reviewer | No | Correctness/Judgment verdict and bounded complexity check |
-| Tester | Tests only | Approved test/QA paths and runtime evidence |
-| Architect | No | System advice, design, Grilling, Architecture Package |
-| Security | No | Optional evidence-grounded vulnerability audit |
-| Design Advisor | No | Concrete implementation-ready visual/UX brief |
-| Designer | UI scope only | Assigned presentation, style, asset, and UI-test files |
-| Human | — | Context, taste, authorization, intervention, final visual acceptance |
+| ID | Rule | Enforced by |
+|---|---|---|
+| R6 | Coder and Designer may change only `STATE.yaml target_files`; Tester only test/QA paths or `target_files`; Reviewer, Architect, Security, Design Advisor, and unrecognised subagents change nothing. Main records `target_files` before every Coder/Designer dispatch; an empty list makes the verdict `unscoped`. | code: `workflow_guard.py` snapshot/verify around every worker (automatic via the `workflow-guard` extension) |
+| R7 | A guard `violation` rejects the worker result. Main records it, restores or quarantines the listed changes with the Human, records the Human's decision (`workflow_guard.py resolve --id <id> --note "…"`), and dispatches a fresh worker. A violation stays open until resolved; a later clean run never masks it. | code: the verdict is injected into Main's context; `workflow_close.py` returns `reject_worker_result` while any violation for the step is open |
 
-Workers never commit, push, route, spawn another worker, or write canonical
-workflow memory.
+## State
 
-The v3.1 passive metrics event schema remains core-role-only. Optional design
-runs are recorded in normal feedback/state and current-session usage; Main does
-not emit unsupported Designer metrics events.
+| ID | Rule | Enforced by |
+|---|---|---|
+| R8 | Transitions are transactions. Before dispatch: write `current_step` (exact card ID), `current_work_item_id` (an existing stable ID), `pipeline.profile`, and `target_files`; persist and re-read; then Todo; then dispatch. After a result: verify evidence, update checklist/gates/status, persist, re-read, then route. | Main · Alt+W shows drift |
+| R9 | Stable checklist IDs `<step>.D<n>` / `.O<n>` / `.J<n>` are unique and never change. Only Main checks or reopens them, after verification. Runtime Todo items carry the parent ID and never check `STEPS.md`. | Main · `workflow_migrate.sh check` |
+| R10 | A finished worker proves only that a session ended. Main verifies every claim against real source, diff, and command output before writing canonical state. | Main · guard for scope |
 
-## Gate contract
+## Gates and closing a step
 
-- Objective Gates are deterministic commands/artifacts. Main re-runs
-  backticked commands via `workflow_gates.py` before Reviewer or a `quick`
-  close.
-- Pipeline profiles (`quick` / `standard` / `critical`) come from the step
-  card. Unlabeled cards are `standard`. `quick` is ignored when Risk is high
-  or when the verified diff hits auth/API/schema/migration paths.
-- Judgment Gates cover semantics, architecture, scope, contracts, failure
-  behavior, maintainability, trust boundaries, and assigned visual criteria.
-- Reviewer owns engineering Judgment Gates; Human owns final aesthetic
-  acceptance after a direct redesign.
-- `waiting_review` is not completion. Main closes a step only after verified
-  objective evidence, Reviewer judgment, enabled QA, and any explicitly required
-  Human visual acceptance.
-- Designer is optional and never an automatic release gate.
+| ID | Rule | Enforced by |
+|---|---|---|
+| R11 | Objective Gates are deterministic commands in the card's `### Objective gates` section (`` `$ cmd` `` or a recognised runner). Main re-runs them itself; a worker's "tests pass" is not evidence. | code: `workflow_gates.py` (inside `workflow_close.py`) |
+| R12 | Reviewer owns Judgment Gates; the Human owns final aesthetic acceptance after a direct redesign. `waiting_review` is not completion. | Main |
+| R13 | The close decision comes from `workflow_close.py check`. `close_quick` requires a `quick` card, risk not high, at least one command gate with all command gates green, every manual Objective gate already checked by Main, a clean Coder/Designer guard verdict with no open violation or unscoped run, and no blast-radius hit (security, secrets, contracts, infra, dependencies, control plane). Anything else continues with Reviewer and Tester. Main never closes a step as `quick` without a `close_quick` decision. | code: decision · Main: follows it |
+| R14 | Reviewer runs unless the Human skips it; Tester is recommended unless the Human opts out; every skip is recorded with its reason. Security is offered once near release, or when the close check reports `offer_scoped_security`. | Main |
 
-## Designer contract
+## Failure and models
 
-Main may dispatch design roles only after explicit Human feedback/request.
+| ID | Rule | Enforced by |
+|---|---|---|
+| R15 | Retry memory keeps only approach → observed result → verified reason. Stop after three materially identical no-progress failures; a new approach, new evidence, or a different failure is progress. Runtime interruption and provider/model failure are not product attempts. | Main |
+| R16 | No automatic model fallback. A `-backup` worker starts only after the Human authorized it and Main recorded `omp.model_failure.status: backup_authorized`, `backup_agent`, and the Human's exact words. | code: `before_subagent_spawn` blocks unauthorized backups · config: `retry.modelFallback: false` |
+| R17 | Independent review: the Reviewer must not share a model with the Coder primary or backup, and backups should be spread across providers. | code: doctor warning (`workflow_model_diversity.py`) |
 
-- Advisory mode is read-only and lower-cost. It returns exact changes by
-  component/file plus measurable acceptance criteria for Coder.
-- Implementation mode may edit only explicit presentation/UI/test targets.
-- Both modes receive the Human's feedback verbatim, target surface, preserve
-  list, current visual evidence, non-goals, and assigned gates.
-- Designer may not change backend behavior, API/schema, persistence,
-  authentication, security, business logic, routing, localization meaning, or
-  unrelated screens.
-- New UI frameworks, dependencies, and broad design systems require explicit
-  authorization.
-- Implementation mode must render/capture/inspect when project tooling permits;
-  tests alone do not prove visual quality.
-- Designer and Advisor autoload only `ui-designer`, never Ponytail.
+## Optional roles and skills
 
-## Ponytail contract
+| ID | Rule | Enforced by |
+|---|---|---|
+| R18 | Design Advisor and Designer run only after explicit Human visual feedback or request — never automatically. They never change backend behavior, API/schema, persistence, auth/security, business logic, routing, localization meaning, or unrelated screens; new UI frameworks or dependencies need authorization. A direct redesign ends with Human visual acceptance. | Main · guard (`target_files`) |
+| R19 | Ponytail autoloads only for Coder and its backup and never outranks requirements, gates, validation, security, accessibility, compatibility, or data integrity. The Reviewer blocks complexity only with a concrete behavior-preserving replacement. No other role trims its coverage for brevity. | doctor (autoload check) · prompt |
+| R20 | Graphify is navigation evidence, never truth: Graphify for non-trivial discovery and blast radius, focused LSP/grep/read for a known symbol, real source verified in both cases. Main owns graph freshness; workers report staleness. A Graphify failure never blocks work. | prompt |
 
-Only primary and backup Coder autoload Ponytail. Role/output contracts,
-confirmed requirements, target files, stable IDs, gates, security, validation,
-accessibility, compatibility, data integrity, and real source evidence outrank
-simplification. Reviewer may block only material complexity with a concrete
-behavior-preserving replacement. Other roles never reduce their coverage or
-controls for brevity.
+## Observability and control
 
-## Graphify contract
+| ID | Rule | Enforced by |
+|---|---|---|
+| R21 | Passive metrics, OMP Stats, and the Alt+W dashboard never control routing or gates; dashboard live-step recovery is display-only and never writes state. | code: read-only dashboard |
+| R22 | The Human may interrupt or redirect at any time. After any intervention Main re-reads repository and workflow state before continuing. | Main |
 
-Use Graphify for non-trivial discovery and blast radius. An exact known local
-symbol may use focused LSP/grep/read. Real source is always verified. Main owns
-freshness; workers report stale graphs. Graphify is advisory.
+## Known limits of enforcement
 
-## Hard rules
-
-1. One step and one specialized worker at a time.
-2. Product edits stay inside assignment target files.
-3. Worker output returns only to Main.
-4. Main alone changes workflow files and canonical checkboxes.
-5. No silent architecture, product, or visual-scope redesign.
-6. Fresh worker context for every role and retry.
-7. Main verifies repository/test/visual evidence before every transition.
-8. Stop three materially identical failures; new evidence or approach is progress.
-9. Runtime disappearance and model failure are not product attempts.
-10. Automatic backup model selection is forbidden.
-11. Passive metrics and OMP Stats never control routing or gates.
-12. Dashboard live-step recovery is display-only and never writes state.
-
-## Stable IDs and handoff
-
-`STEPS.md` items use `<step>.D<n>`, `.O<n>`, and `.J<n>`. Main alone checks or
-reopens them after verification. Runtime Todo remains separate and uses the
-parent ID prefix for dashboard linkage.
-
-Retry assignments carry only verified approach, observed result, evidence, and
-rejection reason. Design retries also carry exact Human visual feedback and the
-last verified artifacts, never vague taste summaries or hidden reasoning.
+- The guard sees what git sees: files ignored by `.gitignore` (for example a
+  local `.env`) are invisible to it, and test caches (`__pycache__`,
+  `.pytest_cache`, `*.pyc`, …) are deliberately ignored.
+- Edits Main makes with the edit/write tools (every OMP edit mode) while a
+  worker runs are exempted automatically; changes Main makes through `bash`
+  during a worker run are attributed to the worker. Main does not edit files
+  while a worker runs.
+- A parked worker woken again with `agent://<id>` is snapshotted when its
+  `started` event arrives; a change made in the moment before that snapshot
+  completes can be missed.
+- Rules marked **Main** or **prompt** depend on the model following them; the
+  dashboard's consistency warnings and the Reviewer are the backstop.

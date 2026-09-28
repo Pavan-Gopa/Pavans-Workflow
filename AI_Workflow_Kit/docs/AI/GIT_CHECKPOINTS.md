@@ -52,10 +52,15 @@ only when the whole repository is intentionally in scope.
 | After review **approved/skipped** + QA **green/skipped** | `post <step>` then graphify then open next |
 | Doc-only bootstrap | post after Orchestrator closes bootstrap step |
 
-## Rollback (careful — destructive)
+## Rollback (destructive — Human confirmation required)
 
 ```bash
 bash AI_Workflow_Kit/script/checkpoint.sh list
-# hard reset only if Human confirms
-git reset --hard <prefix>/pre-S1
+# Interactive: type the tag to confirm. Non-interactive (agents): only after the
+# Human said yes, pass the exact tag.
+WF_CONFIRM_ROLLBACK=proj/pre-S1 bash AI_Workflow_Kit/script/checkpoint.sh rollback pre S1
 ```
+
+Uncommitted tracked changes are saved first as
+`refs/pavans-workflow/rollback/<timestamp>` (restore with `git stash apply <sha>`);
+untracked files are left untouched.

@@ -1,0 +1,105 @@
+# Live orchestration state — Orchestrator owns this file.
+# Keep it simple. Project-agnostic template.
+
+schema_version: 2
+project_prefix: proj
+onboarding:
+  status: pending
+  mode: quick
+  model_pairs_confirmed: false
+  completed_at: null
+current_step: S0
+# Stable checklist ID (<step>.D<n>) of the actively assigned Do item; Main owns/clears it.
+current_work_item_id: null
+# Human-readable display text for that item; readability + legacy text fallback.
+current_work_item: null
+step_description: >-
+  Session start: Orchestrator confirms workflow readiness, asks Human for
+  project context, then minimal plan or Architect.
+target_files: []
+completed_steps: []
+skipped_steps: []
+implementation:
+  # pending | running | waiting_review | changes_requested | blocked | complete
+  status: pending
+  attempts: 0
+  # Increment only after evidence evaluates an implementation attempt.
+  # Runtime/provider interruption alone is not an implementation attempt.
+retry_guard:
+  max_attempts_without_progress: 3
+  # Consecutive verified failures for the current approach/failure signature.
+  # First occurrence = 1; same approach + same failure increments; a new
+  # approach/evidence/material failure signature starts a new count at 1.
+  repeated_failure_count: 0
+  last_failure_signature: null
+  blocker: null
+omp:
+  active_agent: null
+  active_role: null
+  last_result_artifact: null
+  model_failure:
+    # none | awaiting_human | backup_authorized
+    status: none
+    role: null
+    primary_agent: null
+    failed_model: null
+    evidence: null
+    backup_agent: null
+    human_instruction: null
+    authorized_at: null
+  interruption:
+    # none | interrupted_no_changes | interrupted_partial | recovered_result | indeterminate
+    status: none
+    role: null
+    agent: null
+    changed_files: []
+    evidence: null
+    recorded_at: null
+review:
+  status: pending
+  last_feedback_file: AI_Workflow_Kit/docs/AI/FEEDBACK.md
+  verdict: null
+  note: null
+  # default on unless Human explicitly skips
+  enabled: true
+  # use status: skipped only after an explicit Human opt-out; record why in note
+qa:
+  status: pending
+  last_report: AI_Workflow_Kit/docs/AI/REPORT.md
+  suite: null
+  bugs_open: 0
+  note: null
+  # recommended on; Human may opt out
+  enabled: true
+  # use status: skipped only after an explicit Human opt-out; record why in note
+security:
+  # none | pending | offer_scoped | declined (see SECURITY.md)
+  next_run: none
+  note: >-
+    Offer once near release when work is ready (optional), or when
+    workflow_security_scope.py reports a security hit. Model choice lives in
+    .omp/config.yml (workflow_security), not in this file.
+# Pipeline profile copied from the active STEPS.md card (quick|standard|critical).
+# Unlabeled cards stay standard: Coder -> Reviewer -> Tester.
+pipeline:
+  profile: standard
+  authorized_by: null
+  authorized_at: null
+  quick_forbidden: false
+  note: null
+next_actor: orchestrator
+track: BOOTSTRAP
+plan_files:
+  - PIPELINE.md
+  - AI_Workflow_Kit/docs/STEPS.md
+  - AI_Workflow_Kit/docs/DECISIONS.md
+  - AI_Workflow_Kit/docs/PROJECT_CONTEXT.md
+checkpoint:
+  last_pre_tag: null
+  last_post_tag: null
+  last_commit: null
+coder_brief: |
+  No product coding yet. After Human context: minimal plan and first step, or
+  Architect research if context is insufficient.
+notes: |
+  Fresh kit. Simple pipeline: ready → context → plan or Architect → code → review → test.

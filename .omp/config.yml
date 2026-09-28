@@ -1,4 +1,3 @@
-# PAVANS_WORKFLOW_EXPERIMENT: context-economy-v1
 modelRoleStorage: project
 
 modelRoles:
@@ -15,7 +14,7 @@ modelRoles:
   workflow_design_advisor: "@workflow_reviewer"
   workflow_designer: "@workflow_architect"
   workflow_orchestrator_backup: google-antigravity/gemini-3.6-flash:high
-  workflow_coder_backup: google-antigravity/gemini-3.6-flash:high
+  workflow_coder_backup: nvidia/z-ai/glm-5.2:high
   workflow_reviewer_backup: openai-codex/gpt-5.6-sol:high
   workflow_tester_backup: google-antigravity/gemini-3.6-flash:high
   workflow_architect_backup: google-antigravity/gemini-3.6-flash:high

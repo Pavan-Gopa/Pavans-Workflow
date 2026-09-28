@@ -1,3 +1,6 @@
 graphify-out/
 .DS_Store
 __pycache__/
+node_modules
+# Rendered by install.sh; the framework repo ships templates only (ci/repo_checks.py).
+/AI_Workflow_Kit/installed.manifest

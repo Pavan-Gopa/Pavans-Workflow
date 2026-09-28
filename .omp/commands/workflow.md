@@ -1,139 +1,73 @@
 ---
-description: Advance Pavan's file-backed multi-agent workflow v3.4.0
+description: Advance Pavan's file-backed multi-agent workflow
 argument-hint: [onboard|setup|ready|start|status|why|metrics|update|designer advise|designer redesign|next|human instruction]
 ---
 
 Act as the sole Main Orchestrator. Treat `$ARGUMENTS` as the Human's latest
 instruction, never as authoritative state.
 
-Follow `AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md` after the core contract: it
-defines step-card pipeline profiles, Objective Gate runs, and retry economy.
+Rules: `AI_Workflow_Kit/docs/AI/TEAM_CONTRACT.md` (R1–R22). Procedure:
+`AI_Workflow_Kit/docs/AI/ORCHESTRATOR.md`. Profiles and gates:
+`AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md`. Do a full read only at startup,
+`status`, Human interrupt, compaction recovery, or drift; otherwise reconcile
+the active step, changed files, and gate evidence.
 
-For an ordinary transition, do targeted reconciliation first (STATE.yaml,
-active STEPS card, changed files, gate evidence). Full reread of AGENTS.md,
-PIPELINE.md, ORCHESTRATOR.md, TEAM_CONTRACT.md, MODELS.md, DESIGNER.md,
-PROJECT_CONTEXT.md, and DECISIONS.md is for startup, `/workflow status`, Human
-interrupt, and drift.
+## Read-only utility arguments (handle, then stop)
 
-Inspect repository status, actual source, diff, and test evidence before routing.
+- `metrics` → `bash AI_Workflow_Kit/script/workflow_metrics.sh report`
+- `metrics rate good|overkill|underchecked [step]` → the helper's `rate` command
+- `metrics reset` → `bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes`
+- `why` → derive the routing reason from real state and evidence
+- `update check` / `update` → `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`;
+  after an applied update tell the Human to restart OMP and do not route further.
 
-## Read-only utility arguments
+Metrics and helper failures never change workflow state (R21).
 
-Handle these before product routing and stop afterward:
+## Onboarding
 
-- `metrics`: run `bash AI_Workflow_Kit/script/workflow_metrics.sh report`.
-- `metrics rate good|overkill|underchecked [step]`: run the helper's `rate` command.
-- `metrics reset`: run `workflow_metrics.sh reset --yes`.
-- `why`: derive the current routing reason from real state and evidence.
-
-Metrics are passive. A helper/report failure never changes workflow state.
-
-## Explicit framework update
-
-For `update check` or `update`, run the canonical updater:
+Read `onboarding.status` and `onboarding.mode` first. Readiness covers the six
+core roles; design roles are validated only when requested:
 
 ```bash
-bash AI_Workflow_Kit/script/workflow_update.sh check
-bash AI_Workflow_Kit/script/workflow_update.sh apply
-```
-
-The updater manages v3.1 framework files, Ponytail, UI Designer, Graphify
-helpers, additive model aliases, version/changelog, and deterministic tests
-while preserving live project memory and existing model assignments. After an
-applied update, tell the Human to restart OMP. Do not continue product routing
-in the same command.
-
-## Progressive onboarding
-
-Read `onboarding.status` and `onboarding.mode` before dispatching workers.
-Quick, Guided, and Advanced readiness continue to cover the six core roles.
-Design roles are optional and validated only when requested:
-
-```bash
-bash AI_Workflow_Kit/script/workflow_models.sh validate-role design_advisor
+bash AI_Workflow_Kit/script/workflow_models.sh validate-level full
 bash AI_Workflow_Kit/script/workflow_models.sh validate-role designer
+python3 AI_Workflow_Kit/script/workflow_model_diversity.py
 ```
 
-Use `Alt+M -> Roles` to assign a strong visual model such as the user's chosen
-Kimi model to `workflow_designer`. Missing design configuration never blocks the
-ordinary Coder/Reviewer/Tester pipeline.
+Surface any model-diversity warning to the Human once (R17). If
+`PROJECT_CONTEXT.md` is still the template, ask for the project context before
+planning.
 
-## Startup and resume
+## Each transition
 
-At every startup/resume and `status`, reconcile `STATE.yaml` with real OMP
-`hub jobs`, `hub list`, available artifacts, native Todo, and the authorized
-repository diff. Preserve partial work and do not count runtime disappearance as
-an implementation attempt.
+1. Reconcile `STATE.yaml` with `hub jobs`, `hub list`, artifacts, native Todo,
+   and the repository diff; preserve partial work.
+2. Run the state transaction (R8), including `target_files` for Coder/Designer.
+3. Dispatch exactly one fresh worker with a self-contained assignment and the
+   role block from `WORKER_INPUT_DIGEST.md`.
+4. When it finishes: act on any `WORKFLOW GUARD` message (R7), verify the
+   evidence yourself (R10), and after Coder/Designer run
+   `python3 AI_Workflow_Kit/script/workflow_close.py check --json` and follow
+   the `decision` (R13).
+5. Persist verified facts, re-read, route the next justified stage.
 
-## Automatic workflow
+Ask the Human only when their context, taste, or authorization is the missing
+prerequisite; never ask them to copy prompts between terminals.
 
-- Exactly one fresh specialized worker at a time.
-- Main alone writes workflow files, stable checklist state, reports, and passive
-  metrics.
-- Every worker assignment is compact and self-contained; never forward Main's
-  conversation history or prior worker transcripts.
-- Coder assignments include `ponytail_mode: off|lite|full` (`full` first, `lite`
-  on retry, `off` after two identical failures), the Coder digest, goal, stable
-  ID, target files, exclusions, Objective/Judgment Gates, interrupted work, and
-  compact verified retry memory.
-- Re-run Objective Gates with `python3 AI_Workflow_Kit/script/workflow_gates.py run --json`
-  before Reviewer or a `quick` close. Copy `pipeline.profile` from the step card.
-  After a Coder diff run `workflow_security_scope.py --json`. `quick` skips
-  Reviewer/Tester unless Risk is high or the helper reports `forbid_quick`.
-- Record `pipeline_profile` (and `tokens` when OMP exposes them) on metrics
-  events so `/workflow metrics` can group retries by profile. Never invent USD.
-- Verify structured output against real source/diff/tests before checking or
-  reopening IDs and before routing.
-- Reviewer evaluates correctness first, then bounded material complexity.
-- Tester owns runtime/QA gates and approved test paths.
-- Stop three materially identical no-progress failures.
-- Architect advisory is a bounded system-design second opinion; deeper design
-  and `/grilling` retain their existing contracts.
-- Persistent model/provider failure pauses; backup requires explicit Human
-  authorization.
+## Designer triggers (R18)
 
-## Designer commands and natural-language triggers
+- `designer advise <surface>` → `workflow-design-advisor`, read-only brief for Coder.
+- `designer redesign <surface>` → after confirming target files and a
+  preserve-list, `workflow-designer` in implementation mode.
 
-The following are explicit, optional design escalations:
+Natural language counts too ("the code works but the screen looks bad",
+"consult the designer"). When advice versus redesign is unclear, ask one short
+question. Use `KICK_DESIGNER.md` templates; never retry with only "make it nicer".
 
-- `designer advise <surface>`: dispatch `workflow-design-advisor` in read-only
-  advisory mode. It returns a concrete brief for Coder.
-- `designer redesign <surface>`: after confirming the target files and preserve
-  list, dispatch `workflow-designer` in implementation mode.
+## Grilling and Graphify
 
-Equivalent natural language is accepted, for example: "the code works but the
-screen looks bad", "consult the designer", or "let Designer rewrite this
-component". Never spend the expensive Designer model automatically. When mode
-is unclear, ask one short question.
-
-The assignment includes exact Human feedback, target surface, source paths,
-allowed files, exclusions, preserve-list, visual evidence, visual acceptance,
-and Objective Gates. Use `KICK_DESIGNER.md` templates.
-
-Advisor `design_ready` is verified for specificity and then routed to Coder.
-Designer `waiting_review` is verified against the real diff and visual artifacts,
-then routed through Reviewer and enabled Tester. Final aesthetic acceptance
-belongs to the Human. Record exact visual changes_requested feedback for a fresh
-run; never retry with only "make it nicer".
-
-## Graphify policy
-
-Before non-trivial discovery, ensure Main-owned graph freshness with
-`graphify_rebuild.sh fast`. Use `deep` for broad architecture/security mapping
-and `semantic` only for explicit docs/media graphing. A known exact local symbol
-may use focused source tools directly. Real-source verification is mandatory.
-
-## Manual OMP Stats
-
-Do not start or probe OMP Stats during ordinary workflow execution. Alt+W shows
-the copyable URL. Only explicit `/workflow-stats` or `o` starts and opens it.
-
-## Grilling
-
-Quick Grilling runs in Main from `skill://grilling`. Deep Grilling uses fresh
-`workflow-architect` runs. Relay exact questions and Human answers with the
-latest checkpoint. Main alone persists accepted architecture artifacts.
-
-If Human context is the only missing prerequisite, ask for it. Otherwise proceed
-through worker result, Main verification, durable update, and the next justified
-stage without asking the Human to copy prompts between terminals.
+Quick Grilling runs in Main from `skill://grilling`; deep Grilling uses fresh
+`workflow-architect` runs, and Main alone persists accepted architecture
+artifacts. Before non-trivial discovery refresh the graph with
+`graphify_rebuild.sh fast` (`deep` for broad architecture/security mapping)
+(R20). OMP Stats is never started automatically.

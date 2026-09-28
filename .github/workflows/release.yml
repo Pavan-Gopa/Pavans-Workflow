@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag, VERSION files, lock, and CHANGELOG agree
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          for file in VERSION AI_Workflow_Kit/VERSION; do
+            [ "$(tr -d '[:space:]' < "$file")" = "$tag" ] || { echo "$file != $tag"; exit 1; }
+          done
+          grep -q "^workflow_version: $tag$" AI_Workflow_Kit/vendor/dependencies.lock
+          grep -q "^## $tag " CHANGELOG.md
+          python3 ci/repo_checks.py
+      - name: Publish GitHub release with the CHANGELOG entry
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v tag="$tag" '$0 ~ "^## "tag" " {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" --title "Pavan's Workflow $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

@@ -36,12 +36,12 @@ export const DASHBOARD_OVERLAY_OPTIONS: OverlayOptions = {
 	mouseTracking: true,
 	anchor: "top-left",
 	width: "100%",
-	height: "100%",
+	maxHeight: "100%",
 };
 
 type ThemeTone = "accent" | "muted" | "warning";
 type ThemeLike = { fg: (tone: ThemeTone, text: string) => string };
-type KeybindingsLike = { matches: (data: string, action: string) => boolean };
+type KeybindingsLike = { matches(data: string, action: string): boolean };
 
 let activePanel: WorkflowDashboard | undefined;
 export const requestDashboardRender = (): void => activePanel?.requestRender();
@@ -66,7 +66,7 @@ class WorkflowDashboard implements Component {
 	private liveStepId?: string;
 	private followLive = true;
 	private revealSelection = true;
-	private timer?: Timer;
+	private timer?: ReturnType<typeof setTimeout>;
 	private refreshingFiles = false;
 	private refreshingMetrics = false;
 	private closed = false;
@@ -191,8 +191,9 @@ class WorkflowDashboard implements Component {
 	handleInput(data: string): void {
 		if (data.startsWith("\x1b[<")) {
 			routeSgrMouseInput(data, event => {
-				if (event.wheel !== null) {
-					this.manualScroll(() => this.viewport.scroll(event.wheel * MOUSE_SCROLL_LINES));
+				const wheel = event.wheel;
+				if (wheel !== null) {
+					this.manualScroll(() => this.viewport.scroll(wheel * MOUSE_SCROLL_LINES));
 					return true;
 				}
 				return false;

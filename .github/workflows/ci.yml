@@ -2,15 +2,20 @@ name: Workflow CI
 
 on:
   push:
-    branches: [main, "fix/**", "release/**"]
+    branches: [main, "fix/**", "feat/**", "release/**"]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  deterministic-selftests:
+  checks:
+    name: checks (python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]   # 3.9 = macOS system python3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,36 +23,70 @@ jobs:
           node-version: "22"
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
 
-      - name: Shell syntax
+      - name: Repository hygiene (templates, versions, manifest coverage, rule IDs)
+        run: python ci/repo_checks.py
+
+      - name: Shell syntax and shellcheck
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' script; do
-            bash -n "$script"
-          done < <(find . -type f -name '*.sh' -print0)
+          while IFS= read -r -d '' script; do bash -n "$script"; done < <(find . -type f -name '*.sh' -not -path './node_modules/*' -print0)
+          shellcheck -S warning install.sh AI_Workflow_Kit/script/*.sh AI_Workflow_Kit/experiments/context-economy/install.sh ci/*.sh
 
-      - name: Python syntax and deterministic selftests
+      - name: Python syntax and selftests
         run: |
           set -euo pipefail
-          python -m compileall -q AI_Workflow_Kit/script
-          while IFS= read -r -d '' test; do
-            python "$test"
-          done < <(find AI_Workflow_Kit/script -type f -name '*.selftest.py' -print0 | sort -z)
+          python -m compileall -q AI_Workflow_Kit/script ci
+          while IFS= read -r -d '' test; do echo "== $test"; python "$test"; done \
+            < <(find AI_Workflow_Kit/script -maxdepth 1 -type f -name '*.selftest.py' -print0 | sort -z)
+          bash AI_Workflow_Kit/script/workflow_metrics.sh selftest
 
-      - name: OMP-independent TypeScript selftests
+      - name: TypeScript selftests (OMP-independent)
         run: |
           set -euo pipefail
-          while IFS= read -r test; do
-            NODE_NO_WARNINGS=1 node --experimental-strip-types "$test"
-          done < <(find .omp/tests -type f -name '*.selftest.ts' | sort)
+          for test in .omp/tests/*.selftest.ts; do echo "== $test"; NODE_NO_WARNINGS=1 node --experimental-strip-types "$test"; done
 
-      - name: Shell deterministic selftests
+      - name: Canonical config guard and model diversity report
+        run: |
+          python AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
+          python AI_Workflow_Kit/script/workflow_model_diversity.py
+
+  typecheck:
+    name: tsc against pinned OMP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned OMP types
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' test; do
-            bash "$test"
-          done < <(find AI_Workflow_Kit/script -maxdepth 1 -type f -name '*.selftest.sh' -print0 | sort -z)
+          locked="$(awk '$1 == "omp:" { in_omp=1; next } in_omp && $1 == "version:" { print $2; exit }' AI_Workflow_Kit/vendor/dependencies.lock)"
+          pinned="$(node -p 'require("./ci/typecheck/package.json").devDependencies["@oh-my-pi/pi-coding-agent"]')"
+          [ "$locked" = "$pinned" ] || { echo "dependencies.lock omp $locked != ci/typecheck $pinned"; exit 1; }
+          npm install --prefix ci/typecheck --no-audit --no-fund --ignore-scripts
+          ln -s ci/typecheck/node_modules node_modules
+      - name: tsc --noEmit
+        run: ./node_modules/.bin/tsc -p ci/tsconfig.omp.json
 
-      - name: Canonical config guard
-        run: python AI_Workflow_Kit/script/workflow_config_repair.py check .omp/config.yml
+  e2e:
+    name: install/update e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the legacy 3.4.2 fixture comes from history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install, update, and legacy migration with stub omp/graphify
+        run: bash ci/e2e_install_update.sh
+        env:
+          # macOS: run every script under the system /bin/bash 3.2, like a default Mac.
+          WF_E2E_BASH: ${{ matrix.os == 'macos-latest' && '/bin/bash' || '' }}

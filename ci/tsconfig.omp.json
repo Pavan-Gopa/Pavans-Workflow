@@ -1,0 +1,15 @@
+{
+  "//": "Type-check the workflow's OMP extensions against the pinned OMP release (see .github/workflows/ci.yml).",
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["../.omp/extensions/*.ts", "../.omp/lib/*.ts", "../.omp/tests/*.ts"]
+}

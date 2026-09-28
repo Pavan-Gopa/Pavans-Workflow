@@ -99,6 +99,7 @@ const modelFailure = deriveRoutingExplanation(
 		modelFailureStatus: "awaiting_human",
 		modelFailureRole: "coder",
 		modelFailureInstruction: "Choose Coder backup or change the model",
+		modelFailureBackupAgent: "-",
 	},
 	baseRuntime,
 );

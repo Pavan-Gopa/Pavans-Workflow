@@ -1,265 +1,138 @@
-# Role: Main Orchestrator — Workflow v3.4.0
+# Main Orchestrator — procedure
 
-Main is the sole control plane for the file-backed workflow. It routes fresh
-OMP task agents, verifies their claims against the repository, and owns durable
-workflow state. Main does not implement product features unless the Human gives
-explicit task-specific permission.
+How Main runs the workflow. The rules themselves (R1–R22) live in
+`TEAM_CONTRACT.md`; this file only says how to apply them.
 
-Only Main writes `STATE.yaml`, `STEPS.md`, `DECISIONS.md`, feedback/reports,
-checkpoints, and other canonical workflow memory.
+Launch: `bash AI_Workflow_Kit/script/omp_workflow.sh`.
 
-## Start and source of truth
+## 1. Read and reconcile
 
-Preferred launch:
+**Full read** at startup/resume, `/workflow status`, Human interrupt, compaction
+recovery, and canonical-file hash drift:
 
-```bash
-bash AI_Workflow_Kit/script/omp_workflow.sh
-```
+1. plan files named in `PROJECT_CONTEXT.md`;
+2. `STATE.yaml`, `STEPS.md`, `DECISIONS.md`;
+3. current feedback/report files for the active role;
+4. repository status, real source, diff, tests, artifacts.
 
-At start, `/workflow status`, Human interrupt, compaction recovery, and
-canonical hash drift, read:
+**Targeted reconciliation** for an ordinary transition: active step and IDs,
+changed files, gate evidence, changed canonical hashes, and the exact
+`agent://` fields needed to verify the result. Escalate to a full read when that
+evidence is incomplete (see `CONTEXT_ECONOMY.md`).
 
-1. authoritative plan files named by `PROJECT_CONTEXT.md`;
-2. `STATE.yaml`;
-3. `STEPS.md` and `DECISIONS.md`;
-4. role-relevant feedback/reports;
-5. repository status, actual source, diff, tests, and artifacts.
+At startup and `status`, reconcile `omp.active_agent` with `hub jobs`, `hub list`,
+available `agent://` / `history://` artifacts, and the diff. Classify the last
+run as active, recovered, interrupted without changes, interrupted with partial
+work, or indeterminate. Preserve partial work; runtime disappearance is not a
+product attempt (R15).
 
-For an ordinary transition, targeted reconciliation is enough: active step and
-IDs, changed files, gate evidence, changed canonical hashes, and the exact
-`agent://` fields needed to verify the result. Escalate to a full reread when
-that evidence is incomplete. Follow `LEAN_PIPELINE.md` for pipeline profiles,
-Objective Gate runs, and retry economy.
+## 2. Dispatch a worker
 
-Conversation history and worker completion are not authoritative. A worker
-finishing proves only that its session ended.
-
-## Startup and resume reconciliation
-
-At every startup/resume and `/workflow status`:
-
-1. Read current file-backed state and active step.
-2. Reconcile `omp.active_agent` with `hub jobs`, `hub list`, available
-   `agent://`/`history://` artifacts, and the authorized repository diff.
-3. Classify the previous run as active, recovered, interrupted without changes,
-   interrupted with partial work, or indeterminate.
-4. Preserve partial work. Runtime disappearance alone is not a product failure
-   and does not increment implementation/retry counters.
-5. Persist only verified next-transition facts.
-
-## Worker catalogue
-
-| Role | Project agent | Purpose |
-|---|---|---|
-| Coder | `workflow-coder` | Product implementation/fix with Coder-only Ponytail |
-| Reviewer | `workflow-reviewer` | Read-only correctness/Judgment review |
-| Tester | `workflow-tester` | Runtime/QA evidence and approved test paths |
-| Architect | `workflow-architect` | Design uncertainty, advice, and Grilling |
-| Security | `workflow-security` | Optional evidence-grounded pre-release audit |
-| Design Advisor | `workflow-design-advisor` | Optional lower-cost read-only UI/UX brief |
-| Designer | `workflow-designer` | Optional Human-requested direct UI redesign |
-
-Every role also has a Human-authorized `-backup` variant. Run exactly one
-specialized worker at a time. Every retry is a fresh session.
-
-Before dispatch, validate the role model:
+Follow the transaction in R8, then:
 
 ```bash
 bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>
 ```
 
-## Default pipeline
+The assignment is compact and self-contained: goal and step, stable work-item
+ID, `target_files` and exclusions, Objective Gates, Reviewer-owned Judgment
+Gates, source-of-truth paths, and compact verified retry/interruption facts.
+Paste the role block from `WORKER_INPUT_DIGEST.md`; never tell a worker to
+re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT. Coder assignments also carry
+`ponytail_mode` (`full` first attempt, `lite` after review/QA findings, `off`
+when `repeated_failure_count >= 2`).
 
-The ordinary pipeline is unchanged:
+| Role | Agent | Use |
+|---|---|---|
+| Coder | `workflow-coder` | product implementation or verified fix |
+| Reviewer | `workflow-reviewer` | read-only Judgment Gates and bounded complexity check |
+| Tester | `workflow-tester` | runtime/QA evidence, approved test paths |
+| Architect | `workflow-architect` | design uncertainty, plan/code conflict, Grilling, thrash |
+| Security | `workflow-security` | evidence-grounded audit (R14) |
+| Design Advisor | `workflow-design-advisor` | read-only UI/UX brief (R18) |
+| Designer | `workflow-designer` | bounded presentation-layer redesign (R18) |
 
-```text
-Main -> Coder -> Main verification
-     -> Reviewer -> Main verification
-     -> Tester -> Main verification
-     -> checkpoint / next step
-```
+Every role has a `-backup` agent that only starts under R16.
 
-Reviewer is enabled unless the Human explicitly skips it. Tester is recommended
-unless explicitly skipped. Security is offered once near release. Record every
-skip and reason.
+## 3. The guard runs by itself
 
-## Assignment contract
-
-Every worker receives one compact self-contained assignment containing:
-
-- goal and current step;
-- stable work-item ID;
-- exact target/allowed paths and exclusions;
-- Objective Gates;
-- Reviewer-owned Judgment Gates;
-- source-of-truth paths;
-- compact verified retry/interruption facts when relevant.
-
-Coder assignments also carry:
-
-```text
-ponytail_mode: off | lite | full
-```
-
-First attempt: `full`. Review/QA retry: `lite`. `repeated_failure_count >= 2`:
-`off`. Paste the matching role block from `WORKER_INPUT_DIGEST.md`. Never tell
-a worker to re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT.
-
-Never forward Main's conversation transcript, another worker's transcript, or
-hidden reasoning.
-
-## Stable checklist and native Todo
-
-`STEPS.md` items use `<step>.D<n>`, `.O<n>`, and `.J<n>`. Main alone checks or
-reopens them after repository/evidence verification.
-
-OMP's native Todo is separate runtime subtask memory. Prefix runtime items with
-the parent stable ID. Completing a runtime Todo never checks `STEPS.md`.
-
-Before dispatch, Main writes `current_work_item_id` and readable
-`current_work_item` in `STATE.yaml`, and copies `pipeline.profile` from the
-current step card (`quick` / `standard` / `critical`). Clear the work item
-only after verified completion.
-
-## Result transitions
-
-| Result | Main action |
-|---|---|
-| Coder `waiting_review` | Re-run Objective Gates with `workflow_gates.py`. Run `workflow_security_scope.py` on the verified diff; if `forbid_quick`, set `pipeline.quick_forbidden: true` and do not close as `quick`. Persist `waiting_review`; on remaining `quick` close the Stop-gate; otherwise dispatch Reviewer. |
-| Coder `blocked` | Record exact blocker; obtain context or route Architect/Human |
-| Reviewer `approved` | Verify review evidence; dispatch enabled Tester or close explicitly skipped QA |
-| Reviewer `changes_requested` | Reopen affected IDs; persist issues; dispatch fresh Coder |
-| Tester `qa_green` | Verify commands and test diff; close Stop-gate when all requirements hold |
-| Tester `bugs` | Persist reproducible bugs; keep Tester-added failing tests as Objective Gates; dispatch fresh Coder with `ponytail_mode: lite` |
-| Architect `advice_ready` | Verify and accept/reject bounded advice; Main keeps routing authority |
-| Architect `design_ready` | Verify and persist accepted Architecture Package/ADR/plan |
-| Security `findings_open` | Persist report; route accepted fixes through Coder/Reviewer/Tester |
-| Security `security_clean` | Record result and continue release flow |
-
-## Optional Designer routing
-
-Designer is never automatic. Use it only after explicit Human visual feedback
-or a direct request.
-
-### Advisory path
-
-```text
-Human asks for design advice
--> Main builds advisory packet
--> workflow-design-advisor (read-only)
--> Main verifies specificity
--> ordinary Coder implements the brief
--> Reviewer -> Tester -> Human visual acceptance
-```
-
-### Direct implementation path
-
-```text
-Human authorizes direct redesign
--> Main confirms exact presentation-layer target_files and preserve-list
--> workflow-designer edits the bounded UI scope
--> Main verifies diff and visual artifacts
--> Reviewer -> Tester -> Human visual acceptance
-```
-
-Every design assignment includes the Human's feedback verbatim, target surface,
-preserve-list, exact files, visual evidence or reproduction command, observable
-visual acceptance, and Objective Gates. If advisory versus direct editing is
-unclear, ask one concise question rather than choosing the expensive path.
-
-Designer may edit assigned presentation components, styles, tokens, approved
-assets, and UI tests. It may not silently change backend behavior, APIs/schemas,
-persistence, auth/security, routing, business logic, localization meaning, or
-unrelated screens. A required out-of-scope change becomes a precise blocker for
-Coder or Architect.
-
-Reviewer/Tester green is not the final aesthetic gate. The Human records:
-
-```text
-visual acceptance: accepted | changes_requested
-```
-
-A rejected result receives exact fresh visual feedback, not merely "make it
-nicer".
-
-## Live dashboard cursor
-
-Alt+W is read-only. It resolves the displayed live step from the strongest
-available evidence:
-
-```text
-current_work_item_id -> active RUN TODO -> active worker assignment
--> canonical current_step -> unambiguous pending RUN TODO
-```
-
-`>` marks live execution and `*` marks the step selected for inspection. Up/Down
-pause follow mode; `c` returns to and follows live work. Runtime recovery may
-show a drift warning but never edits `STATE.yaml`.
-
-## Retry safeguard
-
-After a verified failure, persist only:
-
-```text
-approach -> observed result -> verified reason it failed
-```
-
-Three materially identical no-progress failures stop automatic retries. A new
-approach, new evidence, or materially different failure is progress.
-
-## Manual model failover
-
-Persistent provider/model failure pauses routing without incrementing product
-attempts. Record the exact role/model/evidence under `omp.model_failure`.
-Launch a matching backup only after explicit Human authorization and include:
-
-```text
-human_backup_authorization: true
-Human instruction: <exact words>
-```
-
-This applies to Coder, Reviewer, Tester, Architect, Security, Design Advisor,
-and Designer. A failed backup pauses again. Main's own outage requires a live
-switch to `@workflow_orchestrator_backup` and `/workflow status`.
-
-## Graphify
-
-Graphify locates; real source verifies. Main owns freshness. Use it for
-non-trivial discovery, cross-file behavior, dependencies, callers/callees,
-blast radius, schemas, trust boundaries, architecture, security, and broad UI
-surfaces. For an exact local symbol, focused LSP/grep/read may be smaller.
-
-Normal refresh:
+The `workflow-guard` extension snapshots the repository before every worker
+spawn and verifies it when the worker finishes (R6). A clean verdict is silent.
+A `violation` or `unscoped` verdict arrives in Main's context as a
+`WORKFLOW GUARD` message — act on it before routing (R7). Manual equivalents:
 
 ```bash
-bash AI_Workflow_Kit/script/graphify_rebuild.sh fast
+python3 AI_Workflow_Kit/script/workflow_guard.py status --step <step> --all
+python3 AI_Workflow_Kit/script/workflow_guard.py resolve --id <id> --note "Human: reverted src/x.ts"
+python3 AI_Workflow_Kit/script/workflow_guard.py snapshot --role coder   # before a manual run
+python3 AI_Workflow_Kit/script/workflow_guard.py verify                  # after it
 ```
 
-Graphify failure is advisory and never a product gate. Workflow updates preserve
-the existing graph by default; refresh separately or pass `--refresh-graphify`.
+## 4. Decide after a Coder or Designer result
 
-## Passive metrics
+```bash
+python3 AI_Workflow_Kit/script/workflow_close.py check --json
+```
 
-Main alone records canonical passive metrics after verified transitions. The
-v3.1 metrics schema remains backward-compatible and core-role-only; optional
-Advisor/Designer activity is visible in current-session usage and is recorded in
-normal feedback/state, not sent as unsupported metrics events. Metrics failure
-never changes routing, gates, retries, or product state.
+| `decision` | Main does |
+|---|---|
+| `close_quick` | close the step (R13): check items, record evidence path, checkpoint |
+| `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
+| `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
+| `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
 
-## Checkpoints
+If `offer_scoped_security` is true, set `security.next_run: offer_scoped` and ask
+the Human once.
 
-Only Main creates checkpoints and stages the exact authorized product/test paths
-plus workflow files changed for the verified transition. Never stage unrelated
-work or push unless the Human/project policy explicitly requires it.
+## 5. Other results
 
-## Human supervision
+| Result | Main does |
+|---|---|
+| Coder `blocked` | record the exact blocker; get context or route Architect/Human |
+| Reviewer `approved` | verify review evidence; dispatch Tester unless QA was skipped |
+| Reviewer `changes_requested` | reopen affected IDs, persist issues, fresh Coder (`ponytail_mode: lite`) |
+| Tester `qa_green` | verify commands and test diff; close when every requirement holds |
+| Tester `bugs` | persist reproducible bugs; keep the Tester's failing tests as Objective Gates; fresh Coder (`lite`) |
+| Architect `advice_ready` / `design_ready` | verify, accept or reject; persist accepted ADR/plan; Main keeps routing |
+| Security `findings_open` / `security_clean` | persist the report; route accepted fixes through Coder → Reviewer → Tester |
 
-- `Alt+A`: worker inspection, transcript, steering, stop.
-- `Alt+W`: read-only workflow board and live cursor.
-- `Alt+M`: model roles.
-- `/workflow why`: current routing reason.
-- `/workflow designer advise <surface>`: lower-cost brief.
-- `/workflow designer redesign <surface>`: direct bounded UI implementation.
+## 6. Design escalation (R18)
 
-After any Human intervention, reread repository and workflow state before
-continuing.
+- **Advice:** Human asks for direction → `workflow-design-advisor` (read-only) →
+  Main checks the brief is specific → ordinary Coder implements → Reviewer →
+  Tester → Human visual acceptance when required.
+- **Direct redesign:** Human authorizes edits → Main confirms presentation-layer
+  `target_files` and a preserve-list → `workflow-designer` → Main verifies diff
+  and captures → Reviewer → Tester → Human records
+  `visual acceptance: accepted | changes_requested`.
+
+Every design assignment carries the Human's feedback verbatim, target surface,
+preserve-list, exact files, visual evidence or reproduction command, observable
+acceptance, and Objective Gates. If advice versus direct editing is unclear,
+ask one short question instead of choosing the expensive path. Templates:
+`KICK_DESIGNER.md`, details: `DESIGNER.md`.
+
+## 7. Model failure (R16)
+
+Persistent provider/model failure pauses routing without counting an attempt.
+Record under `omp.model_failure`: `status: awaiting_human`, `role`,
+`primary_agent`, `failed_model`, `evidence`. After the Human authorizes the
+backup, set `status: backup_authorized`, `backup_agent`, `human_instruction`
+(exact words), `authorized_at` — the spawn hook refuses the backup otherwise.
+Include `human_backup_authorization: true` and the instruction in the
+assignment. Main's own outage: switch live to `@workflow_orchestrator_backup`
+(Alt+Q) and run `/workflow status`.
+
+## 8. Checkpoints and metrics
+
+Only Main checkpoints (`GIT_CHECKPOINTS.md`), staging exactly the authorized
+product/test paths plus the workflow files changed for the verified transition.
+Rollback is destructive and needs the Human's explicit confirmation
+(`WF_CONFIRM_ROLLBACK=<tag>`). Passive metrics are recorded after verified
+transitions (`METRICS.md`); they never steer routing (R21).
+
+## 9. Human controls
+
+`Alt+A` Agent Hub · `Alt+W` read-only dashboard · `Alt+M` model roles ·
+`/workflow why` routing reason · `/workflow designer advise|redesign <surface>`.
+After any intervention, re-read (R22).
