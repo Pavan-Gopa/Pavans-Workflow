@@ -44,6 +44,9 @@ checkpoint tag (`workflow_security_scope.py`). `close_quick` needs all of:
 Otherwise the decision is `review` and the output lists `quick_blockers`.
 `reopen_coder` means a gate failed; `reject_worker_result` means a guard
 violation for the step is still open (R7) — a later clean run never hides it.
+A violation is only ever a change the worker itself made; `guard.info` lists
+blocked attempts, shell suspects, and 3.5.x legacy verdicts (whole-repository
+diffs, not attributable), none of which changes the decision.
 
 ## Writing gates that run
 

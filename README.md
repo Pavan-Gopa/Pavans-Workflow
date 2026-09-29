@@ -1,6 +1,6 @@
 # Pavan's Workflow
 
-[![Version](https://img.shields.io/badge/version-3.5.1-1f6feb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.6.0-1f6feb)](CHANGELOG.md)
 [![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
 [![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -12,10 +12,11 @@ scoped [Graphify](https://github.com/Graphify-Labs/graphify) navigation,
 Coder-only Ponytail, and optional product-design roles — with the important
 boundaries checked in code, not only in prompts.
 
-> **3.5 is a hardening release.** Worker boundaries, backup authorization, and
-> the `quick` close are enforced by code; installs no longer collide with your
-> `README.md`, `CHANGELOG.md`, or `VERSION`; updates are manifest-driven,
-> backed up, and rolled back on failure; `/workflow-update` works again.
+> **3.6: the guard stops blaming workers for other people's changes.** It now
+> blocks an out-of-scope edit or `git commit` *inside* the worker, before it
+> runs, and judges a worker only on what that worker edited. Your own edits,
+> Main's commits, parallel OMP sessions, and OMP's settings rewrites no longer
+> stop the step, and checkpoints commit only their scope in a shared worktree.
 > Details: [CHANGELOG.md](CHANGELOG.md).
 
 ## How the workflow runs
@@ -37,13 +38,14 @@ flowchart LR
 ```
 
 All routing goes through Main. Workers never route another worker, write
-workflow state, commit, or push — and the guard checks that on the real diff.
+workflow state, commit, or push — and the guard blocks those actions inside
+the worker before they run.
 
 ## What is enforced, and by what
 
 | Rule | Enforced by |
 |---|---|
-| Read-only roles change nothing; Coder/Designer stay in `target_files`; Tester in test paths; no worker commits or edits workflow files | `workflow-guard` extension + `workflow_guard.py` (snapshot before spawn, verify after) |
+| Read-only roles change nothing; Coder/Designer stay in `target_files`; Tester in test paths; no worker edits workflow files or changes git state | `workflow-guard` extension: blocks the tool call inside the worker before it runs; `workflow_guard.py` verifies what the worker edited (changes by Main, the Human, or parallel sessions are never the worker's) |
 | Backup workers need recorded Human authorization | `before_subagent_spawn` hook blocks the spawn |
 | `quick` closes only with green command gates, manual gates checked, a clean Coder/Designer guard verdict and no open violation, no blast-radius hit, and risk not high | `workflow_close.py check` |
 | Objective Gates are re-run by Main, not trusted from worker reports | `workflow_gates.py` |
@@ -92,7 +94,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Inside OMP: `/workflow-update check` (plan) or `/workflow-update`. From a
 shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
-`--ref v3.5.1` to pin a release, `--refresh-graphify` to rebuild the graph.
+`--ref v3.6.0` to pin a release, `--refresh-graphify` to rebuild the graph.
 
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
@@ -155,6 +157,7 @@ backups across providers; the doctor warns otherwise.
 | Explain routing | `/workflow why` |
 | Close decision for the current step | `python3 AI_Workflow_Kit/script/workflow_close.py check` |
 | Guard verdicts / record the Human's decision | `python3 AI_Workflow_Kit/script/workflow_guard.py status --all` / `resolve --id … --note …` |
+| Guard mode for this repository | `python3 AI_Workflow_Kit/script/workflow_guard.py mode [enforce\|report\|off]` (or `WF_GUARD_MODE`) |
 | Designer advice / edits | `/workflow designer advise <surface>` / `redesign <surface>` |
 | Manual OMP Stats | `o` in Alt+W or `/workflow-stats` |
 | Diagnostics | `bash AI_Workflow_Kit/script/workflow_doctor.sh` |
@@ -169,7 +172,7 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.5.1
+3.6.0
 ```
 
 ## Repository map
@@ -191,7 +194,9 @@ ponytail*/ grilling/ ui-designer/   skills
 python3 ci/repo_checks.py                 # template purity, versions, manifest coverage, rule IDs
 bash ci/e2e_install_update.sh             # install, update, 3.4.2 migration with stub omp
 for t in AI_Workflow_Kit/script/*.selftest.py; do python3 "$t"; done
+for t in AI_Workflow_Kit/script/*.selftest.sh; do bash "$t"; done
 for t in .omp/tests/*.selftest.ts; do node --experimental-strip-types "$t"; done
+bun ci/omp_runtime_guard.ts               # guard inside a real OMP session (needs ci/typecheck deps)
 ```
 
 Never commit rendered project state: edit `AI_Workflow_Kit/templates/`

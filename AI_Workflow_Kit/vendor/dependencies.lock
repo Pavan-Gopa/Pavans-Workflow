@@ -1,5 +1,5 @@
 schema_version: 1
-workflow_version: 3.5.1
+workflow_version: 3.6.0
 ponytail:
   source: https://github.com/DietrichGebert/ponytail
   version: 4.9.0
@@ -17,5 +17,5 @@ ui_designer:
 omp:
   source: https://github.com/can1357/oh-my-pi
   package: "@oh-my-pi/pi-coding-agent"
-  version: 18.3.5
+  version: 18.4.3
   note: extensions are type-checked against this release in CI; the doctor warns on a different major

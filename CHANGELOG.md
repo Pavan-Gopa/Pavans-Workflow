@@ -1,5 +1,83 @@
 # Changelog
 
+## 3.6.0 — 2026-09-29
+
+The worker guard no longer stops the workflow over changes the worker did not
+make.
+
+### Why it kept interrupting
+
+The 3.5 guard compared the whole repository before and after a worker and
+charged every difference to that worker. In a real session much of that
+difference is somebody else's: Main committing a checkpoint while an async
+worker runs, the Human editing, a second OMP session working in the same
+repository, OMP rewriting `.omp/config.yml`. Each of those became a "boundary
+violation", Main was told not to accept the result, and `workflow_close.py`
+refused to close the step until someone resolved it by hand. OMP's own helper
+agents (scout, explore) were judged too, as read-only "unrecognised agents".
+
+### Changed
+
+- **Prevention instead of blame.** Inside every workflow worker session the
+  guard now checks each edit/write call and each literal `git` command before
+  it runs. An edit outside the role's scope, an edit to a workflow file, or a
+  git command that changes repository state (commit, branch/tag, stash, reset,
+  checkout/switch/restore, add/rm/mv, merge/rebase, push/pull, clean, ...) is
+  blocked: the worker gets a tool error, nothing changes, the step keeps going.
+  Main gets a short note listing what was blocked. A git command is blocked
+  only when git confirms it targets the project's own repository; fixture
+  repositories (elsewhere, nested, created by the same command, or named by
+  the bash tool's `cwd`), `--help`, and dry runs are left alone. `lsp` renames
+  and applied code actions count as edits (read-only roles cannot run them).
+  If the guard itself cannot run (for example `python3` is missing), it warns
+  once and lets work continue.
+- **A verdict judges only the worker's own edits** (the run's ledger). Changes
+  by anyone else during the run are listed as "changed by others meanwhile" and
+  never become a violation or a message. Files changed while the worker's shell
+  commands ran are listed as `shell_suspects`, and commits made meanwhile as
+  `suspect_commits`, for Main to look at, without a verdict. A HEAD move
+  during a run is no longer a violation by itself. An edit that was allowed
+  when it ran is never judged again later (for example after Main moves
+  `target_files` on to the next step).
+- **OMP's own agents are not guarded** (scout, explore, task, `/tan` clones).
+- **3.5.x verdicts stop blocking.** Violations recorded by 3.5.x came from the
+  whole-repository diff and cannot be attributed; `workflow_close.py` lists them
+  under `guard.info` as legacy and no longer returns `reject_worker_result` for
+  them. Steps stuck on them close again after the update.
+- **Guard notes are information.** Main's instructions now say that only a
+  "boundary violation" rejects a worker result.
+- **Modes:** `workflow_guard.py mode enforce|report|off` (or `WF_GUARD_MODE`).
+  `report` blocks nothing and lists what `enforce` would have blocked; `off`
+  disables the boundary guard. Backup authorization always stays on.
+- `workflow_guard.py verify --whole-repo` keeps the old judgement for a manual
+  audit in a repository nobody else touches.
+- **Checkpoints work in a shared worktree.** `checkpoint.sh` commits exactly
+  `WF_STAGE_PATHS` and leaves every other change — unstaged or staged by
+  someone else — untouched, instead of refusing. `WF_CHECKPOINT_STRICT=1`
+  restores the refusal. A scope entry with nothing to stage (never created,
+  or ignored) is skipped instead of aborting the checkpoint halfway.
+- `target_files` entries match folder names that contain glob characters
+  (Next.js `app/[slug]/`) and `**` patterns; the Tester's test paths include
+  `conftest.py`, `tests.py`, snapshots, test utilities, and setup files.
+- Guard mode and verdicts are per workflow project, so two workflow projects
+  in one monorepo no longer share them; paths outside the project are shown
+  correctly relative to it (`../../libs/x.ts`).
+- Worker prompts describe the new behaviour: a blocked call changes nothing;
+  finish what is in scope and name what is still needed.
+- Verified snapshots drop their dirty-file map, so the guard store stays small
+  in repositories with many uncommitted files.
+- Tested OMP is now 18.4.3 (type-checked against 18.3.5 and 18.4.3). CI also
+  runs the guard inside a real OMP session with a scripted model
+  (`ci/omp_runtime_guard.ts`).
+
+### Known limits
+
+- What a worker's `bash` writes (formatters, generators, `sed -i`, scripts)
+  cannot be attributed; it shows up as `shell_suspects` or "changed by others",
+  never as a violation. The Reviewer and Main's diff check are the backstop.
+- The quick-close blast radius still looks at the whole worktree, so unrelated
+  changes from a parallel session can route a quick step to review.
+
 ## 3.5.1 — 2026-09-28
 
 Guard fixes found by running the 3.5.0 guard in live OMP sessions.

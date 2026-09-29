@@ -29,7 +29,7 @@ git config --global protocol.file.allow always
 cat > "$WORK/bin/omp" <<'STUB'
 #!/usr/bin/env bash
 case "$*" in
-  --version) echo "omp 18.3.5" ;;
+  --version) echo "omp 18.4.3" ;;
   "config get modelRoles --json") echo '{}' ;;
   "models --json") echo '[]' ;;
 esac

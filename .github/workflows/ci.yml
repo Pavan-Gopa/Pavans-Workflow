@@ -41,6 +41,7 @@ jobs:
           while IFS= read -r -d '' test; do echo "== $test"; python "$test"; done \
             < <(find AI_Workflow_Kit/script -maxdepth 1 -type f -name '*.selftest.py' -print0 | sort -z)
           bash AI_Workflow_Kit/script/workflow_metrics.sh selftest
+          for test in AI_Workflow_Kit/script/*.selftest.sh; do echo "== $test"; bash "$test"; done
 
       - name: TypeScript selftests (OMP-independent)
         run: |
@@ -70,6 +71,11 @@ jobs:
           ln -s ci/typecheck/node_modules node_modules
       - name: tsc --noEmit
         run: ./node_modules/.bin/tsc -p ci/tsconfig.omp.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Guard inside a real OMP session (mock model)
+        run: bun ci/omp_runtime_guard.ts
 
   e2e:
     name: install/update e2e (${{ matrix.os }})

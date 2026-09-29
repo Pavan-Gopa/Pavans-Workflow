@@ -15,8 +15,10 @@ the entry point.
   (R8). Record `target_files` before a Coder/Designer runs (R6).
 - After a Coder/Designer result, run
   `python3 AI_Workflow_Kit/script/workflow_close.py check --json` and follow its
-  `decision` (R13). A `WORKFLOW GUARD` message means the worker result is
-  rejected (R7).
+  `decision` (R13). Only a `WORKFLOW GUARD — boundary violation` message
+  rejects the worker result (R7); a guard note is information, not a stop.
+  Changes made by you, the Human, or a parallel session while a worker runs
+  are never blamed on the worker.
 - Backups start only after the Human authorized them and you recorded it (R16).
 
 Default loop:
@@ -32,7 +34,8 @@ Main -> Coder -> close check -> Reviewer -> Main verification
   missing, return `blocked` naming it.
 - Change only what your role allows (R6). Never edit `.omp/`,
   `AI_Workflow_Kit/`, skills, or workflow docs; never commit, push, or spawn
-  agents (R3). The guard checks the real diff after you finish.
+  agents (R3). The guard blocks out-of-scope edits and git state changes
+  before they run; a blocked call changes nothing — report what you need.
 - Return only your structured result to Main.
 
 ## Workspace boundary
