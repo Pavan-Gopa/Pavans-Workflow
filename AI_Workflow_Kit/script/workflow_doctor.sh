@@ -122,7 +122,7 @@ PYCONTEXT
       fail "read-only role must not have edit/write tools: $file"
     fi
   done
-  ok "read-only roles have no edit/write tools; workflow guard verifies their real diff"
+  ok "read-only roles have no edit/write tools; the workflow guard blocks out-of-scope worker edits"
 
   # --- selftests ------------------------------------------------------------------------
   local test status
@@ -170,8 +170,13 @@ PYCONTEXT
     else
       fail "workflow metrics store (bash AI_Workflow_Kit/script/workflow_metrics.sh validate)"
     fi
+    local guard_mode
     if python3 AI_Workflow_Kit/script/workflow_guard.py status --json >/dev/null 2>&1; then
-      ok "workflow guard store"
+      guard_mode="$(python3 AI_Workflow_Kit/script/workflow_guard.py mode 2>/dev/null || true)"
+      case "$guard_mode" in
+        "guard mode: enforce"*|"") ok "workflow guard store${guard_mode:+ (${guard_mode#guard mode: })}" ;;
+        *) warn "workflow ${guard_mode} — worker boundaries are not enforced (python3 AI_Workflow_Kit/script/workflow_guard.py mode enforce)" ;;
+      esac
     else
       fail "workflow guard store (python3 AI_Workflow_Kit/script/workflow_guard.py status)"
     fi

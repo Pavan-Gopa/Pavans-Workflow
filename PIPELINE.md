@@ -14,13 +14,13 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 ```text
 Human <-> Main
   -> state transaction (step, work item, profile, target_files)        R8
-  -> fresh Coder (+ Ponytail)          guard snapshot -> verify         R6
+  -> fresh Coder (+ Ponytail)          guard blocks out-of-scope edits  R6
   -> workflow_close.py check           gates + guard + blast radius     R13
        close_quick ........... quick card, everything green -> close
        review ................ fresh Reviewer -> Main verifies
                                -> fresh Tester  -> Main verifies -> close
        reopen_coder .......... gate failed -> verified retry memory -> fresh Coder
-       reject_worker_result .. guard violation -> Human decides -> fresh Coder
+       reject_worker_result .. worker's own violation -> Human decides -> fresh Coder
 ```
 
 Profiles and gate syntax: `AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md`.

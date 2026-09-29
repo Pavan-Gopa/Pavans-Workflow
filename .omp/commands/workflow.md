@@ -45,10 +45,10 @@ planning.
 2. Run the state transaction (R8), including `target_files` for Coder/Designer.
 3. Dispatch exactly one fresh worker with a self-contained assignment and the
    role block from `WORKER_INPUT_DIGEST.md`.
-4. When it finishes: act on any `WORKFLOW GUARD` message (R7), verify the
-   evidence yourself (R10), and after Coder/Designer run
-   `python3 AI_Workflow_Kit/script/workflow_close.py check --json` and follow
-   the `decision` (R13).
+4. When it finishes: act on a `WORKFLOW GUARD` boundary violation (R7; guard
+   notes are information only), verify the evidence yourself (R10), and after
+   Coder/Designer run `python3 AI_Workflow_Kit/script/workflow_close.py check
+   --json` and follow the `decision` (R13).
 5. Persist verified facts, re-read, route the next justified stage.
 
 Ask the Human only when their context, taste, or authorization is the missing

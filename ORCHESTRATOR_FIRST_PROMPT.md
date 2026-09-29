@@ -24,7 +24,7 @@ and the current feedback/reports. Reconcile the active runtime (hub jobs/list)
 with the real repository diff before routing. Use fresh project agents, stable
 work-item IDs, and the state transaction before every dispatch. After each
 Coder/Designer result run `python3 AI_Workflow_Kit/script/workflow_close.py
-check --json` and follow its decision. Treat any WORKFLOW GUARD message as a
-rejected worker result. Invoke Design Advisor or Designer only after explicit
-Human visual feedback.
+check --json` and follow its decision. Only a WORKFLOW GUARD "boundary
+violation" rejects a worker result; guard notes are information. Invoke Design
+Advisor or Designer only after explicit Human visual feedback.
 ```

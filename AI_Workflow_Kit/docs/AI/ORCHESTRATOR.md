@@ -56,17 +56,39 @@ Every role has a `-backup` agent that only starts under R16.
 
 ## 3. The guard runs by itself
 
-The `workflow-guard` extension snapshots the repository before every worker
-spawn and verifies it when the worker finishes (R6). A clean verdict is silent.
-A `violation` or `unscoped` verdict arrives in Main's context as a
-`WORKFLOW GUARD` message — act on it before routing (R7). Manual equivalents:
+The `workflow-guard` extension works inside every workflow worker (R6): an
+edit outside the role's scope, an edit to a workflow file, or a `git` command
+that changes repository state is blocked before it runs. The worker gets a
+tool error and carries on; nothing changed, nothing to undo. When the worker
+finishes, its verdict judges only what the worker itself edited. Your own
+commits and edits, the Human's, a parallel OMP session's, and OMP's settings
+rewrites are listed as "changed by others meanwhile" and never blamed on the
+worker. OMP's own agents (scout, explore, task) are not guarded.
+
+What reaches your context:
+
+| Message | Meaning | Do |
+|---|---|---|
+| none | clean | continue |
+| `WORKFLOW GUARD — note …` | blocked attempts, report-mode findings | continue; if a blocked file is really needed, widen `target_files` with the Human's agreement and re-dispatch |
+| `WORKFLOW GUARD — … target_files was empty` | `unscoped` | review the diff; quick close is refused |
+| `WORKFLOW GUARD — boundary violation …` | the worker itself changed files outside its scope | R7 |
+
+Files changed while the worker's shell commands ran are listed as
+`shell_suspects` in `status` and in the close check; look at them before you
+accept a read-only role's result. Manual commands:
 
 ```bash
 python3 AI_Workflow_Kit/script/workflow_guard.py status --step <step> --all
 python3 AI_Workflow_Kit/script/workflow_guard.py resolve --id <id> --note "Human: reverted src/x.ts"
-python3 AI_Workflow_Kit/script/workflow_guard.py snapshot --role coder   # before a manual run
-python3 AI_Workflow_Kit/script/workflow_guard.py verify                  # after it
+python3 AI_Workflow_Kit/script/workflow_guard.py mode [enforce|report|off] --note "Human: ..."   # Human's call
+python3 AI_Workflow_Kit/script/workflow_guard.py snapshot --role coder   # audit a run outside OMP
+python3 AI_Workflow_Kit/script/workflow_guard.py verify --whole-repo     # ...judging every change as the worker's
 ```
+
+Change the guard mode only on the Human's instruction and record it in
+`DECISIONS.md`. `report` blocks nothing and lists what `enforce` would have
+blocked; `off` disables the boundary guard (backup authorization stays).
 
 ## 4. Decide after a Coder or Designer result
 
@@ -80,6 +102,9 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 | `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
 | `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
 | `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
+
+`guard.info` lines (blocked attempts, shell suspects, 3.5.x legacy verdicts)
+never change the decision; mention them to the Human when they matter.
 
 If `offer_scoped_security` is true, set `security.next_run: offer_scoped` and ask
 the Human once.

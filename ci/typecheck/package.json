@@ -3,7 +3,7 @@
   "private": true,
   "description": "Pinned OMP types for `tsc -p ci/tsconfig.omp.json` (CI only). Keep @oh-my-pi/pi-coding-agent equal to omp.version in AI_Workflow_Kit/vendor/dependencies.lock.",
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "18.3.5",
+    "@oh-my-pi/pi-coding-agent": "18.4.3",
     "@types/node": "^22",
     "typescript": "^5"
   }

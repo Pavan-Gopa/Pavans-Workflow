@@ -16,6 +16,9 @@
 #                       use newline separation for paths containing spaces.
 #                       Required whenever dirty work should be committed.
 #   WF_PUSH_CHECKPOINTS set to 1 to push branch and tag (default: local only)
+#   WF_CHECKPOINT_STRICT set to 1 to refuse when changes exist outside
+#                       WF_STAGE_PATHS (default: commit only the scope and leave
+#                       other work — the Human's, a parallel session's — untouched)
 
 set -euo pipefail
 
@@ -23,6 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PRODUCT_PREFIX="${WF_PROJECT_PREFIX:-proj}"
 PUSH_CHECKPOINTS="${WF_PUSH_CHECKPOINTS:-0}"
+CHECKPOINT_STRICT="${WF_CHECKPOINT_STRICT:-0}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -130,24 +134,52 @@ assert_scope_safe() {
     if ! path_is_allowed "$changed"; then
       unsafe+=("$changed")
     fi
-  done < <(changed_paths)
+  done < <(changed_paths | sort -zu)
 
-  if (( ${#unsafe[@]} > 0 )); then
-    echo "error: changed paths exist outside the authorized checkpoint scope:" >&2
-    printf '  %s\n' "${unsafe[@]}" >&2
-    if (( ${#STAGE_PATHS[@]} == 0 )); then
-      echo "Set WF_STAGE_PATHS explicitly, or commit/stash the changes before checkpointing." >&2
-    else
-      echo "Commit/stash unrelated changes or deliberately expand WF_STAGE_PATHS." >&2
-    fi
+  (( ${#unsafe[@]} > 0 )) || return 0
+  if (( ${#STAGE_PATHS[@]} == 0 )); then
+    echo "error: the worktree has changes and WF_STAGE_PATHS is not set:" >&2
+    printf '  %s\n' "${unsafe[@]:0:20}" >&2
+    (( ${#unsafe[@]} > 20 )) && echo "  ... and $(( ${#unsafe[@]} - 20 )) more" >&2
+    echo "Set WF_STAGE_PATHS to what this checkpoint should commit (other changes are left alone)." >&2
     exit 1
   fi
+  if [[ "$CHECKPOINT_STRICT" == "1" ]]; then
+    echo "error: changed paths exist outside the authorized checkpoint scope (WF_CHECKPOINT_STRICT=1):" >&2
+    printf '  %s\n' "${unsafe[@]}" >&2
+    echo "Commit/stash unrelated changes or deliberately expand WF_STAGE_PATHS." >&2
+    exit 1
+  fi
+  # Shared worktrees (the Human, a parallel session) are normal: their changes
+  # stay exactly as they are, unstaged or staged, and out of this commit.
+  echo "note: ${#unsafe[@]} changed path(s) outside WF_STAGE_PATHS stay uncommitted and untouched:"
+  printf '  %s\n' "${unsafe[@]:0:10}"
+  (( ${#unsafe[@]} > 10 )) && echo "  ... and $(( ${#unsafe[@]} - 10 )) more"
+  return 0
 }
+
+SCOPED_CHANGES=()
 
 stage_scoped() {
   local p
+  SCOPED_CHANGES=()
   for p in ${STAGE_PATHS[@]+"${STAGE_PATHS[@]}"}; do
-    git add -A -- "$p"
+    # A scope entry with nothing git can stage (never created, or ignored) is
+    # skipped instead of aborting the checkpoint halfway.
+    if [[ "$p" != "." && -z "$(git ls-files --cached --others --exclude-standard -- "$p" | head -n 1)" ]]; then
+      # Still commit what is already staged there (a `git mv` source, a `git rm`).
+      if [[ -n "$(git diff --cached --name-only -- "$p")" ]]; then
+        SCOPED_CHANGES+=("$p")
+      else
+        echo "note: nothing to stage under $p — skipped"
+      fi
+      continue
+    fi
+    # An ignored folder with tracked files refuses `add -A`; stage its tracked changes.
+    git add -A -- "$p" 2>/dev/null || git add -u -- "$p"
+    if [[ -n "$(git diff --cached --name-only -- "$p")" ]]; then
+      SCOPED_CHANGES+=("$p")
+    fi
   done
 }
 
@@ -159,11 +191,12 @@ commit_if_dirty_scoped() {
     return 0
   fi
   stage_scoped
-  if git diff --cached --quiet; then
+  if (( ${#SCOPED_CHANGES[@]} == 0 )); then
     echo "nothing staged under authorized scope — no new commit"
     return 0
   fi
-  git commit -m "$message"
+  # Commit only the scope: anything else someone staged stays staged.
+  git commit -m "$message" -- "${SCOPED_CHANGES[@]}"
   echo "committed: $message"
 }
 
@@ -259,9 +292,10 @@ Env:
   WF_STAGE_PATHS       explicit paths relative to git root; required for dirty
                        checkpoints. Use "." only to authorize the whole repo.
   WF_PUSH_CHECKPOINTS  1 pushes branch and tag; default 0 keeps both local.
+  WF_CHECKPOINT_STRICT 1 refuses when changes exist outside WF_STAGE_PATHS;
+                       default commits only the scope and leaves the rest.
 
 Tags: <prefix>/pre-<step>, <prefix>/<step>-done
-Refuses changed paths outside WF_STAGE_PATHS.
 EOF
 }
 

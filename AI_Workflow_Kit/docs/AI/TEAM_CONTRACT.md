@@ -14,9 +14,9 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| R1 | Main is the only control plane: it routes, writes canonical workflow memory (`STATE.yaml`, `STEPS.md` checkboxes, `DECISIONS.md`, feedback and reports), creates checkpoints, and commits. | code: worker guard flags any worker edit of workflow files |
+| R1 | Main is the only control plane: it routes, writes canonical workflow memory (`STATE.yaml`, `STEPS.md` checkboxes, `DECISIONS.md`, feedback and reports), creates checkpoints, and commits. | code: worker guard blocks worker edits of workflow files |
 | R2 | Source-of-truth order: plan files named in `PROJECT_CONTEXT.md` > `STATE.yaml` > `STEPS.md` > `DECISIONS.md` > `PROJECT_CONTEXT.md` > `PIPELINE.md`. Conversation history and worker reports are never authoritative. | Main |
-| R3 | Workers never route, spawn workers, commit, tag, push, switch branches, or edit workflow files; their output returns only to Main. | code: guard (commits, branch, workflow files) · config: `task.maxRecursionDepth: 1` |
+| R3 | Workers never route, spawn workers, commit, tag, push, switch branches, or edit workflow files; their output returns only to Main. | code: guard blocks git state changes and workflow-file edits in workers · config: `task.maxRecursionDepth: 1` |
 | R4 | One specialized worker at a time. Every run and retry is a fresh session with a compact, self-contained assignment — never a transcript or hidden reasoning. | config: `task.maxConcurrency: 1` · Main |
 | R5 | Main does not implement product code unless the Human authorizes it for that task. | Main |
 
@@ -24,8 +24,8 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| R6 | Coder and Designer may change only `STATE.yaml target_files`; Tester only test/QA paths or `target_files`; Reviewer, Architect, Security, Design Advisor, and unrecognised subagents change nothing. Main records `target_files` before every Coder/Designer dispatch; an empty list makes the verdict `unscoped`. | code: `workflow_guard.py` snapshot/verify around every worker (automatic via the `workflow-guard` extension) |
-| R7 | A guard `violation` rejects the worker result. Main records it, restores or quarantines the listed changes with the Human, records the Human's decision (`workflow_guard.py resolve --id <id> --note "…"`), and dispatches a fresh worker. A violation stays open until resolved; a later clean run never masks it. | code: the verdict is injected into Main's context; `workflow_close.py` returns `reject_worker_result` while any violation for the step is open |
+| R6 | Coder and Designer may change only `STATE.yaml target_files`; Tester only test/QA paths or `target_files`; Reviewer, Architect, Security, and Design Advisor change nothing. Main records `target_files` before every Coder/Designer dispatch; an empty list makes the verdict `unscoped`. | code: the `workflow-guard` extension blocks out-of-scope edits in every workflow worker before they run; `workflow_guard.py` verifies what the worker edited |
+| R7 | A guard `violation` — a change the worker itself made outside its scope — rejects the worker result. Main records it, restores or quarantines the listed changes with the Human, records the Human's decision (`workflow_guard.py resolve --id <id> --note "…"`), and dispatches a fresh worker. A violation stays open until resolved; a later clean run never masks it. Changes by Main, the Human, or parallel sessions during a run are never a violation. Guard notes are information, not a rejection. | code: the verdict is injected into Main's context; `workflow_close.py` returns `reject_worker_result` while any violation for the step is open |
 
 ## State
 
@@ -69,21 +69,33 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 
 ## Known limits of enforcement
 
+- The guard attributes a change to a worker only when the worker made it with
+  its own edit/write tools (or an `lsp` rename / applied code action on the
+  named file). It blocks literal `git` commands that change repository state,
+  but it cannot see what a worker's `bash` writes (a formatter, a generator,
+  `sed -i`, a script that commits): such files are listed as `shell_suspects`,
+  and commits made meanwhile as `suspect_commits` — for Main to check, never a
+  violation. The Reviewer and Main's diff check are the backstop.
+- A git command is blocked only when git confirms it targets the project's own
+  repository. Fixture repositories — elsewhere (`cd /tmp/x`, `git -C /tmp/x`,
+  the bash tool's `cwd`), nested inside the project, or created by the same
+  command line with `git init` — are not blocked, and neither are `--help`
+  and dry runs. A place the guard cannot know statically (`cd "$TMP"`) is
+  left alone.
+- Changes made while a worker runs by Main, the Human, a parallel OMP session,
+  or OMP itself (settings rewrites of `.omp/config.yml`) are never blamed on
+  the worker, and a HEAD move during a run is not the worker's unless it ran
+  the git command — which the guard blocks.
 - The guard sees what git sees: files ignored by `.gitignore` (for example a
-  local `.env`) are invisible to it, and test caches (`__pycache__`,
+  local `.env`) are invisible to it — neither blocked nor judged, except
+  workflow files, which stay protected — and test caches (`__pycache__`,
   `.pytest_cache`, `*.pyc`, …) are deliberately ignored.
-- Edits Main makes with the edit/write tools (every OMP edit mode) while a
-  worker runs are exempted automatically, in the TUI and in headless (print or
-  RPC) sessions alike; changes Main makes through `bash` during a worker run
-  are attributed to the worker. Main does not edit files while a worker runs.
-- OMP rewrites `.omp/config.yml` itself whenever the Human changes a model or
-  setting (Alt+M), and leaves `.omp/config.yml.lock` behind. The guard cannot
-  tell that rewrite from a worker's edit, so a change to `.omp/config.yml`
-  during a worker run is a note, not a violation: Main confirms it with the
-  Human and records a violation if nobody changed settings. The lock file is
-  ignored. Every other `.omp/` file stays protected.
-- A parked worker woken again with `agent://<id>` is snapshotted when its
-  `started` event arrives; a change made in the moment before that snapshot
-  completes can be missed.
+- Guard mode and verdicts are kept per workflow project, so two workflow
+  projects in one monorepo do not share them.
+- The in-worker checks need OMP to run project extensions inside subagent
+  sessions (OMP 18.x does). If the guard script cannot run, the extension
+  fails open and warns once: a broken guard never blocks work.
+- `workflow_guard.py mode report|off` (or `WF_GUARD_MODE`) relaxes the guard
+  for a repository; it is the Human's decision.
 - Rules marked **Main** or **prompt** depend on the model following them; the
   dashboard's consistency warnings and the Reviewer are the backstop.

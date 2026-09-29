@@ -84,10 +84,19 @@ def close(root: Path, step: str) -> tuple[int, dict]:
     return completed.returncode, json.loads(completed.stdout)
 
 
-def guarded_worker(root: Path, step: str, role: str, change) -> None:
-    subprocess.run([sys.executable, str(GUARD), "--project", str(root), "snapshot", "--role", role, "--step", step], check=True, capture_output=True)
+def guarded_worker(root: Path, step: str, role: str, change, edits: tuple[str, ...] = ()) -> None:
+    """A worker run as the extension drives it: snapshot, `allow` per edit, verify."""
+    agent = f"workflow-{role}"
+    subprocess.run([sys.executable, str(GUARD), "--project", str(root), "snapshot", "--role", role, "--agent", agent, "--step", step], check=True, capture_output=True)
+    for rel in edits:
+        subprocess.run([sys.executable, str(GUARD), "--project", str(root), "allow", "--agent", agent, f"--path={rel}"], capture_output=True)
     change()
     subprocess.run([sys.executable, str(GUARD), "--project", str(root), "verify"], capture_output=True)
+
+
+def guard_dir(root: Path) -> Path:
+    common = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
+    return (root / common).resolve() / "pavans-workflow" / "guard"
 
 
 def main() -> int:
@@ -110,7 +119,7 @@ def main() -> int:
 
         git(root, "rm", "-q", "--cached", "-r", "--ignore-unmatch", "src")
         (root / "src/feature.ts").unlink()
-        guarded_worker(root, "Q1", "coder", lambda: write(root, "src/feature.ts", "export {}\n"))
+        guarded_worker(root, "Q1", "coder", lambda: write(root, "src/feature.ts", "export {}\n"), ("src/feature.ts",))
         code, decision = close(root, "Q1")
         assert code == 0 and decision["decision"] == "close_quick", decision
         assert decision["effective_profile"] == "quick" and decision["quick_forbidden"] is False
@@ -123,7 +132,17 @@ def main() -> int:
         assert decision["offer_scoped_security"] is True
         (root / "src/login.ts").unlink()
 
-        guarded_worker(root, "Q1", "coder", lambda: write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS.replace("test -f", "true ||")))
+        # Someone else (Main, the Human, a parallel session) edits a workflow file
+        # while the Coder runs: not the Coder's, so the step is not stopped.
+        guarded_worker(root, "Q1", "coder", lambda: write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS + "\n<!-- Main note -->\n"))
+        code, decision = close(root, "Q1")
+        assert code == 0 and decision["decision"] == "close_quick", decision
+        write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS)
+
+        # A violation the worker itself caused (here: an audit with --whole-repo).
+        subprocess.run([sys.executable, str(GUARD), "--project", str(root), "snapshot", "--role", "coder", "--agent", "workflow-coder", "--step", "Q1"], check=True, capture_output=True)
+        write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS.replace("test -f", "true ||"))
+        subprocess.run([sys.executable, str(GUARD), "--project", str(root), "verify", "--whole-repo"], capture_output=True)
         code, decision = close(root, "Q1")
         assert code == 1 and decision["decision"] == "reject_worker_result", decision
         write(root, "AI_Workflow_Kit/docs/STEPS.md", STEPS)
@@ -131,7 +150,7 @@ def main() -> int:
 
         # A later clean verdict (another agent, or a re-run that sees the leftover
         # change as pre-existing) must not mask the open violation.
-        guarded_worker(root, "Q1", "explore", lambda: None)
+        guarded_worker(root, "Q1", "reviewer", lambda: None)
         code, decision = close(root, "Q1")
         assert code == 1 and decision["decision"] == "reject_worker_result", "open violations are never masked"
 
@@ -142,7 +161,18 @@ def main() -> int:
         code, decision = close(root, "Q1")
         assert code == 0 and decision["decision"] == "close_quick", decision
 
-        guarded_worker(root, "Q5", "coder", lambda: write(root, "src/q5.ts", "export {}\n"))
+        # A 3.5.x violation (whole-repository diff, no schema) is listed, never blocking.
+        legacy = {
+            "id": "20260101T000000000000Z-reviewer-dead", "role": "reviewer", "agent": "workflow-reviewer", "step": "Q1",
+            "verdict": "violation", "violations": [{"path": "HEAD", "reason": "workers never commit, tag, or switch branches"}],
+            "notes": [], "changed": ["src/other-session.ts"],
+        }
+        (guard_dir(root) / f"{legacy['id']}.verdict.json").write_text(json.dumps(legacy), encoding="utf-8")
+        code, decision = close(root, "Q1")
+        assert code == 0 and decision["decision"] == "close_quick", decision
+        assert decision["guard"]["legacy"] == [legacy["id"]] and any("3.5.x" in line for line in decision["guard"]["info"]), decision
+
+        guarded_worker(root, "Q5", "coder", lambda: write(root, "src/q5.ts", "export {}\n"), ("src/q5.ts",))
         code, decision = close(root, "Q5")
         assert decision["decision"] == "review", decision
         assert any("manual Objective gate(s) not verified" in blocker and "Q5.O2" in blocker for blocker in decision["quick_blockers"])

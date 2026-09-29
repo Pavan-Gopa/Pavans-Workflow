@@ -4,8 +4,11 @@
 
 1. **Idempotent** — existing tag is not overwritten.
 2. **Explicit scope** — dirty checkpoints require `WF_STAGE_PATHS`.
-3. **Scope guard** — if any tracked, staged, deleted, or untracked path lies
-   outside that scope, the checkpoint fails before staging or committing.
+3. **Scope only** — the commit contains exactly the `WF_STAGE_PATHS` changes.
+   Changes outside the scope (the Human's, a parallel session's, unrelated
+   work) stay uncommitted and untouched, staged or not; the script lists them.
+   `WF_CHECKPOINT_STRICT=1` refuses instead, for a repository nobody else
+   touches.
 4. **Local by default** — commits and tags are pushed only when
    `WF_PUSH_CHECKPOINTS=1`.
 5. **Orchestrator only** commits / tags / pushes.
@@ -37,6 +40,7 @@ Other overrides:
 
 ```bash
 export WF_PROJECT_PREFIX=myapp
+export WF_CHECKPOINT_STRICT=1   # refuse when changes exist outside the scope
 ```
 
 With a clean worktree and no `WF_STAGE_PATHS`, the script may tag the current

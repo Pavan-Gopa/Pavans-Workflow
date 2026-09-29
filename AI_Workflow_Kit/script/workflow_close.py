@@ -8,6 +8,9 @@ Combines, in code, everything a `quick` close used to rely on Main remembering:
   1. Objective gates   (workflow_gates.py)  — every command gate must pass;
                        for quick, manual gates must already be checked by Main.
   2. Worker guard      (workflow_guard.py)  — every verdict recorded for the step.
+                       Only what a worker itself changed can be a violation;
+                       3.5.x verdicts (whole-repository diff, not attributable)
+                       are listed as legacy and never block.
   3. Blast radius      (workflow_security_scope.py, diff vs the pre-step tag).
   4. Card facts        — **Risk:** and **Pipeline profile:** from STEPS.md.
 
@@ -72,12 +75,26 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
     resolved_base = scope_mod.resolve_base(root, base, step_id)
     scope = scope_mod.scope(scope_mod.git_paths(root, resolved_base), root, resolved_base)
     try:
-        verdicts = guard_mod.step_verdicts(guard_mod.repo_root(root), step_id)
+        repo = guard_mod.repo_root(root)
+        verdicts = guard_mod.step_verdicts(repo, step_id, guard_mod.project_prefix(repo, root))
         guard_error = None
     except guard_mod.GuardError as error:
         verdicts, guard_error = [], str(error)
-    open_violations = [v for v in verdicts if v.get("verdict") == "violation" and not v.get("resolution")]
-    open_unscoped = [v for v in verdicts if v.get("verdict") == "unscoped" and not v.get("resolution")]
+    current = [v for v in verdicts if not guard_mod.legacy(v)]
+    legacy = [v for v in verdicts if guard_mod.legacy(v) and v.get("verdict") in ("violation", "unscoped") and not v.get("resolution")]
+    open_violations = [v for v in current if v.get("verdict") == "violation" and not v.get("resolution")]
+    open_unscoped = [v for v in current if v.get("verdict") == "unscoped" and not v.get("resolution")]
+    guard_info: list[str] = []
+    for v in current:
+        who = f"{v.get('id')} ({v.get('agent') or v.get('role')})"
+        if v.get("blocked"):
+            guard_info.append(f"{who}: blocked {len(v['blocked'])} out-of-scope action(s) before they ran")  # type: ignore[arg-type]
+        if v.get("shell_suspects"):
+            guard_info.append(f"{who}: changed while its shell ran, check the diff: " + ", ".join(v["shell_suspects"]))  # type: ignore[arg-type]
+        for commit in v.get("suspect_commits") or []:  # type: ignore[union-attr]
+            guard_info.append(f"{who}: commit {commit.get('sha')} was made while its shell ran — check it: {commit.get('subject')}")
+    for v in legacy:
+        guard_info.append(f"{v.get('id')} ({v.get('agent') or v.get('role')}): 3.5.x {v.get('verdict')} verdict from the whole-repository diff — not attributable, not blocking")
     builders = [v for v in verdicts if v.get("role") in ("coder", "designer")]
     latest = verdicts[-1] if verdicts else None
 
@@ -135,6 +152,8 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
             "open_violations": [
                 {"id": v.get("id"), "agent": v.get("agent"), "violations": v.get("violations")} for v in open_violations
             ],
+            "legacy": [v.get("id") for v in legacy],
+            "info": guard_info,
             "error": guard_error,
         },
         "scope": {key: scope[key] for key in ("base", "reasons", "forbid_hits", "hits", "checked")},
@@ -183,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
         for item in payload["guard"]["open_violations"]:  # type: ignore[index]
             for violation in item.get("violations") or []:
                 print(f"  open guard violation {item['id']}: {violation['path']}: {violation['reason']}")
+        for line in payload["guard"]["info"]:  # type: ignore[index]
+            print(f"  guard info: {line}")
         for gate in payload["objective"]["failed"]:  # type: ignore[index]
             print(f"  objective gate failed: {gate}")
     return 1 if payload["decision"] in {"reopen_coder", "reject_worker_result"} else 0

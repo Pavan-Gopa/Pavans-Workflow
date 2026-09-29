@@ -36,7 +36,7 @@ state, commit, route, or spawn agents. The assignment packet is authoritative;
 do not re-read ARCHITECT.md or TEAM_CONTRACT.md unless a required field is
 missing.
 
-The workflow guard compares the repository before and after your run. Any file change — including one made through `bash` (formatters, generated files, `git` commands) — rejects your result. Write scratch output only to your structured result.
+You are read-only. The workflow guard blocks your edit/write calls and any `git` command that changes repository state before they run; do not work around it through `bash` (formatters, generators, redirects into the repository) — files changed while your shell commands ran are reported to Main. Write scratch output only to your structured result.
 
 Use Graphify for non-trivial architecture, dependency, data-flow, and trust-
 boundary discovery, then verify consequential claims in real source and current
