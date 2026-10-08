@@ -31,20 +31,29 @@ product attempt (R15).
 Follow the transaction in R8, then:
 
 ```bash
-bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>
+python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json
+bash AI_Workflow_Kit/script/workflow_models.sh validate-role <agent>
 ```
+
+For a Coder assignment `<agent>` is the agent the router returned (`workflow-coder-fast` or
+`workflow-coder`), so the model that will actually run is the one validated; for every other
+role it is that role's agent. The router is the one place where recorded metrics may steer
+routing (R21).
 
 The assignment is compact and self-contained: goal and step, stable work-item
 ID, `target_files` and exclusions, Objective Gates, Reviewer-owned Judgment
-Gates, source-of-truth paths, and compact verified retry/interruption facts.
+Gates, source-of-truth paths, compact verified retry/interruption facts, and
+`fix_round: true|false` (true when fixing Reviewer findings or Tester bugs).
 Paste the role block from `WORKER_INPUT_DIGEST.md`; never tell a worker to
 re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT. Coder assignments also carry
 `ponytail_mode` (`full` first attempt, `lite` after review/QA findings, `off`
-when `repeated_failure_count >= 2`).
+when `repeated_failure_count >= 2`). Dispatch the agent returned by `workflow_route.py`
+(`workflow-coder-fast` or `workflow-coder`). A `-backup` assignment (R16) additionally
+carries `backup_failover: auto|human` and `failure_evidence` (§7).
 
 | Role | Agent | Use |
 |---|---|---|
-| Coder | `workflow-coder` | product implementation or verified fix |
+| Coder | `workflow-coder-fast` or `workflow-coder` | product implementation or verified fix |
 | Reviewer | `workflow-reviewer` | read-only Judgment Gates and bounded complexity check |
 | Tester | `workflow-tester` | runtime/QA evidence, approved test paths |
 | Architect | `workflow-architect` | design uncertainty, plan/code conflict, Grilling, thrash |
@@ -52,7 +61,8 @@ when `repeated_failure_count >= 2`).
 | Design Advisor | `workflow-design-advisor` | read-only UI/UX brief (R18) |
 | Designer | `workflow-designer` | bounded presentation-layer redesign (R18) |
 
-Every role has a `-backup` agent that only starts under R16.
+Every role except the Fast Coder has a `-backup` agent that only starts under R16; the Fast Coder
+has none (a Fast Coder failure goes to `workflow-coder`).
 
 ## 3. The guard runs by itself
 
@@ -102,6 +112,7 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 | `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
 | `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
 | `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
+| `gate_timeout` | Objective gate timed out after Ns — not a Coder failure: re-run the close check with a larger `--timeout`; if it times out again at the raised limit, treat it as a hang and reopen the Coder |
 
 `guard.info` lines (blocked attempts, shell suspects, 3.5.x legacy verdicts)
 never change the decision; mention them to the Human when they matter.
@@ -139,14 +150,16 @@ ask one short question instead of choosing the expensive path. Templates:
 
 ## 7. Model failure (R16)
 
-Persistent provider/model failure pauses routing without counting an attempt.
-Record under `omp.model_failure`: `status: awaiting_human`, `role`,
-`primary_agent`, `failed_model`, `evidence`. After the Human authorizes the
-backup, set `status: backup_authorized`, `backup_agent`, `human_instruction`
-(exact words), `authorized_at` — the spawn hook refuses the backup otherwise.
-Include `human_backup_authorization: true` and the instruction in the
-assignment. Main's own outage: switch live to `@workflow_orchestrator_backup`
-(Alt+Q) and run `/workflow status`.
+On a primary worker model/provider failure (provider error, quota/429/402, DNS/network, provider timeout, empty/aborted result caused by the provider — NOT `blocked`, gate failures, or review findings), provider failures are not product attempts (R15). Then:
+
+- **Fast Coder:** it has no backup. Record metrics `model_failure` (`status: auto_failover`) and dispatch `workflow-coder` with a fresh context, without pausing the Human. If `workflow-coder` also fails for a model/provider reason, apply the backup rule below to it.
+- **Every other role:** Main immediately records `omp.model_failure` with `status: backup_authorized`, `authorized_by: auto`, `role`, `primary_agent`, `failed_model`, `backup_agent`, `evidence`, `authorized_at`, records metrics `model_failure` with `status: auto_failover`, and dispatches the `-backup` agent with a fresh context. The backup must resolve to a model distinct from the failed primary.
+- **Backup assignment:** build it like any assignment (§2) and add `backup_failover: auto` plus `failure_evidence` (the recorded primary failure: failed model, provider error excerpt, `authorized_at`). A backup the Human directed by hand (after `awaiting_human`) is dispatched with `backup_failover: human` and `failure_evidence` carrying the Human's exact words (`omp.model_failure.human_instruction`) next to the recorded failure. A backup agent returns `blocked` without either field.
+- **Ask the Human only when** (a) the role's backup is missing or resolves to the same model as the primary, or (b) the backup run also fails for a model/provider reason → `status: awaiting_human`.
+
+After the backup (or the escalated `workflow-coder`) run finishes (success or product result), Main clears `omp.model_failure`.
+
+Main's own outage: switch live to `@workflow_orchestrator_backup` (Alt+Q) and run `/workflow status`.
 
 ## 8. Checkpoints and metrics
 
@@ -154,7 +167,8 @@ Only Main checkpoints (`GIT_CHECKPOINTS.md`), staging exactly the authorized
 product/test paths plus the workflow files changed for the verified transition.
 Rollback is destructive and needs the Human's explicit confirmation
 (`WF_CONFIRM_ROLLBACK=<tag>`). Passive metrics are recorded after verified
-transitions (`METRICS.md`); they never steer routing (R21).
+transitions (`METRICS.md`); they never steer routing or gates (R21). The one
+exception is the deterministic Fast Coder health window in `workflow_route.py`.
 
 ## 9. Human controls
 

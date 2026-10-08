@@ -72,6 +72,7 @@ function state(currentStep: string, currentWorkItemId = "-", implementationStatu
 		modelFailureRole: "-",
 		modelFailureInstruction: "-",
 		modelFailureBackupAgent: "-",
+		modelFailureAuthorizedBy: "-",
 	};
 }
 

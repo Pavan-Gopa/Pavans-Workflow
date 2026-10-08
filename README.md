@@ -1,6 +1,6 @@
 # Pavan's Workflow
 
-[![Version](https://img.shields.io/badge/version-3.6.0-1f6feb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.7.0-1f6feb)](CHANGELOG.md)
 [![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
 [![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -12,11 +12,11 @@ scoped [Graphify](https://github.com/Graphify-Labs/graphify) navigation,
 Coder-only Ponytail, and optional product-design roles — with the important
 boundaries checked in code, not only in prompts.
 
-> **3.6: the guard stops blaming workers for other people's changes.** It now
-> blocks an out-of-scope edit or `git commit` *inside* the worker, before it
-> runs, and judges a worker only on what that worker edited. Your own edits,
-> Main's commits, parallel OMP sessions, and OMP's settings rewrites no longer
-> stop the step, and checkpoints commit only their scope in a shared worktree.
+> **3.7: fast-coder, automatic failover, and red proof for fix rounds.**
+> First attempts use deterministic routing for Fast Coder (`workflow-coder-fast`),
+> gate timeouts are no longer blamed on the Coder, primary model/provider failures
+> automatically fail over to configured backup agents without pausing for Human authorization,
+> and fix rounds require reproducible red proof for fixed findings.
 > Details: [CHANGELOG.md](CHANGELOG.md).
 
 ## How the workflow runs
@@ -46,7 +46,7 @@ the worker before they run.
 | Rule | Enforced by |
 |---|---|
 | Read-only roles change nothing; Coder/Designer stay in `target_files`; Tester in test paths; no worker edits workflow files or changes git state | `workflow-guard` extension: blocks the tool call inside the worker before it runs; `workflow_guard.py` verifies what the worker edited (changes by Main, the Human, or parallel sessions are never the worker's) |
-| Backup workers need recorded Human authorization | `before_subagent_spawn` hook blocks the spawn |
+| Backup workers start on recorded primary model/provider failure | `before_subagent_spawn` hook blocks unauthorized spawns |
 | `quick` closes only with green command gates, manual gates checked, a clean Coder/Designer guard verdict and no open violation, no blast-radius hit, and risk not high | `workflow_close.py check` |
 | Objective Gates are re-run by Main, not trusted from worker reports | `workflow_gates.py` |
 | Reviewer is independent of the Coder model (primary and backup) | doctor warning (`workflow_model_diversity.py`) |
@@ -94,7 +94,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Inside OMP: `/workflow-update check` (plan) or `/workflow-update`. From a
 shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
-`--ref v3.6.0` to pin a release, `--refresh-graphify` to rebuild the graph.
+`--ref v3.7.0` to pin a release, `--refresh-graphify` to rebuild the graph.
 
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
@@ -129,10 +129,12 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 
 ## Role model pairs
 
-Configure through **Alt+M → Roles**. Persistent provider/model failure pauses
-the workflow; the Human explicitly authorizes a backup.
+Configure through **Alt+M → Roles**. On a primary worker model/provider failure Main
+fails over to the role's backup automatically (the Fast Coder has none and escalates to the Coder);
+the Human is asked only when no distinct backup is configured or the backup fails.
+Main's own backup is a manual live switch (`@workflow_orchestrator_backup`, Alt+Q).
 
-| Role | Primary | Backup (Human-authorized) |
+| Role | Primary | Backup (automatic failover) |
 |---|---|---|
 | Main | `DEFAULT` via `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
 | Coder | `@workflow_coder` | `@workflow_coder_backup` |
@@ -151,6 +153,7 @@ backups across providers; the doctor warns otherwise.
 | Action | Control |
 |---|---|
 | Live workflow dashboard | `Alt+W` |
+| Model leaderboard across all projects (inside the dashboard) | `l` |
 | Full Agent Hub | `Alt+A` |
 | Quick-focus the running worker / return | `Tab` on an empty composer / `Tab` or `Esc` |
 | Reconcile and continue | `/workflow status` |
@@ -172,13 +175,13 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.6.0
+3.7.0
 ```
 
 ## Repository map
 
 ```text
-.omp/                          agents, commands, extensions (dashboard, guard, quick focus), libs, selftests
+.omp/                          agents, commands, extensions (dashboard, guard, quick focus, Main attribution), libs, selftests
 AI_Workflow_Kit/framework.manifest   what the framework installs (single source for install/update/doctor/CI)
 AI_Workflow_Kit/templates/     pristine project-state templates (rendered into projects when missing)
 AI_Workflow_Kit/docs/AI/       rules (TEAM_CONTRACT.md), Main procedure, role contracts

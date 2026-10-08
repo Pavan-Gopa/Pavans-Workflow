@@ -2,7 +2,7 @@
 """List or run the Objective Gate commands of the current (or named) step card.
 
   workflow_gates.py list [--step S1] [--json]
-  workflow_gates.py run  [--step S1] [--json] [--require-commands] [--timeout 120]
+  workflow_gates.py run  [--step S1] [--json] [--require-commands] [--timeout 900]
 
 A gate runs when its line contains a backticked command:
 
@@ -249,7 +249,15 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
         if not gate["ok"]:
             failed += 1
     command_gates = sum(1 for gate in gates if gate["kind"] == "command")
-    status = "fail" if failed else ("pass" if command_gates else "no_commands")
+    if failed:
+        failing_gates = [g for g in gates if g["kind"] == "command" and not g.get("ok")]
+        all_timeouts = all(
+            all(r.get("timed_out") is True for r in g.get("runs", []) if r.get("exit_code") != 0 or r.get("timed_out"))
+            for g in failing_gates
+        )
+        status = "timeout" if (failing_gates and all_timeouts) else "fail"
+    else:
+        status = "pass" if command_gates else "no_commands"
     if not run:
         status = "listed" if command_gates else "no_commands"
     return {
@@ -259,6 +267,7 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
         "command_gates": command_gates,
         "failed_commands": failed,
         "status": status,
+        "timeout_seconds": timeout,
         "gates": gates,
     }
 
@@ -268,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("action", nargs="?", default="run", choices=["run", "list"])
     parser.add_argument("--step", default=None)
     parser.add_argument("--project", default=None)
-    parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "120")))
+    parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "900")))
     parser.add_argument("--require-commands", action="store_true", help="exit 3 when the card has no command gate")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)

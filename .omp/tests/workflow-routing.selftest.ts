@@ -100,12 +100,25 @@ const modelFailure = deriveRoutingExplanation(
 		modelFailureRole: "coder",
 		modelFailureInstruction: "Choose Coder backup or change the model",
 		modelFailureBackupAgent: "-",
+		modelFailureAuthorizedBy: "-",
 	},
 	baseRuntime,
 );
 assert.equal(modelFailure.reasonCode, "model_failure_waiting_authorization");
 assert.equal(modelFailure.actor, "human");
 
+const autoFailover = deriveRoutingExplanation(
+	{
+		...baseState,
+		modelFailureStatus: "backup_authorized",
+		modelFailureAuthorizedBy: "auto",
+		modelFailureRole: "coder",
+		modelFailureBackupAgent: "workflow-coder-backup",
+	},
+	baseRuntime,
+);
+assert.equal(autoFailover.reasonCode, "auto_failover");
+assert.match(autoFailover.action, /workflow-coder-backup/);
 // 8. Human blocker
 const blocked = deriveRoutingExplanation(
 	{ ...baseState, blocker: "Missing external API token", nextActor: "human" },

@@ -37,7 +37,7 @@ assert.equal(isWorkerSession({ kind: "sub", id: "tan-1", name: "sub" }), false, 
 assert.equal(isWorkerSession({ kind: "main", id: "Main", name: "main" }), false);
 assert.equal(isWorkerSession(undefined), false);
 
-// Backup workers need a recorded Human authorization in STATE.yaml.
+// Backup workers need a recorded primary failure authorization in STATE.yaml.
 const noFailure = "omp:\n  model_failure:\n    status: none\n";
 assert.deepEqual(backupAuthorization(noFailure, "workflow-coder"), { allowed: true }, "primaries are never blocked");
 const blocked = backupAuthorization(noFailure, "workflow-coder-backup");

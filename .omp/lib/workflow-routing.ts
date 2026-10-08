@@ -30,6 +30,7 @@ export type RoutingReasonCode =
 	| "security_offer"
 	| "human_blocker"
 	| "model_failure_waiting_authorization"
+	| "auto_failover"
 	| "role_not_configured"
 	| "onboarding"
 	| "unknown";
@@ -76,6 +77,19 @@ export function deriveRoutingExplanation(
 	step?: StepRoutingMeta,
 ): RoutingExplanation {
 	const profile = effectivePipelineProfile(state, step);
+
+	if (state.modelFailureStatus === "backup_authorized" && state.modelFailureAuthorizedBy === "auto") {
+		const role = roleLabel(state.modelFailureRole);
+		const agent = state.modelFailureBackupAgent !== "-" ? state.modelFailureBackupAgent : `workflow-${state.modelFailureRole}-backup`;
+		return {
+			action: `Main dispatches ${agent} after automatic failover`,
+			reason: `Primary model or provider failure recorded on role ${role}; automatic backup failover in progress`,
+			reasonCode: "auto_failover",
+			actor: normalizeRole(agent) ?? "coder",
+			actorLabel: roleLabel(agent),
+			pipelineProfile: profile,
+		};
+	}
 
 	if (state.modelFailureStatus === "awaiting_human") {
 		const role = roleLabel(state.modelFailureRole);

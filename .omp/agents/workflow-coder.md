@@ -21,6 +21,9 @@ output:
     objective_gate_ids:
       elements:
         type: string
+    red_proof:
+      elements:
+        type: string
     blockers:
       type: string
 ---
@@ -38,6 +41,7 @@ The workflow guard blocks, before they run, edits outside `target_files`, edits 
 3. Do not silently redesign architecture or repeat an assignment-listed rejected approach without new evidence.
 4. When a required shared root-cause file is outside `target_files`, return `blocked` and name it.
 5. Never weaken assigned gates, validation, security, accessibility, compatibility, or data integrity for brevity.
+6. On a fix round (`fix_round: true` in assignment), `red_proof` (array of strings) is REQUIRED: for each fixed finding, record the regression check command, its FAILING result with the fix reverted (or before the fix), and its passing result after. If no automated check can reproduce it, state so explicitly with the reason. Never fabricate; a test that passes with the fix reverted is not proof.
 
 ## Navigation
 

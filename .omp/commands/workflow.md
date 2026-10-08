@@ -15,6 +15,7 @@ the active step, changed files, and gate evidence.
 ## Read-only utility arguments (handle, then stop)
 
 - `metrics` → `bash AI_Workflow_Kit/script/workflow_metrics.sh report`
+  (`metrics all` → `... report --scope all`: model leaderboard across every registered project)
 - `metrics rate good|overkill|underchecked [step]` → the helper's `rate` command
 - `metrics reset` → `bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes`
 - `why` → derive the routing reason from real state and evidence

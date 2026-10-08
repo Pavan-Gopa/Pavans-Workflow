@@ -69,7 +69,7 @@ import sys
 from pathlib import Path, PurePosixPath
 
 READ_ONLY_ROLES = {"reviewer", "architect", "security", "design_advisor"}
-SCOPED_ROLES = {"coder", "designer"}
+SCOPED_ROLES = {"coder", "coder_fast", "designer"}
 TEST_ROLES = {"tester"}
 KNOWN_ROLES = READ_ONLY_ROLES | SCOPED_ROLES | TEST_ROLES
 PROTECTED_PREFIXES = (

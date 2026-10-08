@@ -83,6 +83,16 @@ def analyse(roles: dict[str, str]) -> list[dict[str, str]]:
                 "message": f"Reviewer and {label} both use {reviewer}; the Reviewer would grade its own model's work. "
                 "Assign workflow_reviewer (or the Coder backup) to a different model family.",
             })
+    fast_coder_sel = resolve(roles, "workflow_coder_fast")
+    coder_sel = primary("coder")
+    fast_coder_mid = model_id(fast_coder_sel)
+    coder_mid = model_id(coder_sel)
+    if reviewer and fast_coder_mid and fast_coder_mid != "@default" and fast_coder_mid != coder_mid and fast_coder_mid == reviewer:
+        findings.append({
+            "code": "reviewer_not_independent",
+            "message": f"Reviewer and Fast Coder both use {reviewer}; the Reviewer would grade its own model's work. "
+            "Assign workflow_reviewer (or Fast Coder) to a different model family.",
+        })
     for role in ALL_MAIN:
         p, b = primary(role), backup(role)
         if provider(p) and provider(p) == provider(b) and p != "@default":

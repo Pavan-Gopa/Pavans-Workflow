@@ -19,7 +19,7 @@ the entry point.
   rejects the worker result (R7); a guard note is information, not a stop.
   Changes made by you, the Human, or a parallel session while a worker runs
   are never blamed on the worker.
-- Backups start only after the Human authorized them and you recorded it (R16).
+- On a primary worker model/provider failure, Main immediately dispatches the role's `-backup` agent (assignment carries `backup_failover` and `failure_evidence`); a Fast Coder failure goes to `workflow-coder` (it has no backup), and a backup that resolves to the failed primary's model is not a backup. The Human is asked only when no distinct backup is configured or the backup fails (R16).
 
 Default loop:
 
@@ -28,7 +28,7 @@ Main -> Coder -> close check -> Reviewer -> Main verification
      -> Tester -> Main verification -> checkpoint -> next step
 ```
 
-## If you are a worker (Coder, Reviewer, Tester, Architect, Security, Designer, Design Advisor)
+## If you are a worker (Coder, Fast Coder, Reviewer, Tester, Architect, Security, Designer, Design Advisor)
 
 - Your assignment packet from Main is authoritative. If a required field is
   missing, return `blocked` naming it.

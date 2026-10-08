@@ -12,12 +12,14 @@ MAIN_ROLE = "workflow_orchestrator"
 MAIN_ALIAS = "@default"
 MAIN_TAG_NAME = "Main Orchestrator (managed by DEFAULT)"
 
-DESIGN_DEFAULTS = (
+OPTIONAL_ROLE_DEFAULTS = (
+    ("workflow_coder_fast", "@workflow_coder"),
     ("workflow_design_advisor", "@workflow_reviewer"),
     ("workflow_designer", "@workflow_architect"),
     ("workflow_design_advisor_backup", "@workflow_reviewer_backup"),
     ("workflow_designer_backup", "@workflow_architect_backup"),
 )
+DESIGN_DEFAULTS = OPTIONAL_ROLE_DEFAULTS
 
 CORE_ROLES = (
     "workflow_coder",
@@ -52,6 +54,7 @@ TOP_LEVEL_KEY = re.compile(r"^(?P<key>[A-Za-z0-9_.-]+):(?:[ \t]*(?:#.*)?)?$")
 
 SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
 ROLE_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
+TOP_LEVEL_RETRY = re.compile(r"""^["']?retry["']?[ \t]*:""")
 BARE_ALIAS_VALUE = re.compile(r"^(?P<space>[ \t]*)(?P<alias>@[^\s#]+)(?P<tail>[ \t]*(?:#.*)?)$")
 
 
@@ -542,7 +545,7 @@ def normalize_config_text(source: str, upstream_text: str | None = None) -> tupl
         block = [
             "modelRoles:",
             f'  {MAIN_ROLE}: "{MAIN_ALIAS}"',
-            *[f'  {key}: "{value}"' for key, value in DESIGN_DEFAULTS],
+            *[f'  {key}: "{value}"' for key, value in OPTIONAL_ROLE_DEFAULTS],
             "",
         ]
         lines = block + lines
@@ -560,7 +563,7 @@ def normalize_config_text(source: str, upstream_text: str | None = None) -> tupl
             if role_match:
                 existing[role_match.group("key")] = existing.get(role_match.group("key"), 0) + 1
 
-        missing = [(key, value) for key, value in DESIGN_DEFAULTS if key not in existing]
+        missing = [(key, value) for key, value in OPTIONAL_ROLE_DEFAULTS if key not in existing]
         if missing:
             insertion = [f'{child_indent}{key}: "{value}"' for key, value in missing]
             lines[end:end] = insertion
@@ -570,6 +573,7 @@ def normalize_config_text(source: str, upstream_text: str | None = None) -> tupl
     lines = _normalize_main_role(lines, notes)
     lines = _normalize_main_tag(lines, notes)
     lines = _normalize_task_policy(lines, notes)
+    lines = _normalize_retry_policy(lines, notes)
     lines = _apply_managed_sections(lines, notes)
     return "\n".join(lines).rstrip() + "\n", notes
 
@@ -593,7 +597,7 @@ def validate_config_text(source: str) -> list[str]:
             values.setdefault(key, []).append(_unquote(_scalar(role_match.group("rest"))))
             if BARE_ALIAS_VALUE.match(role_match.group("rest")):
                 errors.append(f"{key} uses an unquoted @ role alias")
-        for key, _ in DESIGN_DEFAULTS:
+        for key, _ in OPTIONAL_ROLE_DEFAULTS:
             if counts.get(key, 0) == 0:
                 errors.append(f"missing model role: {key}")
             elif counts[key] > 1:
@@ -675,7 +679,38 @@ def validate_config_text(source: str) -> list[str]:
                 f"task policy softRequestBudget must be {SOFT_REQUEST_BUDGET}, got {budget_entries[0] or '<empty>'}"
             )
     errors.extend(validate_managed_sections(source))
+    errors.extend(validate_managed_sections(source))
     return errors
+
+
+def _normalize_retry_policy(lines: list[str], notes: list[str]) -> list[str]:
+    top = next((index for index, line in enumerate(lines) if TOP_LEVEL_RETRY.match(line)), None)
+    if top is None:
+        lines.extend([
+            "",
+            "retry:",
+            "  enabled: true",
+            "  modelFallback: false",
+            "  maxRetries: 3",
+        ])
+        notes.append("created retry policy block (maxRetries: 3)")
+        return lines
+
+    # Only a block mapping can be edited line-wise; an inline/flow mapping (`retry: {maxRetries: 7}`) is the
+    # Human's explicit choice and is left exactly as written.
+    if not SECTION_HEADER.match(lines[top]):
+        return lines
+    bounds = _section_bounds(lines[top:], "retry")
+    assert bounds is not None
+    start, end, child_indent = top + bounds[0], top + bounds[1], bounds[2]
+    has_max_retries = any(
+        (match := ROLE_LINE.match(line)) is not None and match.group("key") == "maxRetries"
+        for line in lines[start + 1:end]
+    )
+    if not has_max_retries:
+        lines.insert(end, f"{child_indent}maxRetries: 3")
+        notes.append("added retry.maxRetries: 3")
+    return lines
 
 
 def _looks_like_workflow_config(path: Path) -> bool:

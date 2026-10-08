@@ -38,6 +38,7 @@ You are read-only. The workflow guard blocks your edit/write calls and any `git`
 
 - Do not edit, commit, push, route work, or spawn agents.
 - Verify findings in real source. Graphify is navigation evidence, not truth.
+- On a fix round (`fix_round: true` in the assignment), verify `red_proof`; missing, fabricated, or vacuous proof (test would pass without the fix) is a blocking finding.
 - Do not turn stylistic brevity into a blocking issue.
 
 ## Review order
