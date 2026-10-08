@@ -3,6 +3,17 @@
 Main pastes only the matching role block into the assignment. Workers do not
 reload TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT when the packet is complete.
 
+## Backup variant (any `workflow-<role>-backup` agent)
+
+Add to the role block below, built by Main under R16 (ORCHESTRATOR §7):
+
+```text
+backup_failover: auto | human      # auto = Main's automatic failover; human = the Human directed the backup
+failure_evidence: <failed model, provider error excerpt, authorized_at; for human also the Human's exact words>
+```
+
+A backup agent returns `blocked` without both fields. The Fast Coder has no backup variant.
+
 ## Coder
 
 ```text

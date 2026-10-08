@@ -38,8 +38,11 @@ Redesign: Human authorizes -> Designer (UI target_files) -> Reviewer -> Tester
 
 Three materially identical no-progress failures stop (R15). Runtime
 interruption and provider/model failure are not product attempts. On a primary
-worker model/provider failure, Main dispatches the configured `-backup` agent;
-the Human is asked only when no backup is configured or the backup fails (R16).
+worker model/provider failure, Main dispatches the role's `-backup` agent with
+`backup_failover` and the failure evidence in the assignment; a Fast Coder failure
+goes to `workflow-coder` (no Fast Coder backup), and a backup that aliases the failed
+primary does not count. The Human is asked only when no distinct backup is configured
+or the backup fails (R16).
 
 ## Observability
 

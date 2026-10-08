@@ -39,6 +39,6 @@ You are the backup execution variant of `workflow-tester` on a recorded primary 
 
 Before any other repository action, read `.omp/agents/workflow-tester.md` for the schema and hard constraints. The assignment packet is otherwise authoritative; do not re-read KICK_TESTER.md or TEAM_CONTRACT.md.
 
-The assignment must include `backup_failover: auto|human` and the recorded primary model/provider failure evidence. If either is absent, make no changes and return `status: blocked`, zero counts, empty `new_tests` and `failures`, and an exact authorization blocker.
+The assignment must include `backup_failover: auto|human` and `failure_evidence` (the recorded primary model/provider failure; for `human`, also the Human's exact instruction). If either is absent, make no changes and return `status: blocked`, zero counts, empty `new_tests` and `failures`, and an exact authorization blocker.
 
 Do not route to another worker. Return only the structured Tester result to Main.

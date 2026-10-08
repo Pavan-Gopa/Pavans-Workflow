@@ -6,7 +6,7 @@
 #   workflow_models.sh status
 #   workflow_models.sh validate
 #   workflow_models.sh validate-level <main|execution|quality|full|design>
-#   workflow_models.sh validate-role <role> [backup]
+#   workflow_models.sh validate-role <role|agent> [backup]   # also workflow-coder-backup (= coder backup), coder_fast (no backup)
 
 set -euo pipefail
 
@@ -52,6 +52,8 @@ ROLE_MAP = {
     "security": ("Security", "workflow_security", "workflow_security_backup", False),
     "design_advisor": ("Design Advisor", "workflow_design_advisor", "workflow_design_advisor_backup", True),
     "designer": ("Designer", "workflow_designer", "workflow_designer_backup", True),
+    # Fast Coder has no backup by design: a failure escalates to the strong Coder (not part of status/validate/levels).
+    "coder_fast": ("Fast Coder", "workflow_coder_fast", None, True),
 }
 
 CORE_ROLES = ["orchestrator", "coder", "reviewer", "tester", "architect", "security"]
@@ -209,11 +211,21 @@ if ACTION == "validate-level":
     sys.exit(0)
 
 if ACTION == "validate-role":
-    raw_role = ARG2.lower().strip().replace("workflow_", "").replace("-", "_")
+    # Accept `coder_fast`, `workflow_coder_fast`, and the router's agent name `workflow-coder-fast`.
+    raw_role = ARG2.lower().strip().replace("-", "_")
+    if raw_role.startswith("workflow_"):
+        raw_role = raw_role[len("workflow_"):]
     target_backup = ARG3.lower().strip() == "backup"
+    # A backup agent spelling (`workflow-coder-backup`) selects that role's backup, exactly like `<role> backup`.
+    if raw_role.endswith("_backup"):
+        raw_role = raw_role[: -len("_backup")]
+        target_backup = True
     if raw_role not in ROLE_MAP:
-        choices = ", ".join(ORDERED_ROLES)
+        choices = ", ".join([*ORDERED_ROLES, "coder_fast"])
         print(f"ERROR: unknown role '{ARG2}'. Choose from: {choices}", file=sys.stderr)
+        sys.exit(2)
+    if target_backup and ROLE_MAP[raw_role][2] is None:
+        print(f"ERROR: {ROLE_MAP[raw_role][0]} has no backup role by design; escalate to the strong Coder instead", file=sys.stderr)
         sys.exit(2)
     info = evaluate_role(raw_role)
     if target_backup:

@@ -72,8 +72,16 @@ def route_coder(root: Path, step: str | None = None, metrics_path: Path | None =
     # 2. Read metrics events
     events: list[dict[str, object]] = []
     try:
-        store_override = metrics_path or (Path(os.environ[metrics_mod.METRICS_ENV]) if metrics_mod.METRICS_ENV in os.environ else None)
-        events_path, _ = metrics_mod.resolve_store(override=store_override)
+        configured = metrics_path or os.environ.get(metrics_mod.METRICS_ENV) or None
+        override = str(configured) if configured else None
+        try:
+            events_path, _ = metrics_mod.resolve_store(cwd=root, override=override)
+        except metrics_mod.MetricsError:
+            if override is None:
+                raise
+            # An explicit store file is readable even when the project is not a Git checkout.
+            explicit = Path(override).expanduser()
+            events_path = (explicit if explicit.is_absolute() else root / explicit).resolve()
         if events_path.is_file():
             events, _, _ = metrics_mod.read_events(events_path)
     except Exception:
@@ -155,7 +163,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.project).resolve() if args.project else repo_root()
-    metrics_path = Path(args.metrics_path).resolve() if args.metrics_path else None
+    # Kept as given: a relative path belongs to the requested project and is resolved there by resolve_store(cwd=root).
+    metrics_path = Path(args.metrics_path) if args.metrics_path else None
 
     try:
         payload = route_coder(root, args.step, metrics_path)

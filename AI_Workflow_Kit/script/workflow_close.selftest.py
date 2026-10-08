@@ -69,7 +69,17 @@ STEPS = """# Steps
 ### Objective gates
 
 - [ ] [Q6.O1] `$ sleep 10` exits 0
+
+## Q7 — Quick built by the Fast Coder
+
+**Pipeline profile:** quick
+
+### Objective gates
+
+- [ ] [Q7.O1] `$ test -f src/q7.ts` exits 0
 """
+
+
 def git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
 
@@ -92,7 +102,7 @@ def close(root: Path, step: str, *extra_args: str) -> tuple[int, dict]:
 
 def guarded_worker(root: Path, step: str, role: str, change, edits: tuple[str, ...] = ()) -> None:
     """A worker run as the extension drives it: snapshot, `allow` per edit, verify."""
-    agent = f"workflow-{role}"
+    agent = f"workflow-{role.replace('_', '-')}"
     subprocess.run([sys.executable, str(GUARD), "--project", str(root), "snapshot", "--role", role, "--agent", agent, "--step", step], check=True, capture_output=True)
     for rel in edits:
         subprocess.run([sys.executable, str(GUARD), "--project", str(root), "allow", "--agent", agent, f"--path={rel}"], capture_output=True)
@@ -197,6 +207,13 @@ def main() -> int:
 
         code, decision = close(root, "Q4")
         assert code == 1 and decision["decision"] == "reopen_coder" and decision["objective"]["failed"] == ["Q4.O1"]
+
+        # A first Fast Coder run with clean gates and scope closes as quickly as the strong Coder.
+        guarded_worker(root, "Q7", "coder_fast", lambda: write(root, "src/q7.ts", "export {}\n"), ("src/q7.ts",))
+        code, decision = close(root, "Q7")
+        assert code == 0 and decision["decision"] == "close_quick", decision
+        assert decision["guard"]["latest"]["role"] == "coder_fast" and decision["quick_blockers"] == [], decision
+        (root / "src/q7.ts").unlink()
 
         code, decision = close(root, "Q6", "--timeout", "1")
         assert code == 1 and decision["decision"] == "gate_timeout" and decision["objective"]["status"] == "timeout", decision

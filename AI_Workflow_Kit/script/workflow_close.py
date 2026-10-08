@@ -96,7 +96,7 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
             guard_info.append(f"{who}: commit {commit.get('sha')} was made while its shell ran — check it: {commit.get('subject')}")
     for v in legacy:
         guard_info.append(f"{v.get('id')} ({v.get('agent') or v.get('role')}): 3.5.x {v.get('verdict')} verdict from the whole-repository diff — not attributable, not blocking")
-    builders = [v for v in verdicts if v.get("role") in ("coder", "designer")]
+    builders = [v for v in verdicts if v.get("role") in ("coder", "coder_fast", "designer")]
     latest = verdicts[-1] if verdicts else None
 
     profile = str(gates["pipeline_profile"])

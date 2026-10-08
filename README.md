@@ -129,10 +129,12 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 
 ## Role model pairs
 
-Configure through **Alt+M → Roles**. Persistent provider/model failure pauses
-the workflow; the Human explicitly authorizes a backup.
+Configure through **Alt+M → Roles**. On a primary worker model/provider failure Main
+fails over to the role's backup automatically (the Fast Coder has none and escalates to the Coder);
+the Human is asked only when no distinct backup is configured or the backup fails.
+Main's own backup is a manual live switch (`@workflow_orchestrator_backup`, Alt+Q).
 
-| Role | Primary | Backup (Human-authorized) |
+| Role | Primary | Backup (automatic failover) |
 |---|---|---|
 | Main | `DEFAULT` via `@workflow_orchestrator` | `@workflow_orchestrator_backup` |
 | Coder | `@workflow_coder` | `@workflow_coder_backup` |

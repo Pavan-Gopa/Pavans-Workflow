@@ -65,7 +65,7 @@ card is parsed.
 
 ## Routing and retry economy
 
-First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json` to decide whether to dispatch `workflow-coder-fast` or `workflow-coder`.
+First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json` to decide whether to dispatch `workflow-coder-fast` or `workflow-coder`, then validates the returned agent with `workflow_models.sh validate-role <agent>`. The router's Fast Coder health window is the only place recorded metrics steer routing (R21); a Fast Coder model/provider failure escalates to `workflow-coder` (R16), never to a backup.
 
 | Situation | `ponytail_mode` |
 |---|---|
@@ -74,9 +74,12 @@ First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py c
 | `repeated_failure_count >= 2` | `off` |
 
 On Reviewer `changes_requested` or Tester `bugs`, the fix assignment sets `fix_round: true` and requires `red_proof` in the Coder result (reproducible check output failing without the fix and passing after) for fixed findings. On Tester `bugs`, keep the failing test in approved test paths as an Objective Gate for the retry.
+
 ## Assignment-first
 
 Every assignment is self-contained (goal, stable IDs, `target_files`,
 exclusions, gates, compact retry facts, the role block from
 `WORKER_INPUT_DIGEST.md`). An incomplete assignment makes the worker return
-`blocked`; it does not trigger a full-contract reread.
+`blocked`; it does not trigger a full-contract reread. A `-backup` assignment (R16) also carries
+`backup_failover: auto|human` and `failure_evidence` (the recorded primary failure; for `human`, the
+Human's exact instruction too).

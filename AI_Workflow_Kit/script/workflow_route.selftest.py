@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -54,12 +56,40 @@ def write_project(tmp: Path, config_text: str) -> None:
     (tmp / ".omp" / "config.yml").write_text(config_text, encoding="utf-8")
 
 
-def run_route(tmp: Path, step: str, metrics_path: Path | None = None) -> dict[str, object]:
+def run_route(tmp: Path, step: str, metrics_path: Path | None = None, cwd: Path | None = None) -> dict[str, object]:
     cmd = [sys.executable, str(ROUTE), "coder", "--project", str(tmp), "--step", step, "--json"]
     if metrics_path:
         cmd.extend(["--metrics-path", str(metrics_path)])
-    completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    env = {key: value for key, value in os.environ.items() if key != "PAVAN_WORKFLOW_METRICS_PATH"}
+    completed = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=str(cwd) if cwd else None, env=env)
     return json.loads(completed.stdout)
+
+
+def fast_start(step: str, run_id: str, model: str, minute: int, **extra: object) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "ts": f"2026-10-08T11:{minute:02d}:00.000Z",
+        "event": "worker_started",
+        "event_key": f"worker_started:{run_id}",
+        "step": step,
+        "run_id": run_id,
+        "role": "coder_fast",
+        "model": model,
+        **extra,
+    }
+
+
+def strong_start(step: str, run_id: str, minute: int) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "ts": f"2026-10-08T11:{minute:02d}:30.000Z",
+        "event": "worker_started",
+        "event_key": f"worker_started:{run_id}",
+        "step": step,
+        "run_id": run_id,
+        "role": "coder",
+        "model": "provider/strong-coder",
+    }
 
 
 def main() -> int:
@@ -188,6 +218,39 @@ def main() -> int:
         res_checked = run_route(tmp, "S1", tmp / "missing-events.jsonl")
         assert res_checked["agent"] == "workflow-coder"
         assert res_checked["reason_code"] == "retry"
+
+        # Finding 1: effort-suffixed explicit models count toward the disable window of the unsuffixed config model.
+        (checks / "S1.json").unlink()
+        suffixed: list[dict[str, object]] = []
+        for i in range(1, 11):
+            suffixed.append(fast_start(f"U{i}", f"u{i}", "provider/new-fast-coder:high", i))
+            suffixed.append(strong_start(f"U{i}", f"u{i}_strong", i))
+        metrics_file.write_text("\n".join(json.dumps(e) for e in suffixed) + "\n", encoding="utf-8")
+        res_suffixed = run_route(tmp, "S1", metrics_file)
+        assert res_suffixed["reason_code"] == "auto_disabled", res_suffixed
+        assert res_suffixed["window"]["resolved"] == 10
+
+        # Finding 7: history comes from the requested --project, not the process working directory.
+        store = tmp / ".git" / "pavans-workflow" / "metrics" / "events.jsonl"
+        store.parent.mkdir(parents=True, exist_ok=True)
+        other = Path(raw + "-other")
+        other.mkdir()
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        other_store = other / ".git" / "pavans-workflow" / "metrics" / "events.jsonl"
+        other_store.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            store.write_text(json.dumps(fast_start("S1", "p1", "provider/new-fast-coder", 1)) + "\n", encoding="utf-8")
+            res_p_retry = run_route(tmp, "S1", cwd=other)
+            assert res_p_retry["reason_code"] == "retry", res_p_retry
+            # A relative --metrics-path belongs to the requested project, not to the launching checkout.
+            res_p_rel = run_route(tmp, "S1", Path(".git/pavans-workflow/metrics/events.jsonl"), cwd=other)
+            assert res_p_rel["reason_code"] == "retry", res_p_rel
+            store.unlink()
+            other_store.write_text(json.dumps(fast_start("S1", "o1", "provider/new-fast-coder", 1)) + "\n", encoding="utf-8")
+            res_p_clean = run_route(tmp, "S1", cwd=other)
+            assert res_p_clean["reason_code"] == "fast_first", res_p_clean
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
 
     print("workflow_route.selftest: PASS")
     return 0

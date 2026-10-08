@@ -101,7 +101,7 @@ at startup when `AI_Workflow_Kit/installed.manifest` is missing.
 Open **Alt+M → Roles**:
 
 - **DEFAULT** — the persistent Main model and effort (complete both selector steps).
-- `workflow_*` — worker primaries; `workflow_*_backup` — Human-authorized backups.
+- `workflow_*` — worker primaries; `workflow_*_backup` — failover backups (automatic on a primary model/provider failure).
 - Keep `workflow_reviewer` on a different model than `workflow_coder` **and**
   `workflow_coder_backup`, and spread backups across providers:
 

@@ -4,6 +4,7 @@ import {
 	SessionUsageTracker,
 	deriveDashboardViewModel,
 	displayWidth,
+	normalizeRole,
 	parseSteps,
 	parseWorkflowState,
 	renderDashboard,
@@ -399,6 +400,36 @@ for (const [role, agent, model, expected] of [
 	assert.match(roleText, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 	assert.match(roleText, /CURRENT MODEL ·/);
 }
+
+// A live Fast Coder maps onto the metrics role key `coder_fast`, so its statistics sections render with the Coder approval line.
+const fastRatio = { count: 6, total: 8, rate_pct: 75 };
+const fastData: DashboardData = {
+	...data,
+	state: { ...state, nextActor: "coder_fast" },
+	metrics: {
+		...metrics,
+		role_stats: {
+			...metrics.role_stats,
+			coder_fast: { runs: 9, verified_results: 8, results: { waiting_review: 8 }, median_duration_ms: 90_000, first_review_approval: fastRatio },
+		},
+		model_samples: [
+			...(metrics.model_samples ?? []),
+			{ role: "coder_fast", provider: "google", model: "gemini-3.6-flash", runs: 9, median_duration_ms: 90_000, first_review_approval: fastRatio },
+		],
+	},
+};
+const fastView = deriveDashboardViewModel(fastData, {
+	...runtime,
+	worker: { ...runtime.worker!, agent: "workflow-coder-fast", resolvedModel: "google/gemini-3.6-flash:high" },
+});
+assert.equal(fastView.currentRole, "coder_fast");
+assert.equal(normalizeRole("workflow-coder-fast"), "coder_fast");
+const fastText = renderDashboard(fastView, 160, 48).lines.map(line => line.text).join("\n");
+assert.match(fastText, /CURRENT ROLE · FAST CODER/);
+assert.match(fastText, /First-review approval · 75/);
+assert.match(fastText, /CURRENT MODEL · /);
+const fastModelSection = fastText.slice(fastText.indexOf("CURRENT MODEL ·"));
+assert.match(fastModelSection, /First-review approval · 75/, "CURRENT MODEL shows the Fast Coder's approval statistic");
 
 const waitingState = {
 	...state,

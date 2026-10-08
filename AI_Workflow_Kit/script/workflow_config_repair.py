@@ -54,6 +54,7 @@ TOP_LEVEL_KEY = re.compile(r"^(?P<key>[A-Za-z0-9_.-]+):(?:[ \t]*(?:#.*)?)?$")
 
 SECTION_HEADER = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z0-9_.-]+):[ \t]*(?:#.*)?$")
 ROLE_LINE = re.compile(r"^(?P<indent>[ \t]+)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
+TOP_LEVEL_RETRY = re.compile(r"""^["']?retry["']?[ \t]*:""")
 BARE_ALIAS_VALUE = re.compile(r"^(?P<space>[ \t]*)(?P<alias>@[^\s#]+)(?P<tail>[ \t]*(?:#.*)?)$")
 
 
@@ -683,8 +684,8 @@ def validate_config_text(source: str) -> list[str]:
 
 
 def _normalize_retry_policy(lines: list[str], notes: list[str]) -> list[str]:
-    bounds = _section_bounds(lines, "retry")
-    if bounds is None:
+    top = next((index for index, line in enumerate(lines) if TOP_LEVEL_RETRY.match(line)), None)
+    if top is None:
         lines.extend([
             "",
             "retry:",
@@ -695,13 +696,17 @@ def _normalize_retry_policy(lines: list[str], notes: list[str]) -> list[str]:
         notes.append("created retry policy block (maxRetries: 3)")
         return lines
 
-    start, end, child_indent = bounds
-    has_max_retries = False
-    for line in lines[start + 1:end]:
-        match = ROLE_LINE.match(line)
-        if match and match.group("key") == "maxRetries":
-            has_max_retries = True
-            break
+    # Only a block mapping can be edited line-wise; an inline/flow mapping (`retry: {maxRetries: 7}`) is the
+    # Human's explicit choice and is left exactly as written.
+    if not SECTION_HEADER.match(lines[top]):
+        return lines
+    bounds = _section_bounds(lines[top:], "retry")
+    assert bounds is not None
+    start, end, child_indent = top + bounds[0], top + bounds[1], bounds[2]
+    has_max_retries = any(
+        (match := ROLE_LINE.match(line)) is not None and match.group("key") == "maxRetries"
+        for line in lines[start + 1:end]
+    )
     if not has_max_retries:
         lines.insert(end, f"{child_indent}maxRetries: 3")
         notes.append("added retry.maxRetries: 3")

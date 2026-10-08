@@ -5,11 +5,14 @@
 // this module records two events per project store, deterministically and without
 // relying on Main's memory:
 //   input (source "interactive")  -> human_turn        {step, model}
-//   agent_start                   -> orchestrator_model {step, model}  (first sight of a step, or model change)
+//   agent_start + turn_start      -> orchestrator_model {step, model}  (first sight of a step, or model change)
+// (`agent_start` fires once per prompt, `turn_start` once per model turn: a step opened or a model switched
+// inside one prompt's loop is only seen by `turn_start`; the per-step/model dedup makes the pair idempotent.)
 // `step` is STATE.yaml's current step; with no current step nothing is recorded.
 // Recording is detached from the event: it never delays input, never throws, and
 // stays silent on failure (the next event simply retries). No prompt text is stored.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { parseWorkflowState } from "./workflow-dashboard-core.ts";
@@ -23,7 +26,14 @@ export type AttributionEvent = "human_turn" | "orchestrator_model";
 const EFFORT_SUFFIX = /:(?:off|minimal|low|medium|high|xhigh|max|auto|inherit)$/;
 const STEP_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,159}$/;
-const KEY_UNSAFE = /[^A-Za-z0-9._:/-]/g;
+// The recorder always exits 0 (observer failures must never block the workflow); this line is its only proof of a stored event.
+const RECORDER_ACK = /^metrics (?:recorded|duplicate_noop): /m;
+const STEP_KEY_MAX = 100;
+
+/** The step as it appears in an event key: verbatim when short, else a prefix plus a digest of the whole step id. */
+function stepKeyPart(step: string): string {
+	return step.length <= STEP_KEY_MAX ? step : `${step.slice(0, 80)}.${createHash("sha256").update(step).digest("hex").slice(0, 16)}`;
+}
 
 export type ModelLike = { provider?: string; id?: string };
 
@@ -75,15 +85,16 @@ export class MainAttributionTracker {
 
 	planHumanTurn(step: string, model: string, now: number): RecordPlan {
 		this.sequence += 1;
-		return { event: "human_turn", eventKey: `human_turn:${step}:${now}:${this.sequence}`.slice(0, 160), step, model };
+		return { event: "human_turn", eventKey: `human_turn:${stepKeyPart(step)}:${now}:${this.sequence}`, step, model };
 	}
 
 	planModel(step: string, model: string): RecordPlan | undefined {
 		if (this.lastModelByStep.get(step) === model) return undefined;
 		this.lastModelByStep.set(step, model);
-		// Deterministic: the same step+model is an idempotent no-op in the recorder, also across sessions.
-		const safeModel = model.replace(KEY_UNSAFE, "_");
-		return { event: "orchestrator_model", eventKey: `orchestrator_model:${step}:${safeModel}`.slice(0, 160), step, model };
+		// Deterministic and collision-free: the digest covers the complete step+model identity, so the same
+		// step+model is an idempotent no-op in the recorder (also across sessions) and no two identities share a key.
+		const identity = createHash("sha256").update(`${step}\n${model}`).digest("hex").slice(0, 24);
+		return { event: "orchestrator_model", eventKey: `orchestrator_model:${stepKeyPart(step)}:${identity}`, step, model };
 	}
 
 	/** A failed record must be retried by the next event, not remembered as done. */
@@ -97,7 +108,7 @@ export class MainAttributionTracker {
 export type AttributionDeps = {
 	tracker: MainAttributionTracker;
 	readState: () => Promise<string>;
-	exec: (args: string[]) => Promise<{ code: number }>;
+	exec: (args: string[]) => Promise<{ code: number; stdout?: string }>;
 	now?: () => number;
 };
 
@@ -125,6 +136,8 @@ export async function recordAttribution(
 	try {
 		const result = await deps.exec(recorderArgs(plan));
 		if (result.code !== 0) throw new Error(`recorder exited ${result.code}`);
+		// Exit 0 alone proves nothing: storage failures and a missing Python runtime also exit 0.
+		if (!RECORDER_ACK.test(result.stdout ?? "")) throw new Error("recorder did not acknowledge the event");
 		return "recorded";
 	} catch {
 		deps.tracker.rollback(plan);
@@ -163,6 +176,9 @@ export default function workflowMainAttribution(pi: ExtensionAPI): void {
 		return undefined;
 	});
 	pi.on("agent_start", async (_event, ctx) => {
+		if (isMainSession(ctx.agent, ctx.hasUI)) detach(ctx, "orchestrator_model");
+	});
+	pi.on("turn_start", async (_event, ctx) => {
 		if (isMainSession(ctx.agent, ctx.hasUI)) detach(ctx, "orchestrator_model");
 	});
 }

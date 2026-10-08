@@ -178,5 +178,25 @@ assert again == managed and again_notes == []
 # A config missing the managed sections fails validation until repaired.
 no_sections = UPSTREAM.split("\ncycleOrder:")[0] + "\n"
 assert any("cycleOrder" in error for error in mod.validate_config_text(no_sections))
+# retry: an explicit Human limit is never overridden; only a block mapping lacking the key is edited.
+without_retry = normalized.split("\nretry:")[0].rstrip() + "\n"
+assert "retry:" not in without_retry
+for explicit_retry in (
+    "retry: {enabled: true, modelFallback: false, maxRetries: 7}\n",
+    "retry: {enabled: true, modelFallback: false}\n",
+    "retry:\n  enabled: true\n  modelFallback: false\n  maxRetries: 7\n",
+):
+    kept, kept_notes = mod.normalize_config_text(without_retry + explicit_retry, UPSTREAM)
+    assert kept.count("retry:") == 1, kept
+    assert "maxRetries: 3" not in kept, kept
+    assert not any("retry" in note for note in kept_notes), kept_notes
+    assert ("maxRetries: 7" in kept) == ("maxRetries: 7" in explicit_retry)
+    assert mod.validate_config_text(kept) == []
+added, added_notes = mod.normalize_config_text(without_retry + "retry:\n  enabled: true\n  modelFallback: false\n", UPSTREAM)
+assert added.count("retry:") == 1 and "  maxRetries: 3" in added and "added retry.maxRetries: 3" in added_notes
+nested_only = without_retry + "unrelated:\n  retry:\n    maxRetries: 9\n"
+nested, _ = mod.normalize_config_text(nested_only, UPSTREAM)
+assert nested.count("\nretry:\n") == 1 and "maxRetries: 3" in nested and "maxRetries: 9" in nested
+
 
 print("workflow config repair selftest: PASS")

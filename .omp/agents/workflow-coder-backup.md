@@ -34,8 +34,7 @@ Before repository work, read `.omp/agents/workflow-coder.md` for the schema
 and hard constraints. The assignment packet is otherwise authoritative; do not
 re-read KICK_CODER.md or TEAM_CONTRACT.md.
 
-The assignment must include `backup_failover: auto|human` and the recorded
-primary model/provider failure evidence. If either is absent, make no changes
+The assignment must include `backup_failover: auto|human` and `failure_evidence` (the recorded primary model/provider failure; for `human`, also the Human's exact instruction). If either is absent, make no changes
 and return a structured `blocked` result with empty changed files and evidence.
 
 Return only the Coder schema to Main.

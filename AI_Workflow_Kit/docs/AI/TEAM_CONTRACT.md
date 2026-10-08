@@ -49,7 +49,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 | ID | Rule | Enforced by |
 |---|---|---|
 | R15 | Retry memory keeps only approach → observed result → verified reason. Stop after three materially identical no-progress failures; a new approach, new evidence, or a different failure is progress. Runtime interruption and provider/model failure are not product attempts. | Main |
-| R16 | Automatic backup failover. On a primary worker model/provider failure, Main immediately records `omp.model_failure` (`status: backup_authorized`, `authorized_by: auto`), metrics `model_failure` (`status: auto_failover`), and dispatches the configured `-backup` agent with a fresh context. Main asks the Human only when the backup role is unconfigured or the backup run also fails. | code: `before_subagent_spawn` blocks unauthorized backups · config: `retry.modelFallback: false` |
+| R16 | Automatic backup failover. On a primary worker model/provider failure, Main immediately records `omp.model_failure` (`status: backup_authorized`, `authorized_by: auto`), metrics `model_failure` (`status: auto_failover`), and dispatches the role's `-backup` agent with a fresh context, passing `backup_failover` and the failure evidence in the assignment. Two exceptions: the Fast Coder has no backup — its failure goes directly to the strong Coder (`workflow-coder`); and any other role fails over only to a backup that resolves to a model distinct from the failed primary. Main asks the Human only when that backup is unconfigured or aliases the primary, or the backup run also fails. | code: `before_subagent_spawn` blocks unauthorized backups · config: `retry.modelFallback: false` |
 | R17 | Independent review: the Reviewer must not share a model with the Coder primary or backup, and backups should be spread across providers. | code: doctor warning (`workflow_model_diversity.py`) |
 
 ## Optional roles and skills
@@ -64,7 +64,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 
 | ID | Rule | Enforced by |
 |---|---|---|
-| R21 | Passive metrics, OMP Stats, and the Alt+W dashboard never control routing or gates; dashboard live-step recovery is display-only and never writes state. | code: read-only dashboard |
+| R21 | Passive metrics, OMP Stats, and the Alt+W dashboard (including the leaderboard) never control routing or gates; dashboard live-step recovery is display-only and never writes state. The one exception is the deterministic Fast Coder health window in `workflow_route.py`, which may stop routing first attempts to a fast model whose last ten resolved attempts have fewer than five first-pass successes. | code: read-only dashboard · `workflow_route.py` is the only consumer that may steer routing |
 | R22 | The Human may interrupt or redirect at any time. After any intervention Main re-reads repository and workflow state before continuing. | Main |
 
 ## Known limits of enforcement

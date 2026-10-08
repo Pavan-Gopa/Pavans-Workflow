@@ -393,7 +393,7 @@ export function normalizeWorkItemText(value: string): string {
 	return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-const SPECIALIZED_ROLES = new Set(["coder", "reviewer", "tester", "architect", "security"]);
+const SPECIALIZED_ROLES = new Set(["coder", "coder_fast", "reviewer", "tester", "architect", "security"]);
 const THINKING_SUFFIX = /:(?:none|minimal|low|medium|high|xhigh|max)$/i;
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
@@ -748,6 +748,7 @@ export function normalizeRole(value: string | undefined): string | undefined {
 		.replace(/[-_]backup$/, "");
 	if (role === "main" || role === "orchestrator") return "orchestrator";
 	if (role === "code-reviewer") return "reviewer";
+	if (role === "coder-fast") return "coder_fast"; // the metrics role key
 	return role || undefined;
 }
 
@@ -759,7 +760,6 @@ export function roleLabel(value: string | undefined): string {
 			architect: "Architect",
 			coder: "Coder",
 			coder_fast: "Fast Coder",
-			"coder-fast": "Fast Coder",
 			reviewer: "Reviewer",
 			tester: "Tester",
 			security: "Security",
@@ -1499,7 +1499,7 @@ function roleStatsLines(view: DashboardViewModel, report: MetricsReport): TextLi
 	if (!stats) return [];
 	const lines: TextLine[] = [{ text: `CURRENT ROLE · ${roleLabel(view.currentRole).toUpperCase()}`, tone: "accent" }];
 	lines.push({ text: `Runs ${stats.runs} · Verified ${stats.verified_results} · Median ${formatDuration(stats.median_duration_ms)}` });
-	if (view.currentRole === "coder" && stats.first_review_approval && stats.first_review_approval.total > 0) {
+	if ((view.currentRole === "coder" || view.currentRole === "coder_fast") && stats.first_review_approval && stats.first_review_approval.total > 0) {
 		lines.push({ text: `First-review approval · ${formatRatio(stats.first_review_approval)}` });
 	} else if (view.currentRole === "reviewer" && stats.product_rejection && stats.product_rejection.total > 0) {
 		lines.push({ text: `Product rejection · ${formatRatio(stats.product_rejection)}` });
@@ -1520,7 +1520,7 @@ function currentModelLines(view: DashboardViewModel, report: MetricsReport): Tex
 	const lines: TextLine[] = [{ text: `CURRENT MODEL · ${friendlyModelName(view.runtime.worker.resolvedModel)}`, tone: "accent" }];
 	const sampleLabel = sample.sample_warning ?? formatSampleLabel(sample.runs);
 	lines.push({ text: `Runs ${sample.runs} · ${sampleLabel} · Median ${formatDuration(sample.median_duration_ms)}` });
-	if (view.currentRole === "coder" && sample.first_review_approval && sample.first_review_approval.total > 0) {
+	if ((view.currentRole === "coder" || view.currentRole === "coder_fast") && sample.first_review_approval && sample.first_review_approval.total > 0) {
 		lines.push({ text: `First-review approval · ${formatRatio(sample.first_review_approval)}` });
 	}
 	return lines;

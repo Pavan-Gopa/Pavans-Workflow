@@ -1,9 +1,10 @@
 # Passive Workflow Metrics
 
-> Metrics observe the workflow. Metrics never control the workflow.
+> Metrics observe the workflow. Metrics never control the workflow — except the deterministic Fast Coder
+> health window that `workflow_route.py` computes from recorded Fast Coder attempts (R21).
 
 This is the canonical telemetry contract for Main and the shared aggregation
-helper. It does not change routing, Retry Memory, Objective/Judgment Gates,
+helper. Apart from that window it does not change routing, Retry Memory, Objective/Judgment Gates,
 Grilling, checkpoints, model failover, or `maxConcurrency: 1`.
 
 ## Storage and runtime
@@ -264,7 +265,7 @@ effort. Workers whose model was not recorded appear as `unknown`.
 | Role | Primary metric (ranked) | Also shown |
 |------|-------------------------|------------|
 | Orchestrator (Main) | Human messages per completed step, lower is better | Coder retries/step, `missed_requirement` failures/step, median step duration, Human ratings |
-| Coder, Fast Coder | First-review approval: product Reviews of that model's candidates that were `approved` ÷ reviewed candidates | runs, median duration, tokens/run, model-failure rate; Fast Coder also first-pass success |
+| Coder, Fast Coder | First-review approval: product Reviews of that model's candidates that were `approved` ÷ reviewed candidates (per role: each role counts only its own candidates) | runs, median duration, tokens/run, model-failure rate; Fast Coder also first-pass success |
 | Reviewer | QA escape rate of its approvals, lower is better | runs, median duration, tokens/run, model-failure rate |
 | Tester | not ranked (no ground truth) | bugs-found rate, runs, median duration, tokens/run, model-failure rate |
 | Architect, Security | not ranked | runs, median duration, tokens/run, model-failure rate |
@@ -278,8 +279,14 @@ effort. Workers whose model was not recorded appear as `unknown`.
   (interactive input; OMP UI commands such as `/model`, `/clear` and `!` shell
   lines are ignored, `/workflow ...` counts) it records `human_turn`
   (`step`, `model`), and on each agent start `orchestrator_model` (`step`,
-  `model`; once per step and model, deterministic key
-  `orchestrator_model:<step>:<model>`). `step` is `STATE.yaml`'s
+  `model`; once per step and model) on every agent start and every model turn,
+  so a step opened or a model switched inside one prompt's loop is still seen.
+  Event keys are bounded and collision-free: `orchestrator_model:<step>:<24-hex digest of
+  step+model>` and `human_turn:<step>:<ms>:<seq>` (a step longer than 100
+  characters is shortened to a prefix plus a digest of the whole id). The
+  extension counts an event as recorded only when the recorder prints its
+  `metrics recorded|duplicate_noop` acknowledgement (the recorder itself always exits 0), and
+  retries on the next observation otherwise. `step` is `STATE.yaml`'s
   `current_step`; with no current step nothing is recorded. Only the top-level
   Main session records; workers never do. Neither event carries prompt text,
   and a failing recorder is silent and never delays or alters Human input.
@@ -304,10 +311,15 @@ bash AI_Workflow_Kit/script/workflow_metrics.sh report --scope all     # every r
 bash AI_Workflow_Kit/script/workflow_metrics.sh report --scope all --json
 ```
 
-`--scope all` reads each registered store without modifying it, namespaces step,
-run and candidate ids per project so the same `S1` in two repositories never
-collides, and merges them into one report. Missing, unreadable, or corrupt
-stores and an unreadable registry are skipped with a printed note. Projects
+The registry upsert holds an inter-process lock across read, merge and atomic
+replace, so concurrent first records never drop a registration. `--scope all`
+reads each registered store without modifying it, namespaces step, run,
+candidate and event ids per project with a digest of the store path (not the
+display name, which is only made unique for the report) so the same `S1` in two
+repositories never collides, and merges them into one report. A store whose
+events have wrong-typed fields counts them as malformed lines: they are skipped with
+a warning, and the store is skipped (with a printed note) only when no valid events remain.
+Missing or unreadable stores and an unreadable registry are skipped with a printed note. Projects
 register on their first successful record after updating; there is no backfill.
 The Alt+W dashboard shows a one-line-per-role leaderboard summary in the health
 column and the full tables under `l`; it uses this same `--scope all` report.

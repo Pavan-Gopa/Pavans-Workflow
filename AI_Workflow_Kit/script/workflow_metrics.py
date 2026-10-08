@@ -8,6 +8,8 @@ never sends telemetry over the network.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import os
 import re
@@ -15,10 +17,17 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
+
+try:
+    import fcntl
+except ImportError:  # non-POSIX: the registry upsert simply runs unlocked
+    fcntl = None  # type: ignore[assignment]
 
 SCHEMA_VERSION = 1
 METRICS_ENV = "PAVAN_WORKFLOW_METRICS_PATH"
@@ -210,7 +219,12 @@ def read_events(events_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
                 if semantic_payload(seen[key]) != semantic_payload(event):
                     warnings.append(f"line {line_number}: conflicting duplicate event_key {key!r}; first event kept")
                 continue
-            if event.get("event") not in EVENT_TYPES:
+            kind = event.get("event")
+            if kind is not None and not isinstance(kind, str):
+                info["malformed_lines"] += 1
+                warnings.append(f"line {line_number}: event type must be a string; skipped")
+                continue
+            if kind not in EVENT_TYPES:
                 info["unknown_events"] += 1
                 continue
             try:
@@ -250,7 +264,7 @@ def ensure_metadata(metadata_path: Path, first_event_ts: str) -> None:
 
 
 def require_id(name: str, value: Optional[str]) -> str:
-    if value is None or not SIMPLE_ID.fullmatch(value):
+    if not isinstance(value, str) or not SIMPLE_ID.fullmatch(value):
         raise MetricsError(f"{name} must match {SIMPLE_ID.pattern}")
     return value
 
@@ -258,15 +272,15 @@ def require_id(name: str, value: Optional[str]) -> str:
 def validate_ref(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
-    if not SIMPLE_REF.fullmatch(value):
+    if not isinstance(value, str) or not SIMPLE_REF.fullmatch(value):
         raise MetricsError("evidence_ref must be a bounded canonical path/reference, not prose")
     return value
 
 
 def require_enum(name: str, value: Optional[str], allowed: set[str]) -> str:
-    if value not in allowed:
+    if not isinstance(value, str) or value not in allowed:
         raise MetricsError(f"{name} must be one of: {', '.join(sorted(allowed))}")
-    return str(value)
+    return value
 
 
 def validate_event(event: dict[str, Any]) -> None:
@@ -335,7 +349,9 @@ def validate_event(event: dict[str, Any]) -> None:
         require_enum("detected_by", event.get("detected_by"), DETECTED_BY)
     if event_type == "runtime_interruption":
         require_enum("classification", event.get("classification"), INTERRUPTIONS)
-    if event_type == "model_failure" and event.get("status") not in {"awaiting_human", "auto_failover"}:
+    if event_type == "model_failure" and not (
+        isinstance(event.get("status"), str) and event["status"] in {"awaiting_human", "auto_failover"}
+    ):
         raise MetricsError("model_failure status must be awaiting_human or auto_failover")
     if event_type == "gate_skipped":
         require_enum("gate", event.get("gate"), GATES)
@@ -418,6 +434,21 @@ def model_key(event: dict[str, Any]) -> str:
         return UNKNOWN_MODEL
     provider = event.get("provider")
     return f"{provider}/{model}" if provider and not model.startswith(f"{provider}/") else model
+
+
+def sample_identity(event: dict[str, Any]) -> Optional[tuple[str, str]]:
+    """(provider, bare model id) of a run for the project-scope model samples, or None when either is unrecorded.
+
+    The report keeps the original provider-plus-bare-ID shape the dashboard joins on, whether the start recorded
+    `model=gpt-5.6-luna` or the auto-filled `model=openai-codex/gpt-5.6-luna`; the effort suffix is not identity.
+    """
+    provider, model = event.get("provider"), event.get("model")
+    if not provider or not model:
+        return None
+    bare = THINKING_SUFFIX.sub("", str(model)).strip()
+    if bare.startswith(f"{provider}/"):
+        bare = bare[len(str(provider)) + 1:]
+    return (str(provider), bare) if bare else None
 
 
 def primary_metric(metric: str, better: str, unit: str, count: int, total: int) -> dict[str, Any]:
@@ -731,46 +762,85 @@ def read_registry(path: Path) -> tuple[list[dict[str, str]], Optional[str]]:
     return entries, None
 
 
+@contextlib.contextmanager
+def registry_lock(path: Path, timeout: float = 5.0) -> Iterator[None]:
+    """Inter-process exclusive lock held across the registry read-merge-replace; no-op where flock is unavailable."""
+    if fcntl is None:
+        yield
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path.with_name(path.name + ".lock"), "a+") as handle:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"registry lock busy: {path}")
+                time.sleep(0.02)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def register_project(events_path: Path, cwd: Optional[Path] = None, registry: Optional[Path] = None) -> None:
-    """Upsert this project in the global registry. Atomic, failure-silent: the registry never blocks recording."""
+    """Upsert this project in the global registry. Locked + atomic, failure-silent: the registry never blocks recording."""
     try:
         name, root = project_identity(cwd)
         path = registry or registry_path()
-        entries, problem = read_registry(path)
         entry = {"name": name, "root": root, "store": str(events_path)}
-        if problem is None and entry in entries:
-            return
-        position = next((index for index, item in enumerate(entries) if item["store"] == entry["store"]), None)
-        if position is None:
-            entries.append(entry)
-        else:
-            entries[position] = entry
-        path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".projects-", suffix=".tmp")
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(entries, handle, ensure_ascii=True, indent=2, sort_keys=True)
-                handle.write("\n")
-            os.replace(temp_name, path)
-        except BaseException:
+        with registry_lock(path):
+            entries, problem = read_registry(path)
+            if problem is None and entry in entries:
+                return
+            position = next((index for index, item in enumerate(entries) if item["store"] == entry["store"]), None)
+            if position is None:
+                entries.append(entry)
+            else:
+                entries[position] = entry
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, temp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".projects-", suffix=".tmp")
             try:
-                os.unlink(temp_name)
-            except OSError:
-                pass
-            raise
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    json.dump(entries, handle, ensure_ascii=True, indent=2, sort_keys=True)
+                    handle.write("\n")
+                os.replace(temp_name, path)
+            except BaseException:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+                raise
     except Exception:
         pass
 
 
-def tag_events(project: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Copy events with the project name attached and every identifier namespaced, so steps/runs never collide."""
+def store_namespace(store: str) -> str:
+    """Stable, collision-free, colon-free ID namespace derived from the store path (never from the display name)."""
+    return "p" + hashlib.sha256(store.encode("utf-8")).hexdigest()[:12]
+
+
+def unique_project_name(name: str, used: set[str]) -> str:
+    """Display label only; reserved against every label already handed out, so it is unique across the report."""
+    label, suffix = name, 1
+    while label in used:
+        suffix += 1
+        label = f"{name}#{suffix}"
+    used.add(label)
+    return label
+
+
+def tag_events(namespace: str, project: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy events with the project label attached and every identifier namespaced, so steps/runs never collide."""
     tagged: list[dict[str, Any]] = []
     for event in events:
         copy = dict(event)
         copy["project"] = project
         for field in ("step", "run_id", "candidate_id", "event_key"):
             if copy.get(field) is not None:
-                copy[field] = f"{project}:{copy[field]}"
+                copy[field] = f"{namespace}:{copy[field]}"
         tagged.append(copy)
     return tagged
 
@@ -787,7 +857,7 @@ def collect_all_events(
     info["metadata_path"] = None
     merged: list[dict[str, Any]] = []
     projects: list[dict[str, Any]] = []
-    name_counts: Counter[str] = Counter()
+    used_names: set[str] = set()
     seen_stores: set[str] = set()
     for entry in entries:
         if entry["store"] in seen_stores:
@@ -799,17 +869,16 @@ def collect_all_events(
             continue
         try:
             events, store_info, _warnings = read_events(store)
-        except OSError as error:
+        except (OSError, MetricsError, TypeError, ValueError) as error:
             notes.append(f"skipped {entry['name']}: store unreadable ({error})")
             continue
         if not events and store_info["malformed_lines"]:
             notes.append(f"skipped {entry['name']}: store corrupt ({store_info['malformed_lines']} malformed line(s), no valid events)")
             continue
-        name_counts[entry["name"]] += 1
-        name = entry["name"] if name_counts[entry["name"]] == 1 else f"{entry['name']}#{name_counts[entry['name']]}"
+        name = unique_project_name(entry["name"], used_names)
         for key in ("malformed_lines", "unknown_events", "future_schema_events"):
             info[key] += store_info[key]
-        merged.extend(tag_events(name, events))
+        merged.extend(tag_events(store_namespace(entry["store"]), name, events))
         projects.append({"name": name, "events": len(events)})
     merged.sort(key=lambda item: (item.get("ts", ""), item.get("event_key", "")))
     info["valid_events"] = len(merged)
@@ -936,12 +1005,12 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
         if candidate_id:
             product_review_by_candidate.setdefault(str(candidate_id), event)
     for run_id, started in starts_by_run.items():
-        provider = started.get("provider")
-        model = started.get("model")
+        identity = sample_identity(started)
         role = str(started.get("role", "unknown"))
-        if not provider or not model:
+        if identity is None:
             continue
-        key = (role, str(provider), str(model))
+        provider, model = identity
+        key = (role, provider, model)
         bucket = model_groups.setdefault(
             key,
             {"role": role, "provider": provider, "model": model, "runs": 0, "durations_ms": [], "first_review_approved": 0, "first_review_total": 0},
@@ -994,15 +1063,14 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
     for event in by_type["worker_result"]:
         results_by_role[str(event.get("role", "unknown"))].append(event)
 
-    coder_candidate_ids = {
-        str(event.get("candidate_id") or event.get("run_id"))
-        for role_name in ("coder", "coder_fast")
-        for event in starts_by_role[role_name]
-        if event.get("candidate_id") or event.get("run_id")
-    }
-    coder_first_reviews = [
-        review for candidate, review in product_review_by_candidate.items() if candidate in coder_candidate_ids
-    ]
+    def coder_first_reviews_for(role_name: str) -> list[dict[str, Any]]:
+        candidates = {
+            str(event.get("candidate_id") or event.get("run_id"))
+            for event in starts_by_role[role_name]
+            if event.get("candidate_id") or event.get("run_id")
+        }
+        return [review for candidate, review in product_review_by_candidate.items() if candidate in candidates]
+
     role_stats: dict[str, dict[str, Any]] = {}
     for role in sorted(ROLES):
         starts = starts_by_role[role]
@@ -1016,10 +1084,11 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
             "results": dict(sorted(result_counts.items())),
             "median_duration_ms": median_or_none(worker_durations_by_role.get(role, [])),
         }
-        if role in {"coder", "coder_fast"}:
+        if role in CODER_ROLES:
+            role_reviews = coder_first_reviews_for(role)
             stats["first_review_approval"] = ratio(
-                sum(1 for event in coder_first_reviews if event.get("result") == "approved"),
-                len(coder_first_reviews),
+                sum(1 for event in role_reviews if event.get("result") == "approved"),
+                len(role_reviews),
             )
         elif role == "reviewer":
             stats["product_rejection"] = summary["reviewer_rejection"]
@@ -1075,12 +1144,12 @@ def aggregate(events: list[dict[str, Any]], info: dict[str, Any]) -> dict[str, A
             if event.get("event") == "worker_started" and event.get("role") == "architect"
         ]
         model_counts = Counter(
-            (str(event.get("role")), str(event.get("provider")), str(event.get("model")))
+            (str(event.get("role")), *identity)
             for event in step_events
             if event.get("event") == "worker_started"
             and event.get("role")
-            and event.get("provider")
-            and event.get("model")
+            for identity in [sample_identity(event)]
+            if identity is not None
         )
         step_stats[step] = {
             "status": "completed" if completed_event else ("in_progress" if started_event else "observed"),
@@ -1345,60 +1414,47 @@ def resolve_config_model(model_role: str, project_dir: Path | None = None) -> tu
 
 
 def analyze_fast_coder_attempts(events: list[dict[str, Any]]) -> dict[str, Any]:
-    attempts = []
+    """Outcome of each Fast Coder attempt: a later Coder start on the step = failure, a later completion = success.
+
+    One reverse pass keyed by step (O(N)); models use the canonical `model_key` identity, effort suffix stripped.
+    """
+    later_coder_start: set[str] = set()
+    later_completed: set[str] = set()
+    attempts_reversed: list[dict[str, Any]] = []
+    for event in reversed(events):
+        kind = event.get("event")
+        step = str(event.get("step"))
+        if kind == "worker_started" and event.get("role") in CODER_ROLES:
+            if event.get("role") == "coder_fast":
+                if step in later_coder_start:
+                    outcome = "resolved_failure"
+                elif step in later_completed:
+                    outcome = "resolved_success"
+                else:
+                    outcome = "pending"
+                attempts_reversed.append({
+                    "step": step,
+                    "run_id": str(event.get("run_id")),
+                    "model": model_key(event),
+                    "outcome": outcome,
+                    "ts": event.get("ts"),
+                })
+            later_coder_start.add(step)
+        elif kind == "step_completed":
+            later_completed.add(step)
+
+    attempts = attempts_reversed[::-1]
     by_model: dict[str, dict[str, int]] = defaultdict(lambda: {"attempts": 0, "resolved": 0, "first_pass": 0, "pending": 0})
     totals = {"attempts": 0, "resolved": 0, "first_pass": 0, "pending": 0}
-
-    fast_starts = [
-        (idx, e) for idx, e in enumerate(events)
-        if e.get("event") == "worker_started" and e.get("role") == "coder_fast"
-    ]
-
-    for idx, event in fast_starts:
-        step = str(event.get("step"))
-        run_id = str(event.get("run_id"))
-        model = str(event.get("model") or "unknown")
-
-        later_events = events[idx + 1:]
-        has_later_coder_start = any(
-            le.get("event") == "worker_started" and le.get("role") in {"coder", "coder_fast"} and str(le.get("step")) == step
-            for le in later_events
-        )
-        has_step_completed = any(
-            le.get("event") == "step_completed" and str(le.get("step")) == step
-            for le in later_events
-        )
-
-        if has_later_coder_start:
-            outcome = "resolved_failure"
-        elif has_step_completed:
-            outcome = "resolved_success"
-        else:
-            outcome = "pending"
-
-        rec = {
-            "step": step,
-            "run_id": run_id,
-            "model": model,
-            "outcome": outcome,
-            "ts": event.get("ts"),
-        }
-        attempts.append(rec)
-
-        by_model[model]["attempts"] += 1
-        totals["attempts"] += 1
-
-        if outcome == "resolved_success":
-            by_model[model]["resolved"] += 1
-            by_model[model]["first_pass"] += 1
-            totals["resolved"] += 1
-            totals["first_pass"] += 1
-        elif outcome == "resolved_failure":
-            by_model[model]["resolved"] += 1
-            totals["resolved"] += 1
-        else:
-            by_model[model]["pending"] += 1
-            totals["pending"] += 1
+    for attempt in attempts:
+        for bucket in (by_model[attempt["model"]], totals):
+            bucket["attempts"] += 1
+            if attempt["outcome"] == "pending":
+                bucket["pending"] += 1
+            else:
+                bucket["resolved"] += 1
+                if attempt["outcome"] == "resolved_success":
+                    bucket["first_pass"] += 1
 
     return {
         "by_model": dict(by_model),
@@ -1797,10 +1853,14 @@ def leaderboard_selftest(cases: list[str]) -> str:
         state_home = root / "state"
         alpha_events, beta_events = lb_alpha_events(), lb_beta_events()
         previous_state = os.environ.get("XDG_STATE_HOME")
+        previous_store = os.environ.pop(METRICS_ENV, None)  # a configured real store must never receive fixtures
         os.environ["XDG_STATE_HOME"] = str(state_home)
         try:
             repos = {name: root / "repos" / name for name in ("alpha", "beta")}
             stores = {name: lb_init_repo(path) for name, path in repos.items()}
+            for name, store_path in stores.items():
+                assert is_relative_to(store_path, repos[name].resolve() / ".git"), f"Z selftest store for {name} escaped its repository: {store_path}"
+            assert METRICS_ENV not in os.environ, f"Z {METRICS_ENV} leaked into the leaderboard selftest"
             for name, fixture in (("alpha", alpha_events), ("beta", beta_events)):
                 for event in fixture:
                     assert_equal("S fixture append", append_event(stores[name], event)[0], "recorded")
@@ -1856,6 +1916,13 @@ def leaderboard_selftest(cases: list[str]) -> str:
             assert_equal("V beta fast_coder section agrees", beta["fast_coder"]["totals"]["first_pass"], 4)
             assert_equal("V beta reviewer", (lb_model_entry(beta, "reviewer", LB_REVIEWER)["primary"]["value"], lb_model_entry(beta, "reviewer", LB_REVIEWER)["rank"]), (0.0, 1))
             assert "Fast Coder (by model)" in format_report(beta)
+            beta_stats = beta["role_stats"]
+            assert_equal("V per-role approval: strong Coder only its own candidates", beta_stats["coder"]["first_review_approval"], ratio(1, 1))
+            assert_equal("V per-role approval: Fast Coder only its own candidates", beta_stats["coder_fast"]["first_review_approval"], ratio(4, 5))
+            sample_rows = {(item["role"], item["provider"], item["model"]) for item in beta["model_samples"]}
+            assert ("coder_fast", "google", "gemini-flash") in sample_rows, f"V auto-filled full model must be reported as provider + bare id: {sorted(sample_rows)}"
+            step_rows = {(item["role"], item["provider"], item["model"]) for item in beta["step_stats"]["S1"]["models"]}
+            assert ("coder_fast", "google", "gemini-flash") in step_rows, f"V step models use provider + bare id: {sorted(step_rows)}"
             cases.append("V low-sample models shown with n but not ranked; fast first-pass")
 
             # Scope all: same step/run ids in both projects must not collide.
@@ -1937,7 +2004,146 @@ def leaderboard_selftest(cases: list[str]) -> str:
                 os.environ.pop("XDG_STATE_HOME", None)
             else:
                 os.environ["XDG_STATE_HOME"] = previous_state
+            if previous_store is not None:
+                os.environ[METRICS_ENV] = previous_store
         return text
+
+
+class NoSliceList(list):
+    """Events that fail the test when a consumer copies a suffix (the old O(F*N) rescan)."""
+
+    def __getitem__(self, index: Any) -> Any:
+        if isinstance(index, slice):
+            raise AssertionError("events were sliced; fast outcomes must be analysed in one pass")
+        return super().__getitem__(index)
+
+
+def review_fixes_selftest(cases: list[str]) -> None:
+    """Regression cases for the independent review of the fast-coder / leaderboard release."""
+    # Finding 1 + 19: canonical model identity and a single pass over the history.
+    def start(step: str, run: str, role: str, minute: int, **fields: Any) -> dict[str, Any]:
+        return make_event(iso_at(minute), "worker_started", f"worker_started:{run}", step=step, run_id=run, role=role, **fields)
+
+    fast_history = NoSliceList([
+        start("S1", "f1", "coder_fast", 0, model="p/fast:high"),
+        make_event(iso_at(1), "step_completed", "step_completed:S1", step="S1"),
+        start("S2", "f2", "coder_fast", 2, model="p/fast"),
+        start("S2", "c2", "coder", 3, model="p/strong"),
+        start("S3", "f3", "coder_fast", 4, provider="p", model="fast:low"),
+    ])
+    analysis = analyze_fast_coder_attempts(fast_history)
+    assert_equal("AA outcomes in chronological order", [(item["step"], item["outcome"]) for item in analysis["attempts"]], [("S1", "resolved_success"), ("S2", "resolved_failure"), ("S3", "pending")])
+    assert_equal("AA effort suffix is not model identity", {item["model"] for item in analysis["attempts"]}, {"p/fast"})
+    assert_equal("AA by_model", analysis["by_model"], {"p/fast": {"attempts": 3, "resolved": 2, "first_pass": 1, "pending": 1}})
+    assert_equal("AA totals", analysis["totals"], {"attempts": 3, "resolved": 2, "first_pass": 1, "pending": 1})
+    cases.append("AA fast outcomes: canonical model_key identity, one pass, chronological output")
+
+    with tempfile.TemporaryDirectory(prefix="pavans-workflow-review-fixes-") as temp_dir:
+        root = Path(temp_dir)
+        previous_store = os.environ.pop(METRICS_ENV, None)
+        try:
+            # Finding 6: concurrent registrations must both survive the read-merge-replace.
+            registry = root / "state" / "projects.json"
+            projects = {name: root / "repos" / name for name in ("one", "two")}
+            stores = {name: lb_init_repo(path) for name, path in projects.items()}
+            barrier = threading.Barrier(2)
+            original_read = read_registry
+
+            def racing_read(path: Path) -> tuple[list[dict[str, str]], Optional[str]]:
+                result = original_read(path)
+                try:
+                    barrier.wait(timeout=1.5)  # both writers have read the same registry state
+                except threading.BrokenBarrierError:
+                    pass  # the lock serialised them: the second writer is still waiting for the first
+                return result
+
+            globals()["read_registry"] = racing_read
+            try:
+                threads = [threading.Thread(target=register_project, args=(stores[name], projects[name], registry)) for name in projects]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+            finally:
+                globals()["read_registry"] = original_read
+            assert_equal("AB concurrent registrations both kept", sorted(item["name"] for item in read_registry(registry)[0]), ["one", "two"])
+            cases.append("AB registry read-merge-replace is serialised by a lock")
+
+            # Finding 8: wrong-typed fields in one store never abort --scope all.
+            good_store = root / "good" / "events.jsonl"
+            for event in lb_step("S1", 0, orchestrator=[LB_OPUS], humans=[LB_OPUS], attempts=[lb_attempt(LB_SONNET, "approved", "qa_green")]):
+                append_event(good_store, event)
+            bad_store = root / "bad" / "events.jsonl"
+            bad_store.parent.mkdir(parents=True)
+            stamp = iso_at(0)
+            bad_store.write_text(
+                "\n".join(
+                    json.dumps(item)
+                    for item in (
+                        {"schema_version": 1, "ts": stamp, "event": "step_started", "event_key": "k1", "step": 1},
+                        {"schema_version": 1, "ts": stamp, "event": "model_failure", "event_key": "k2", "run_id": "r", "role": "coder", "status": ["x"]},
+                        {"schema_version": 1, "ts": stamp, "event": ["step_started"], "event_key": "k3"},
+                        {"schema_version": 1, "ts": stamp, "event": "worker_result", "event_key": "k4", "step": "S1", "run_id": "r", "role": "coder", "result": {"a": 1}},
+                        {"schema_version": 1, "ts": stamp, "event": "failure", "event_key": "k5", "step": "S1", "failure_category": "regression", "detected_by": "reviewer", "evidence_ref": ["x"]},
+                    )
+                ) + "\n",
+                encoding="utf-8",
+            )
+            _events, bad_info, bad_warnings = read_events(bad_store)
+            assert_equal("AC wrong-typed events are malformed, not exceptions", (_events, bad_info["malformed_lines"], len(bad_warnings)), ([], 5, 5))
+            mixed_registry = root / "mixed.json"
+            mixed_registry.write_text(json.dumps([
+                {"name": "bad", "root": "", "store": str(bad_store)},
+                {"name": "good", "root": "", "store": str(good_store)},
+            ]), encoding="utf-8")
+            mixed = aggregate_all(mixed_registry)
+            assert_equal("AC healthy project survives a corrupt neighbour", [item["name"] for item in mixed["projects"]], ["good"])
+            assert_equal("AC corrupt store noted", [note.split(":")[0] for note in mixed["notes"]], ["skipped bad"])
+            assert_equal("AC leaderboard still built", lb_model_entry(mixed, "coder", LB_SONNET)["runs"], 1)
+
+            original_events_reader = read_events
+
+            def exploding_read(path: Path) -> Any:
+                if path == bad_store:
+                    raise TypeError("unhashable type: 'list'")
+                return original_events_reader(path)
+
+            globals()["read_events"] = exploding_read
+            try:
+                guarded = aggregate_all(mixed_registry)
+            finally:
+                globals()["read_events"] = original_events_reader
+            assert_equal("AC per-store boundary isolates unexpected validation errors", ([item["name"] for item in guarded["projects"]], guarded["notes"][0].startswith("skipped bad: store unreadable")), (["good"], True))
+            cases.append("AC wrong-typed fields in one store are skipped with a note; other projects still report")
+
+            # Finding 9: labels are display-only; namespaces come from the store path.
+            store_numbers = iter(range(100))
+
+            def seeded(name: str, step: str, orchestrator: str) -> dict[str, str]:
+                store = root / "ns" / f"s{next(store_numbers)}" / "events.jsonl"
+                for event in lb_step(step, 0, orchestrator=[orchestrator], attempts=[lb_attempt(LB_SONNET, "approved", "qa_green")]):
+                    append_event(store, event)
+                return {"name": name, "root": "", "store": str(store)}
+
+            twin_registry = root / "twins.json"
+            twin_registry.write_text(json.dumps([
+                seeded("alpha", "S1", LB_OPUS),
+                seeded("alpha", "S1", LB_GROK),
+                seeded("alpha#2", "S1", LB_GEMINI),
+            ]), encoding="utf-8")
+            twins = aggregate_all(twin_registry)
+            assert_equal("AD generated labels are unique", [item["name"] for item in twins["projects"]], ["alpha", "alpha#2", "alpha#2#2"])
+            twin_board = twins["leaderboard"]["roles"]["orchestrator"]
+            assert_equal("AD same-label stores keep separate steps/runs", (twins["summary"]["completed_steps"], twin_board["attributed_steps"], twin_board["mixed_steps"]), (3, 3, 0))
+            assert_equal("AD coder runs not merged", lb_model_entry(twins, "coder", LB_SONNET)["runs"], 3)
+
+            colon_registry = root / "colon.json"
+            colon_registry.write_text(json.dumps([seeded("a", "b:S1", LB_OPUS), seeded("a:b", "S1", LB_OPUS)]), encoding="utf-8")
+            assert_equal("AD ':' in a project name cannot forge another project's ID prefix", aggregate_all(colon_registry)["summary"]["completed_steps"], 2)
+            cases.append("AD project namespaces derive from the store, labels stay unique, ':' cannot collide")
+        finally:
+            if previous_store is not None:
+                os.environ[METRICS_ENV] = previous_store
 
 
 def command_selftest(_args: argparse.Namespace) -> int:
@@ -2029,6 +2235,7 @@ def command_selftest(_args: argparse.Namespace) -> int:
             raise AssertionError("L malformed line did not produce a warning")
         cases.append("L malformed trailing JSONL recovered")
 
+        review_fixes_selftest(cases)
         leaderboard_text = leaderboard_selftest(cases)
 
         print(f"workflow metrics selftest: PASS ({len(cases)} cases)")

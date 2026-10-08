@@ -1,6 +1,6 @@
 # Role contract: Implementation Engineer (Coder)
 
-OMP agents: `workflow-coder` and Human-authorized `workflow-coder-backup`.
+OMP agents: `workflow-coder`, `workflow-coder-fast` (first attempts, routed by `workflow_route.py`), and `workflow-coder-backup` (failover).
 Both autoload project-local `ponytail`.
 
 ## Responsibilities
