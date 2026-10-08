@@ -6,15 +6,16 @@ import {
 	SessionUsageTracker,
 	type AssistantUsageMessage,
 	type DashboardData,
+	type CrossProjectReport,
 	type MetricsReport,
 	type RuntimeSnapshot,
 	type StepCard,
 	type WorkerSnapshot,
 } from "./workflow-dashboard-core.ts";
 
-const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
+export const STATE_PATH = "AI_Workflow_Kit/docs/AI/STATE.yaml";
 const STEPS_PATH = "AI_Workflow_Kit/docs/STEPS.md";
-const METRICS_HELPER = "AI_Workflow_Kit/script/workflow_metrics.sh";
+export const METRICS_HELPER = "AI_Workflow_Kit/script/workflow_metrics.sh";
 const METRICS_REFRESH_MS = 15_000;
 
 export type WorkerProgress = WorkerSnapshot & {
@@ -41,6 +42,7 @@ const workers = new Map<string, WorkerProgress>();
 const usage = new SessionUsageTracker();
 let mainActivity = "Ready for instruction";
 let metricsCache: { data?: MetricsReport; error?: string; fetchedAt: number } = { fetchedAt: 0 };
+let crossProjectCache: { data?: CrossProjectReport; error?: string } = {};
 
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
@@ -163,9 +165,28 @@ export async function readDashboardFiles(cwd: string): Promise<DashboardFiles> {
 	};
 }
 
+export function parseCrossProjectReport(stdout: string): CrossProjectReport {
+	const data = JSON.parse(stdout) as CrossProjectReport;
+	if (data.available === false) throw new Error(data.error ?? "cross-project metrics unavailable");
+	if (!data.leaderboard) throw new Error("report has no leaderboard section");
+	return data;
+}
+
+/** One `report --scope all` call per refresh; it never throws and never affects the current-project stats. */
+async function refreshCrossProject(pi: ExtensionAPI, cwd: string): Promise<void> {
+	try {
+		const result = await pi.exec("bash", [METRICS_HELPER, "report", "--scope", "all", "--json"], { cwd, timeout: 10_000 });
+		if (result.code !== 0) throw new Error(result.stderr.trim() || `metrics helper exited ${result.code}`);
+		crossProjectCache = { data: parseCrossProjectReport(result.stdout) };
+	} catch (error) {
+		crossProjectCache = { error: errorText(error) };
+	}
+}
+
 export async function refreshMetrics(pi: ExtensionAPI, cwd: string, force = false): Promise<void> {
 	if (!force && Date.now() - metricsCache.fetchedAt < METRICS_REFRESH_MS) return;
 	metricsCache = { ...metricsCache, fetchedAt: Date.now() };
+	const crossProject = refreshCrossProject(pi, cwd);
 	try {
 		const result = await pi.exec("bash", [METRICS_HELPER, "report", "--json"], { cwd, timeout: 10_000 });
 		if (result.code !== 0) throw new Error(result.stderr.trim() || `metrics helper exited ${result.code}`);
@@ -175,6 +196,7 @@ export async function refreshMetrics(pi: ExtensionAPI, cwd: string, force = fals
 	} catch (error) {
 		metricsCache = { error: errorText(error), fetchedAt: Date.now() };
 	}
+	await crossProject;
 }
 
 export function makeDashboardData(files: DashboardFiles): DashboardData & DashboardFiles {
@@ -182,6 +204,8 @@ export function makeDashboardData(files: DashboardFiles): DashboardData & Dashbo
 		...files,
 		metrics: metricsCache.data,
 		metricsError: metricsCache.error,
+		crossProject: crossProjectCache.data,
+		crossProjectError: crossProjectCache.error,
 		sessionUsage: usage.snapshot(),
 	};
 }

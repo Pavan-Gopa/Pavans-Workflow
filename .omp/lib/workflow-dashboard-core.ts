@@ -71,6 +71,7 @@ export type WorkflowState = {
 	modelFailureRole: string;
 	modelFailureInstruction: string;
 	modelFailureBackupAgent: string;
+	modelFailureAuthorizedBy: string;
 };
 
 export type MetricRatio = {
@@ -166,6 +167,52 @@ export type MetricsReport = {
 	recent_transitions?: WorkflowTransition[];
 };
 
+export type LeaderboardPrimary = {
+	metric: string;
+	better: "lower" | "higher";
+	unit: "pct" | "per_step";
+	value: number | null;
+	count: number;
+	total: number;
+};
+
+export type LeaderboardEntry = {
+	model: string;
+	n: number;
+	rank: number | null;
+	low_sample: boolean;
+	primary: LeaderboardPrimary | null;
+	runs?: number;
+	median_duration_ms?: number | null;
+	tokens_per_run?: number | null;
+	model_failure?: MetricRatio;
+	first_pass?: MetricRatio;
+	bugs_found?: MetricRatio;
+	median_step_duration_ms?: number | null;
+	coder_retries_per_step?: number;
+	missed_requirements_per_step?: number;
+	human_ratings?: Record<string, number>;
+};
+
+export type LeaderboardRole = {
+	metric: string | null;
+	better: "lower" | "higher" | null;
+	models: LeaderboardEntry[];
+	attributed_steps?: number;
+	mixed_steps?: number;
+	unattributed_steps?: number;
+};
+
+/** `workflow_metrics.sh report --scope all --json`: only the parts the dashboard reads. */
+export type CrossProjectReport = {
+	available?: boolean;
+	error?: string;
+	scope?: string;
+	projects?: Array<{ name: string; events: number }>;
+	notes?: string[];
+	leaderboard?: { min_samples: number; roles: Record<string, LeaderboardRole> };
+};
+
 export type WorkflowTransition = {
 	at: string;
 	step?: string;
@@ -223,6 +270,8 @@ export type DashboardData = {
 	steps: StepCard[];
 	metrics?: MetricsReport;
 	metricsError?: string;
+	crossProject?: CrossProjectReport;
+	crossProjectError?: string;
 	runtimeTodo?: RuntimeTodoSnapshot;
 	runtimeTodoLink?: RuntimeTodoLink;
 	consistency?: ConsistencyFinding[];
@@ -252,6 +301,7 @@ export type DashboardViewModel = {
 	routing: RoutingExplanation;
 	waitingForHuman: boolean;
 	todoMode?: TodoViewMode;
+	statsView?: StatsView;
 };
 
 export const DEFAULT_STALL_THRESHOLD_MS = 180_000;
@@ -319,6 +369,7 @@ export type StatsFooterInfo = {
 };
 
 export type TodoViewMode = "both" | "step" | "run";
+export type StatsView = "health" | "leaderboard";
 
 
 // Canonical stable work-item/gate ID: <step>.<D|O|J><n>, e.g. S3.D2.
@@ -585,6 +636,7 @@ export function parseWorkflowState(source: string): WorkflowState {
 		modelFailureRole: nestedSectionValue(source, "omp", "model_failure", "role"),
 		modelFailureInstruction: nestedSectionValue(source, "omp", "model_failure", "human_instruction"),
 		modelFailureBackupAgent: nestedSectionValue(source, "omp", "model_failure", "backup_agent"),
+		modelFailureAuthorizedBy: nestedSectionValue(source, "omp", "model_failure", "authorized_by"),
 	};
 }
 
@@ -706,6 +758,8 @@ export function roleLabel(value: string | undefined): string {
 			orchestrator: "Main",
 			architect: "Architect",
 			coder: "Coder",
+			coder_fast: "Fast Coder",
+			"coder-fast": "Fast Coder",
 			reviewer: "Reviewer",
 			tester: "Tester",
 			security: "Security",
@@ -761,6 +815,7 @@ export function deriveDashboardViewModel(
 	runtime: RuntimeSnapshot,
 	selectedStepId?: string,
 	todoMode?: TodoViewMode,
+	statsView?: StatsView,
 ): DashboardViewModel {
 	const state = data.state;
 	const currentIndex = data.steps.findIndex(step => step.id === state.currentStep);
@@ -797,6 +852,7 @@ export function deriveDashboardViewModel(
 		routing,
 		waitingForHuman: status.waitingForHuman,
 		todoMode,
+		statsView,
 	};
 }
 
@@ -1483,8 +1539,103 @@ function failureLines(report: MetricsReport): TextLine[] {
 	return lines;
 }
 
+const LEADERBOARD_ROLE_ORDER = ["orchestrator", "coder", "coder_fast", "reviewer", "tester", "architect", "security"];
+const LEADERBOARD_METRIC_LABEL: Record<string, string> = {
+	human_messages_per_step: "Human msgs/step",
+	first_review_approval: "first-review approval",
+	qa_escape: "QA escape rate",
+};
+
+function leaderboardScopeLabel(report: CrossProjectReport): string {
+	const count = report.projects?.length ?? 0;
+	return `All projects · ${count} project${count === 1 ? "" : "s"}`;
+}
+
+function leaderboardPrimaryText(entry: LeaderboardEntry): string {
+	const primary = entry.primary;
+	if (!primary) return `${entry.runs ?? 0} runs`;
+	if (primary.value === null || primary.value === undefined) return "n/a";
+	return primary.unit === "pct" ? `${primary.value.toFixed(1)}%` : `${primary.value.toFixed(2)} msgs/step`;
+}
+
+function leaderboardDetailText(role: string, entry: LeaderboardEntry): string {
+	const parts: string[] = [];
+	if (role === "orchestrator") {
+		parts.push(`retries ${(entry.coder_retries_per_step ?? 0).toFixed(2)}/step`);
+		parts.push(`missed req ${(entry.missed_requirements_per_step ?? 0).toFixed(2)}/step`);
+		parts.push(`median ${formatDuration(entry.median_step_duration_ms)}`);
+		const ratings = Object.entries(entry.human_ratings ?? {});
+		if (ratings.length > 0) parts.push(ratings.map(([name, count]) => `${name} ${count}`).join(" "));
+		return parts.join(" · ");
+	}
+	parts.push(`runs ${entry.runs ?? 0}`, `median ${formatDuration(entry.median_duration_ms)}`);
+	if (entry.first_pass) parts.push(`first-pass ${formatRatio(entry.first_pass)}`);
+	if (entry.bugs_found) parts.push(`bugs found ${formatRatio(entry.bugs_found)}`);
+	if (entry.tokens_per_run !== null && entry.tokens_per_run !== undefined) parts.push(`${formatTokens(entry.tokens_per_run)}/run`);
+	if (entry.model_failure) parts.push(`model failures ${formatRatio(entry.model_failure)}`);
+	return parts.join(" · ");
+}
+
+/** One best-model line per role; only appears once the cross-project report arrived. */
+function leaderboardSummaryLines(report: CrossProjectReport | undefined, error: string | undefined, width: number): TextLine[] {
+	const roles = report?.leaderboard?.roles;
+	if (error) return [{ text: "LEADERBOARD", tone: "accent" }, { text: "[WARN] Cross-project leaderboard unavailable", tone: "warning" }];
+	if (!report || !roles) return [];
+	const lines: TextLine[] = [{ text: "LEADERBOARD", tone: "accent" }];
+	const present = LEADERBOARD_ROLE_ORDER.filter(role => (roles[role]?.models.length ?? 0) > 0);
+	if (present.length === 0) return [...lines, { text: "Collecting data · no model samples yet", tone: "muted" }];
+	lines.push({ text: leaderboardScopeLabel(report), tone: "muted" });
+	const minimum = report.leaderboard?.min_samples ?? 5;
+	for (const role of present) {
+		const block = roles[role];
+		const top = block.models.find(model => model.rank === 1);
+		const lead = block.models[0];
+		if (top) {
+			addWrapped(lines, `${roleLabel(role)} · ${friendlyModelName(top.model)} · ${leaderboardPrimaryText(top)} · n=${top.n}`, width);
+		} else if (block.metric) {
+			addWrapped(lines, `${roleLabel(role)} · not ranked yet · needs ${minimum} samples (best n=${Math.max(...block.models.map(model => model.n))})`, width, "", "muted");
+		} else {
+			addWrapped(lines, `${roleLabel(role)} · ${friendlyModelName(lead.model)} · ${lead.runs ?? lead.n} runs · not ranked`, width, "", "muted");
+		}
+	}
+	lines.push({ text: "l · full leaderboard", tone: "muted" });
+	return lines;
+}
+
+/** Full per-(role, model) tables for the `l` view. */
+function leaderboardDetailLines(report: CrossProjectReport | undefined, error: string | undefined, width: number): TextLine[] {
+	const lines: TextLine[] = [{ text: "MODEL LEADERBOARD", tone: "accent" }];
+	const board = report?.leaderboard;
+	if (error || !report || !board) {
+		lines.push({ text: "[WARN] Cross-project leaderboard unavailable", tone: "warning" }, { text: error ?? "Waiting for the first report", tone: "muted" });
+		lines.push({ text: "l · back to workflow health", tone: "muted" });
+		return lines;
+	}
+	lines.push({ text: leaderboardScopeLabel(report), tone: "muted" });
+	addWrapped(lines, `Rank needs ≥ ${board.min_samples} samples · n = primary-metric samples · l back`, width, "", "muted");
+	for (const role of LEADERBOARD_ROLE_ORDER) {
+		const block = board.roles[role];
+		if (!block || block.models.length === 0) continue;
+		lines.push({ text: "" });
+		const metric = block.metric ? `${LEADERBOARD_METRIC_LABEL[block.metric] ?? block.metric} · ${block.better} is better` : "not ranked (no ground truth)";
+		addWrapped(lines, `${roleLabel(role).toUpperCase()} · ${metric}`, width, "", "accent");
+		if (role === "orchestrator") {
+			addWrapped(lines, `${block.attributed_steps ?? 0} steps attributed · ${block.mixed_steps ?? 0} mixed (excluded) · ${block.unattributed_steps ?? 0} unattributed`, width, "", "muted");
+		}
+		for (const entry of block.models) {
+			const marker = entry.rank ? `${entry.rank}.` : "-";
+			const sample = entry.low_sample ? " · low sample" : "";
+			addWrapped(lines, `${marker} ${entry.model} · ${leaderboardPrimaryText(entry)} · n=${entry.n}${sample}`, width, "", entry.rank ? undefined : "muted");
+			addWrapped(lines, leaderboardDetailText(role, entry), width, "   ", "muted");
+		}
+	}
+	for (const note of report.notes ?? []) addWrapped(lines, `Note · ${note}`, width, "", "warning");
+	return lines;
+}
+
 function buildStatisticsLines(view: DashboardViewModel, width: number, compact = false): TextLine[] {
 	const lines: TextLine[] = [{ text: "WORKFLOW HEALTH", tone: "accent" }];
+	if (view.statsView === "leaderboard") return leaderboardDetailLines(view.data.crossProject, view.data.crossProjectError, width);
 	const report = view.data.metrics;
 	const selectedStats = report?.step_stats?.[view.selectedStepId];
 	if (view.data.metricsError || !report?.summary) {
@@ -1498,6 +1649,8 @@ function buildStatisticsLines(view: DashboardViewModel, width: number, compact =
 		return lines;
 	}
 	lines.push(...teamHealthLines(report));
+	const board = leaderboardSummaryLines(view.data.crossProject, view.data.crossProjectError, width);
+	if (board.length > 0) lines.push({ text: "" }, ...board);
 	const roleLines = roleStatsLines(view, report);
 	if (roleLines.length > 0) lines.push({ text: "" }, ...roleLines);
 	const modelLines = currentModelLines(view, report);
@@ -1539,6 +1692,16 @@ function clip(lines: TextLine[], height: number): TextLine[] {
 	return output;
 }
 
+/**
+ * The health column silently clips. The leaderboard view is long, so it ends in a
+ * "more detail lines" marker, which makes renderExpandedDashboard grow the body
+ * until every row is reachable inside the outer scroll view.
+ */
+function clipStats(view: DashboardViewModel, lines: TextLine[], height: number): TextLine[] {
+	if (view.statsView !== "leaderboard" || lines.length <= height || height < 2) return clip(lines, height);
+	return [...lines.slice(0, height - 1), { text: `↓ ${lines.length - (height - 1)} more detail lines`, tone: "muted" }];
+}
+
 function windowCenter(
 	content: { pinned: TextLine[]; scrollable: TextLine[] },
 	height: number,
@@ -1567,7 +1730,7 @@ function wideBody(view: DashboardViewModel, width: number, height: number, detai
 	const widths = [planWidth, centerWidth, statsWidth];
 	const plan = clip(buildPlanLines(view, height), height);
 	const center = windowCenter(buildCenterContent(view, centerWidth, mode, false), height, detailScroll);
-	const stats = clip(buildStatisticsLines(view, statsWidth), height);
+	const stats = clipStats(view, buildStatisticsLines(view, statsWidth), height);
 	const lines = Array.from({ length: height }, (_, index) => columnRow([plan[index], center.lines[index], stats[index]], widths));
 	return { lines, maxScroll: center.maxScroll };
 }
@@ -1583,7 +1746,7 @@ function mediumBody(view: DashboardViewModel, width: number, height: number, det
 	const center = windowCenter(buildCenterContent(view, centerWidth, mode, mode === "step"), topHeight, detailScroll);
 	const lines = Array.from({ length: topHeight }, (_, index) => columnRow([plan[index], center.lines[index]], widths));
 	lines.push({ text: border([width - 2]), tone: "muted" });
-	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
+	for (const line of clipStats(view, buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
 }
 
@@ -1602,7 +1765,7 @@ function narrowBody(view: DashboardViewModel, width: number, height: number, det
 	lines.push({ text: border([width - 2]), tone: "muted" });
 	for (const line of clip(buildPlanLines(view, planHeight), planHeight)) lines.push(fullRow(line, width));
 	lines.push({ text: border([width - 2]), tone: "muted" });
-	for (const line of clip(buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
+	for (const line of clipStats(view, buildStatisticsLines(view, width - 2, true), statsHeight)) lines.push(fullRow(line, width));
 	return { lines, maxScroll: center.maxScroll };
 }
 
@@ -1627,7 +1790,7 @@ export function renderDashboard(
 			? mediumBody(view, panelWidth, height, detailScroll, mode)
 			: narrowBody(view, panelWidth, height, detailScroll, mode);
 	const title = `PAVAN'S WORKFLOW · LIVE · ${view.data.state.track !== "-" ? view.data.state.track : "file-backed"}`;
-	const footer = `↑/↓ step · c current · t todo view · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
+	const footer = `↑/↓ step · c current · t todo view · l leaderboard · PgUp/PgDn details · r refresh · Alt+A agents · Alt+W/Esc close${body.maxScroll > 0 ? ` · detail ${Math.min(detailScroll, body.maxScroll) + 1}/${body.maxScroll + 1}` : ""}`;
 	return {
 		layout,
 		maxDetailScroll: body.maxScroll,

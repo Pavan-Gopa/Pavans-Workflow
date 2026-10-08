@@ -5,6 +5,7 @@ import {
 	deriveDashboardViewModel,
 	type DashboardData,
 	type TextLine,
+	type StatsView,
 	type TodoViewMode,
 } from "./workflow-dashboard-core.ts";
 import { checkWorkflowConsistency, type ConsistencyFinding } from "./workflow-consistency.ts";
@@ -71,6 +72,7 @@ class WorkflowDashboard implements Component {
 	private refreshingMetrics = false;
 	private closed = false;
 	private todoMode?: TodoViewMode;
+	private statsView: StatsView = "health";
 	private layout: "wide" | "medium" | "narrow" = "wide";
 	private showHelp = false;
 	private readonly viewport: ScrollView;
@@ -219,6 +221,10 @@ class WorkflowDashboard implements Component {
 			this.todoMode = mode === "both" ? "step" : mode === "step" ? "run" : "both";
 			return this.requestRender();
 		}
+		if (matchesKey(data, "l")) {
+			this.statsView = this.statsView === "health" ? "leaderboard" : "health";
+			return this.requestRender();
+		}
 		if (matchesKey(data, "?")) {
 			this.showHelp = !this.showHelp;
 			return this.requestRender();
@@ -285,7 +291,7 @@ class WorkflowDashboard implements Component {
 				runtimeTodoLink: linkRuntimeTodo(runtimeTodo, applied.data.steps, applied.resolution.id),
 				consistency: findings,
 			};
-			const view = deriveDashboardViewModel(liveData, runtime, this.selectedStepId, this.todoMode);
+			const view = deriveDashboardViewModel(liveData, runtime, this.selectedStepId, this.todoMode, this.statsView);
 			const result = renderExpandedDashboard(
 				view,
 				panelWidth,
@@ -303,7 +309,7 @@ class WorkflowDashboard implements Component {
 				tone: economy.warning ? "warning" : "accent",
 			});
 			if (this.showHelp) {
-				const help = "HELP: ↑/↓ step · wheel/PgUp/PgDn scroll · Shift+↑/↓ fast · g/G top/bottom · c live · t todo · r refresh · o Stats";
+				const help = "HELP: ↑/↓ step · wheel/PgUp/PgDn scroll · Shift+↑/↓ fast · g/G top/bottom · c live · t todo · l leaderboard · r refresh · o Stats";
 				lines.splice(2, 0, { text: `|${help.slice(0, panelWidth - 2).padEnd(panelWidth - 2)}|`, tone: "accent" });
 			}
 		}

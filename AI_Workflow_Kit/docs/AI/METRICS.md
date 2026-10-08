@@ -43,7 +43,7 @@ The store is append-only JSON Lines: one object per line. Main supplies a stable
 
 Fields are present only when applicable:
 
-- identity: `step`, `run_id`, `candidate_id`, `role`, `attempt`;
+- identity: `step`, `run_id`, `candidate_id`, `role` (`coder`, `coder_fast`, `reviewer`, `tester`, `architect`, `security`), `attempt`;
 - outcome: `result`, `review_kind`, `gate`, `classification`, `status`;
 - failure: `failure_category`, `detected_by`, `repeat_count`, `threshold`;
 - model sample: `model_role`, `provider`, `model`;
@@ -62,16 +62,19 @@ Supported event types:
 | `worker_result` | Main verified a worker result against source/evidence |
 | `failure` | Main verified a product/workflow failure and its taxonomy |
 | `runtime_interruption` | Main completed startup/resume interruption classification |
-| `model_failure` | Main persisted a real model/provider blocker |
+| `model_failure` | Main persisted a real model/provider blocker (`status: awaiting_human` or `auto_failover`) |
 | `gate_skipped` | Human explicitly skipped Reviewer, QA, or Security |
 | `retry_safeguard_triggered` | The existing no-progress threshold was reached |
+| `human_turn` | A Human message reached Main while a step was current (recorded by the `workflow-main-attribution` extension, not by Main) |
+| `orchestrator_model` | The model Main ran for a step, first seen or changed (same extension) |
 | `human_rating` | Optional `good`, `overkill`, or `underchecked` rating |
 
 Architect `worker_started` records `mode: advisory`, `design`, or `grilling`.
+When `--model` is not provided on `worker_started`, `model_role` defaults to `workflow_<role>` (or `workflow_<role>_backup`) and `model` auto-fills from `.omp/config.yml` `modelRoles` (resolving `@alias` chains up to depth 5 and stripping `:thinking`).
 Reviewer `worker_result` records `review_kind: product` or `test_diff`. Every
-product Reviewer/Tester result carries the candidate's Coder `run_id` as
+product Reviewer/Tester result carries the candidate's Coder/Fast Coder `run_id` as
 `candidate_id`; that stable link is what makes QA-escape calculation honest.
-
+The report includes a `fast_coder` breakdown by model (attempts, resolved, first-pass success, pending).
 ### Stable keys
 
 Use these deterministic forms:
@@ -97,7 +100,7 @@ conflict.
 
 The writer uses an allowlist; arbitrary JSON is not accepted. It never records:
 
-- Human prompts or Main/worker conversation transcripts;
+- Human prompts or Main/worker conversation transcripts (`human_turn` is only a step id and a model id);
 - chain-of-thought or worker reasoning;
 - source code, Git diffs, command stdout/stderr, or full provider errors;
 - API keys, access tokens, credentials, secrets, or personal content;
@@ -200,8 +203,8 @@ All counts use unique valid events after `event_key` deduplication.
 - **Detected by**: failure counts for `main`, `reviewer`, `tester`, `architect`.
 
 Human rating is a separate count using the latest recorded rating per step and
-never affects success/failure formulas. There is no quality score, model ranking,
-cost estimator, or AI classifier.
+never affects success/failure formulas. There is no quality score, cost estimator,
+or AI classifier; model ranking is only the per-role leaderboard below.
 
 **By pipeline profile.** Events may carry `pipeline_profile`. Aggregation groups
 completed steps, Coder attempts/retries, Reviewer `changes_requested`, Tester
@@ -227,13 +230,14 @@ Direct deterministic interfaces:
 ```bash
 bash AI_Workflow_Kit/script/workflow_metrics.sh report
 bash AI_Workflow_Kit/script/workflow_metrics.sh report --json
+bash AI_Workflow_Kit/script/workflow_metrics.sh report --scope all
 bash AI_Workflow_Kit/script/workflow_metrics.sh validate
 bash AI_Workflow_Kit/script/workflow_metrics.sh reset --yes
 bash AI_Workflow_Kit/script/workflow_metrics.sh self-check
 bash AI_Workflow_Kit/script/workflow_metrics.sh selftest
 ```
 
-`/workflow metrics` is read-only and returns the aggregated report without
+`/workflow metrics` is read-only and returns the aggregated report (this project) without
 changing `STATE.yaml` or routing product work. Reset deletes only the event file
 and its companion metrics-start metadata; it does not touch workflow documents.
 Alt+W reads the same JSON aggregation with a 15-second cache and renders the
@@ -249,6 +253,64 @@ because repeated cached context would make a misleading work-done total.
 Counters reset when the live Main session changes, group by the exact resolved
 provider/model, include Main and every worker role, and are presented without
 scores, rankings, cost estimates, or external telemetry.
+
+## Model leaderboard
+
+`report` carries a `leaderboard` section: one table per role, one row per model,
+reusing the definitions above (no second formula). A model is `provider/id` with
+the effort suffix (`:high`, ...) stripped, so one model is one row at every
+effort. Workers whose model was not recorded appear as `unknown`.
+
+| Role | Primary metric (ranked) | Also shown |
+|------|-------------------------|------------|
+| Orchestrator (Main) | Human messages per completed step, lower is better | Coder retries/step, `missed_requirement` failures/step, median step duration, Human ratings |
+| Coder, Fast Coder | First-review approval: product Reviews of that model's candidates that were `approved` ÷ reviewed candidates | runs, median duration, tokens/run, model-failure rate; Fast Coder also first-pass success |
+| Reviewer | QA escape rate of its approvals, lower is better | runs, median duration, tokens/run, model-failure rate |
+| Tester | not ranked (no ground truth) | bugs-found rate, runs, median duration, tokens/run, model-failure rate |
+| Architect, Security | not ranked | runs, median duration, tokens/run, model-failure rate |
+
+- A model needs **5 primary-metric samples** to be ranked; below that it is shown
+  with `n` and `low sample`, unranked. Unranked roles list models by run count.
+- Runs are attributed to the model recorded on their `worker_started` (the
+  `model_failure` event's model when the start has none).
+- **Main attribution.** Main cannot report its own model through bash, so the
+  `workflow-main-attribution` extension records it. On each Human message
+  (interactive input; OMP UI commands such as `/model`, `/clear` and `!` shell
+  lines are ignored, `/workflow ...` counts) it records `human_turn`
+  (`step`, `model`), and on each agent start `orchestrator_model` (`step`,
+  `model`; once per step and model, deterministic key
+  `orchestrator_model:<step>:<model>`). `step` is `STATE.yaml`'s
+  `current_step`; with no current step nothing is recorded. Only the top-level
+  Main session records; workers never do. Neither event carries prompt text,
+  and a failing recorder is silent and never delays or alters Human input.
+- A completed step belongs to a Main model only when exactly one Main model
+  was recorded for it. Steps that saw several Main models are counted as
+  `mixed` and excluded; steps with no attribution as `unattributed`. Both
+  counts are printed.
+- Not a quality score or composite: every number is a count over recorded events
+  with its sample size, and Human ratings stay a separate count.
+
+### Cross-project scope
+
+Every successful `record` upserts the project into a user-level registry,
+`$XDG_STATE_HOME/pavans-workflow/projects.json` (default
+`~/.local/state/pavans-workflow/projects.json`): `name`, `root`, and the absolute
+path of the project's event store. That path is the only thing stored globally;
+events stay in each repository's private Git directory.
+
+```bash
+bash AI_Workflow_Kit/script/workflow_metrics.sh report                 # this project (default)
+bash AI_Workflow_Kit/script/workflow_metrics.sh report --scope all     # every registered project, read-only
+bash AI_Workflow_Kit/script/workflow_metrics.sh report --scope all --json
+```
+
+`--scope all` reads each registered store without modifying it, namespaces step,
+run and candidate ids per project so the same `S1` in two repositories never
+collides, and merges them into one report. Missing, unreadable, or corrupt
+stores and an unreadable registry are skipped with a printed note. Projects
+register on their first successful record after updating; there is no backfill.
+The Alt+W dashboard shows a one-line-per-role leaderboard summary in the health
+column and the full tables under `l`; it uses this same `--scope all` report.
 
 ## Reliability
 

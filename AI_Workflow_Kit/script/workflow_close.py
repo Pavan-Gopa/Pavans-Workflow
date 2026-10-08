@@ -21,11 +21,12 @@ decision:
   review               continue with Reviewer (and Tester) — includes quick
                        cards that were refused, with the reasons listed
   reopen_coder         an Objective gate failed
+  gate_timeout         an Objective gate timed out after Ns
   reject_worker_result a guard violation for this step is still open (resolve it
                        with `workflow_guard.py resolve --id ... --note ...` after
                        the Human decided)
 
-Exit: 0 close_quick/review · 1 reopen_coder/reject_worker_result · 2 error.
+Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result · 2 error.
 The decision is also written to <git-common-dir>/pavans-workflow/close-checks/<step>.json.
 """
 
@@ -123,6 +124,8 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
 
     if gates["status"] == "fail":
         decision = "reopen_coder"
+    elif gates["status"] == "timeout":
+        decision = "gate_timeout"
     elif open_violations:
         decision = "reject_worker_result"
     elif profile == "quick" and not quick_blockers and run_gates:
@@ -145,6 +148,7 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
             "status": gates["status"],
             "command_gates": gates["command_gates"],
             "failed": [gate.get("id") for gate in gates["gates"] if gate.get("ok") is False],  # type: ignore[union-attr]
+            "timeout_seconds": gates.get("timeout_seconds"),
         },
         "guard": {
             "verdicts": len(verdicts),
@@ -181,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project", default=None)
     parser.add_argument("--base", default="auto")
     parser.add_argument("--no-run", action="store_true", help="list gates without running them (never close_quick)")
-    parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "120")))
+    parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "900")))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     root = Path(args.project).resolve() if args.project else SCRIPT_DIR.parents[1]
@@ -206,7 +210,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  guard info: {line}")
         for gate in payload["objective"]["failed"]:  # type: ignore[index]
             print(f"  objective gate failed: {gate}")
-    return 1 if payload["decision"] in {"reopen_coder", "reject_worker_result"} else 0
+        if payload["decision"] == "gate_timeout":
+            ns = payload["objective"].get("timeout_seconds") or args.timeout
+            print(f"  objective gate timed out after {ns}s — not a Coder failure: re-run the close check with a larger --timeout; if it times out again at the raised limit, treat it as a hang and reopen the Coder")
+    return 1 if payload["decision"] in {"reopen_coder", "gate_timeout", "reject_worker_result"} else 0
 
 
 if __name__ == "__main__":

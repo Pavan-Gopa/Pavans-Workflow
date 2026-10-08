@@ -47,9 +47,8 @@ export function guardRole(agent: string): string {
 export type BackupDecision = { allowed: true } | { allowed: false; reason: string };
 
 /**
- * A `-backup` worker may start only after the Human authorized it and Main
- * recorded that in STATE.yaml (TEAM_CONTRACT: automatic backup selection is
- * forbidden). Enforced in code at spawn time, not by prompt.
+ * A `-backup` worker may start only after a recorded primary model/provider
+ * failure in STATE.yaml (automatic or Human-authorized). Enforced at spawn time.
  */
 export function backupAuthorization(stateText: string, agent: string): BackupDecision {
 	if (!isBackupAgent(agent)) return { allowed: true };
@@ -63,8 +62,8 @@ export function backupAuthorization(stateText: string, agent: string): BackupDec
 	return {
 		allowed: false,
 		reason:
-			`${agent} needs explicit Human authorization. Record the primary failure and the Human's words in STATE.yaml ` +
-			`(omp.model_failure.status: backup_authorized, backup_agent: ${agent}, human_instruction: "...") before dispatch.`,
+			`${agent} requires a recorded primary model failure authorization in STATE.yaml ` +
+			`(omp.model_failure.status: backup_authorized, backup_agent: ${agent}) before dispatch.`,
 	};
 }
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.7.0 — 2026-10-08
+
+Deterministic fast coder routing, automatic backup failover, gate timeout isolation, and red proof for fix rounds.
+
+### Why
+
+ULPone analysis of workflow telemetry revealed four recurring friction points in real development cycles:
+- **Incomplete fixes and vacuous tests:** ~15% of fix rounds required repeated work because fixes lacked reproducible proof that the test actually failed before the fix.
+- **False Coder blame on timeouts:** Gate timeouts at 120s were treated as Coder failures, reopening the step for Coder retries on large test suites.
+- **Provider outage stalls:** ~256 minutes lost waiting for Human intervention when a primary model/provider experienced an outage or quota limit.
+- **Manual backup pauses:** Every primary model failure stopped the pipeline until the Human explicitly authorized a backup agent.
+
+### Changed
+
+- **Gate timeout isolation.** Default `--timeout` (env `WF_GATE_TIMEOUT`) raised from 120s to 900s. When command gates fail exclusively due to timeouts, `workflow_gates.py` returns `status: "timeout"` and `workflow_close.py` yields decision `gate_timeout` (exit 1), instructing Main to re-run with a higher limit rather than blaming the Coder.
+- **Red proof for fix rounds.** Coder assignments fixing Reviewer findings or Tester bugs (`fix_round: true`) require `red_proof` (array of strings) in the structured output: the check command, its failing result with the fix reverted, and passing result after. The Reviewer verifies `red_proof` before approving.
+- **Model + tokens in metrics.** `ROLES` gains `coder_fast` (counted alongside `coder`). `record worker_started` automatically resolves `model_role` and `model` from `.omp/config.yml` `modelRoles` (resolving `@alias` chains up to depth 5 and stripping `:thinking`). `model_failure` status accepts `auto_failover`. The metrics report includes a `fast_coder` first-pass success breakdown by model.
+- **Cross-project model leaderboard.** `workflow_metrics.sh report` gains a `leaderboard` section: one table per role, one row per `provider/id` model (effort suffix stripped) — Main by Human messages per completed step, Coder/Fast Coder by first-review approval, Reviewer by QA-escape rate of its approvals, Tester/Architect/Security unranked; a rank needs at least 5 samples. The new `workflow-main-attribution` extension records `human_turn` and `orchestrator_model` events (step and model only, no prompt text, Main session only, silent on failure); steps that saw several Main models are counted as mixed and excluded. Every successful `record` registers the project in `$XDG_STATE_HOME/pavans-workflow/projects.json`; `report --scope all` merges all registered stores read-only, and the Alt+W dashboard shows a leaderboard summary with the full tables under `l`.
+- **Fast Coder.** Added `workflow-coder-fast` agent and deterministic router CLI `workflow_route.py coder`. First attempt on standard/low-risk steps with command gates routes to `workflow-coder-fast`. Automatically disables if the last 10 resolved attempts for the fast model achieve fewer than 5 first-pass successes (resetting when the fast model changes).
+- **Automatic backup failover.** On primary model/provider failures, Main records `omp.model_failure` (`status: backup_authorized`, `authorized_by: auto`) and immediately dispatches the configured `-backup` agent with fresh context. Main prompts the Human only if no distinct backup model is configured or the backup run also fails. Added `retry.maxRetries: 3` to project config defaults.
+
+### Known limits
+
+- Fast coder effectiveness is unproven until project metrics accumulate enough runs to evaluate window thresholding.
+- `tokens` are recorded only when reported by the task result (no estimation or fabricated usage).
+- In-session OMP model fallback is intentionally disabled (`retry.modelFallback: false`) to preserve visible failure records and model-diversity checks (R17).
+
 ## 3.6.0 — 2026-09-29
 
 The worker guard no longer stops the workflow over changes the worker did not

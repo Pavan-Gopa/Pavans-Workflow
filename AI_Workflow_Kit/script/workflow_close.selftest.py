@@ -61,9 +61,15 @@ STEPS = """# Steps
 ### Objective gates
 
 - [ ] [S1.O1] `$ true` exits 0
+
+## Q6 — Quick with timeout
+
+**Pipeline profile:** quick
+
+### Objective gates
+
+- [ ] [Q6.O1] `$ sleep 10` exits 0
 """
-
-
 def git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
 
@@ -74,9 +80,9 @@ def write(root: Path, rel: str, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def close(root: Path, step: str) -> tuple[int, dict]:
+def close(root: Path, step: str, *extra_args: str) -> tuple[int, dict]:
     completed = subprocess.run(
-        [sys.executable, str(CLOSE), "check", "--project", str(root), "--step", step, "--json"],
+        [sys.executable, str(CLOSE), "check", "--project", str(root), "--step", step, "--json", *extra_args],
         capture_output=True,
         text=True,
     )
@@ -192,9 +198,11 @@ def main() -> int:
         code, decision = close(root, "Q4")
         assert code == 1 and decision["decision"] == "reopen_coder" and decision["objective"]["failed"] == ["Q4.O1"]
 
+        code, decision = close(root, "Q6", "--timeout", "1")
+        assert code == 1 and decision["decision"] == "gate_timeout" and decision["objective"]["status"] == "timeout", decision
+
         code, decision = close(root, "S1")
         assert code == 0 and decision["decision"] == "review" and decision["quick_blockers"] == []
-
     print("workflow_close.selftest: PASS")
     return 0
 

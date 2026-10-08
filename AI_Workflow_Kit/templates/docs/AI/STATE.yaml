@@ -40,6 +40,7 @@ omp:
   model_failure:
     # none | awaiting_human | backup_authorized
     status: none
+    authorized_by: null
     role: null
     primary_agent: null
     failed_model: null

@@ -42,7 +42,7 @@ checkpoint tag (`workflow_security_scope.py`). `close_quick` needs all of:
   workflow control plane.
 
 Otherwise the decision is `review` and the output lists `quick_blockers`.
-`reopen_coder` means a gate failed; `reject_worker_result` means a guard
+`reopen_coder` means a gate failed; `gate_timeout` means an objective gate timed out after Ns (not a Coder failure; re-run check with a larger `--timeout`); `reject_worker_result` means a guard
 violation for the step is still open (R7) — a later clean run never hides it.
 A violation is only ever a change the worker itself made; `guard.info` lists
 blocked attempts, shell suspects, and 3.5.x legacy verdicts (whole-repository
@@ -63,7 +63,9 @@ Every command on a line must pass. Backticked file or symbol names are never
 executed. `python3 AI_Workflow_Kit/script/workflow_gates.py list` shows how a
 card is parsed.
 
-## Retry economy
+## Routing and retry economy
+
+First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json` to decide whether to dispatch `workflow-coder-fast` or `workflow-coder`.
 
 | Situation | `ponytail_mode` |
 |---|---|
@@ -71,9 +73,7 @@ card is parsed.
 | Reviewer `changes_requested` or Tester `bugs` | `lite` |
 | `repeated_failure_count >= 2` | `off` |
 
-On Tester `bugs`, require a failing test in approved test paths before the next
-Coder run; that test becomes an Objective Gate for the retry.
-
+On Reviewer `changes_requested` or Tester `bugs`, the fix assignment sets `fix_round: true` and requires `red_proof` in the Coder result (reproducible check output failing without the fix and passing after) for fixed findings. On Tester `bugs`, keep the failing test in approved test paths as an Objective Gate for the retry.
 ## Assignment-first
 
 Every assignment is self-contained (goal, stable IDs, `target_files`,

@@ -99,7 +99,7 @@ try {
 	assert.equal(await emit("tool_call", { toolName: "edit", toolCallId: "s1", input: { path: "src/other.ts" } }, scout), undefined);
 	assert.equal(execCalls, before, "scout tool calls are not even checked");
 
-	// A backup worker without Human authorization is refused at spawn.
+	// A backup worker without recorded failure authorization is refused at spawn.
 	const refused = await emit("before_subagent_spawn", { agent: "workflow-coder-backup" }, main);
 	assert.equal(refused?.block, true);
 

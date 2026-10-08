@@ -32,7 +32,9 @@ normalized, notes = mod.normalize_config_text(base, UPSTREAM)
 assert "default: custom/main:high" in normalized
 assert 'workflow_orchestrator: "@default"' in normalized
 assert "workflow_coder: custom/coder" in normalized
+assert 'workflow_coder_fast: "@workflow_coder"' in normalized
 assert 'workflow_designer: "@workflow_architect"' in normalized
+assert "maxRetries: 3" in normalized
 assert "modelTags:" in normalized
 assert "Main Orchestrator (managed by DEFAULT)" in normalized
 assert "hidden: true" in normalized

@@ -31,20 +31,22 @@ product attempt (R15).
 Follow the transaction in R8, then:
 
 ```bash
+python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json
 bash AI_Workflow_Kit/script/workflow_models.sh validate-role <role>
 ```
 
 The assignment is compact and self-contained: goal and step, stable work-item
 ID, `target_files` and exclusions, Objective Gates, Reviewer-owned Judgment
-Gates, source-of-truth paths, and compact verified retry/interruption facts.
+Gates, source-of-truth paths, compact verified retry/interruption facts, and
+`fix_round: true|false` (true when fixing Reviewer findings or Tester bugs).
 Paste the role block from `WORKER_INPUT_DIGEST.md`; never tell a worker to
 re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT. Coder assignments also carry
 `ponytail_mode` (`full` first attempt, `lite` after review/QA findings, `off`
-when `repeated_failure_count >= 2`).
-
+when `repeated_failure_count >= 2`). Dispatch the agent returned by `workflow_route.py`
+(`workflow-coder-fast` or `workflow-coder`).
 | Role | Agent | Use |
 |---|---|---|
-| Coder | `workflow-coder` | product implementation or verified fix |
+| Coder | `workflow-coder-fast` or `workflow-coder` | product implementation or verified fix |
 | Reviewer | `workflow-reviewer` | read-only Judgment Gates and bounded complexity check |
 | Tester | `workflow-tester` | runtime/QA evidence, approved test paths |
 | Architect | `workflow-architect` | design uncertainty, plan/code conflict, Grilling, thrash |
@@ -102,6 +104,7 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 | `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
 | `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
 | `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
+| `gate_timeout` | Objective gate timed out after Ns — not a Coder failure: re-run the close check with a larger `--timeout`; if it times out again at the raised limit, treat it as a hang and reopen the Coder |
 
 `guard.info` lines (blocked attempts, shell suspects, 3.5.x legacy verdicts)
 never change the decision; mention them to the Human when they matter.
@@ -139,15 +142,9 @@ ask one short question instead of choosing the expensive path. Templates:
 
 ## 7. Model failure (R16)
 
-Persistent provider/model failure pauses routing without counting an attempt.
-Record under `omp.model_failure`: `status: awaiting_human`, `role`,
-`primary_agent`, `failed_model`, `evidence`. After the Human authorizes the
-backup, set `status: backup_authorized`, `backup_agent`, `human_instruction`
-(exact words), `authorized_at` — the spawn hook refuses the backup otherwise.
-Include `human_backup_authorization: true` and the instruction in the
-assignment. Main's own outage: switch live to `@workflow_orchestrator_backup`
-(Alt+Q) and run `/workflow status`.
+On a primary worker model/provider failure (provider error, quota/429/402, DNS/network, provider timeout, empty/aborted result caused by the provider — NOT `blocked`, gate failures, or review findings), Main immediately records `omp.model_failure` with `status: backup_authorized`, `authorized_by: auto`, `role`, `primary_agent`, `failed_model`, `backup_agent`, `evidence`, `authorized_at`, records metrics `model_failure` with `status: auto_failover`, and dispatches the `-backup` agent with a fresh context (provider failures are not product attempts, R15). Main asks the Human only when (a) the backup role is missing or resolves to the same model as the primary, or (b) the backup run also fails for a model/provider reason → then `status: awaiting_human`. Fast coder failures never use a backup: they escalate to `workflow-coder`. After the backup run finishes (success or product result), Main clears `omp.model_failure`.
 
+Main's own outage: switch live to `@workflow_orchestrator_backup` (Alt+Q) and run `/workflow status`.
 ## 8. Checkpoints and metrics
 
 Only Main checkpoints (`GIT_CHECKPOINTS.md`), staging exactly the authorized

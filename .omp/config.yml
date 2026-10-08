@@ -5,6 +5,9 @@ modelRoles:
   # managed alias used by launch/cycle commands and is hidden from Alt+M Roles.
   workflow_orchestrator: "@default"
   workflow_coder: openai-codex/gpt-5.6-luna:max
+  # Fast first-attempt Coder (3.7). Pick a fast model in Alt+M -> Roles to enable it;
+  # while it aliases the Coder, workflow_route.py sends every step to workflow-coder.
+  workflow_coder_fast: "@workflow_coder"
   workflow_reviewer: google-antigravity/gemini-3.6-flash:high
   workflow_tester: openai-codex/gpt-5.6-terra:max
   workflow_architect: openai-codex/gpt-5.6-sol:xhigh
@@ -29,8 +32,10 @@ modelTags:
 
 retry:
   enabled: true
-  # Persistent model/provider failure pauses the workflow. Human authorizes backup.
+  # Primary worker model/provider failure: Main dispatches the -backup worker
+  # automatically (R16). In-session fallback stays off so R17 checks always apply.
   modelFallback: false
+  maxRetries: 3
 
 async:
   enabled: true

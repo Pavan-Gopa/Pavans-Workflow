@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { parseCrossProjectReport } from "../lib/workflow-dashboard-data.ts";
 import {
 	SessionUsageTracker,
 	deriveDashboardViewModel,
@@ -6,7 +7,9 @@ import {
 	parseSteps,
 	parseWorkflowState,
 	renderDashboard,
+	type CrossProjectReport,
 	type DashboardData,
+	type DashboardViewModel,
 	type MetricsReport,
 	type RuntimeSnapshot,
 } from "../lib/workflow-dashboard-core.ts";
@@ -337,7 +340,7 @@ assert.match(wideText, /Remove provider quota code/);
 assert.match(wideText, /CURRENT ROLE · CODER/);
 assert.match(wideText, /CURRENT MODEL · GPT 5.6 Luna/);
 
-assert.doesNotMatch(wideText, /#1|leaderboard|quality score/i);
+assert.doesNotMatch(wideText, /#1|quality score/i);
 const completedView = deriveDashboardViewModel(data, runtime, "W-08");
 assert.equal(completedView.relation, "completed");
 const completedText = renderDashboard(completedView, 160, 38).lines.map(line => line.text).join("\n");
@@ -404,6 +407,7 @@ const waitingState = {
 	modelFailureRole: "coder",
 	modelFailureInstruction: "Choose Coder backup or change the model",
 	modelFailureBackupAgent: "-",
+	modelFailureAuthorizedBy: "-",
 };
 const waiting = deriveDashboardViewModel({ ...data, state: waitingState }, { ...runtime, worker: undefined, mainActivity: "Waiting for Human direction" });
 const waitingText = renderDashboard(waiting, 80, 28).lines.map(line => line.text).join("\n");
@@ -880,6 +884,77 @@ assert.match(profiledText, /BUDGET/);
 assert.match(profiledText, /Time · 0m \/ 20m/);
 assert.match(profiledText, /Tokens · 410 tok \/ 100,000 tok/);
 assert.match(profiledText, /Cost · unavailable/);
+// Cross-project leaderboard: summary in the health column, full tables on `l`, graceful failure.
+const crossProject: CrossProjectReport = {
+	scope: "all",
+	projects: [{ name: "alpha", events: 90 }, { name: "beta", events: 60 }],
+	notes: ["skipped gone: store missing (/tmp/gone/events.jsonl)"],
+	leaderboard: {
+		min_samples: 5,
+		roles: {
+			orchestrator: {
+				metric: "human_messages_per_step",
+				better: "lower",
+				attributed_steps: 11,
+				mixed_steps: 1,
+				unattributed_steps: 1,
+				models: [
+					{ model: "anthropic/claude-opus-5", n: 5, rank: 1, low_sample: false, primary: { metric: "human_messages_per_step", better: "lower", unit: "per_step", value: 1, count: 5, total: 5 }, coder_retries_per_step: 0.4, missed_requirements_per_step: 0.2, median_step_duration_ms: 110_000, human_ratings: { good: 2 } },
+					{ model: "google/gemini-3-pro", n: 1, rank: null, low_sample: true, primary: { metric: "human_messages_per_step", better: "lower", unit: "per_step", value: 1, count: 1, total: 1 }, coder_retries_per_step: 0, missed_requirements_per_step: 0, median_step_duration_ms: null, human_ratings: {} },
+				],
+			},
+			coder: {
+				metric: "first_review_approval",
+				better: "higher",
+				models: [
+					{ model: "anthropic/claude-sonnet-5", n: 8, rank: 1, low_sample: false, runs: 8, median_duration_ms: 40_000, tokens_per_run: 2000, primary: { metric: "first_review_approval", better: "higher", unit: "pct", value: 87.5, count: 7, total: 8 } },
+				],
+			},
+			tester: {
+				metric: null,
+				better: null,
+				models: [{ model: "deepseek/deepseek-v4", n: 11, rank: null, low_sample: false, runs: 11, median_duration_ms: 20_000, primary: null, bugs_found: { count: 1, total: 11, rate_pct: 9.1 } }],
+			},
+		},
+	},
+};
+const boardData: DashboardData = { ...data, crossProject };
+// Wide layout: the health/leaderboard column is the last bordered cell; join its wrapped rows into one string.
+const boardText = (view: DashboardViewModel): string =>
+	renderDashboard(view, 160, 60)
+		.lines.map(line => line.text.split("|").at(-2)?.trim() ?? "")
+		.join(" ")
+		.replace(/\s+/g, " ");
+const summaryText = boardText(deriveDashboardViewModel(boardData, runtime));
+assert.match(summaryText, /LEADERBOARD/);
+assert.match(summaryText, /All projects · 2 projects/);
+assert.match(summaryText, /Main · .*1\.00 msgs\/step · n=5/);
+assert.match(summaryText, /Coder · .*87\.5% · n=8/);
+assert.match(summaryText, /Tester · .*11 runs · not ranked/);
+assert.doesNotMatch(wideText, /LEADERBOARD/, "no cross-project data, no leaderboard block");
+const fullText = boardText(deriveDashboardViewModel(boardData, runtime, undefined, undefined, "leaderboard"));
+assert.match(fullText, /MODEL LEADERBOARD/);
+assert.match(fullText, /Rank needs ≥ 5 samples/);
+assert.match(fullText, /1\. anthropic\/claude-opus-5 · 1\.00 msgs\/step · n=5/);
+assert.match(fullText, /- google\/gemini-3-pro · 1\.00 msgs\/step · n=1 · low sample/);
+assert.match(fullText, /11 steps attributed · 1 mixed \(excluded\) · 1 unattributed/);
+assert.match(fullText, /retries 0\.40\/step/);
+assert.match(fullText, /not ranked \(no ground truth\)/);
+assert.match(fullText, /Note · skipped gone/);
+for (const [width, expectedLayout] of [[160, "wide"], [120, "medium"], [80, "narrow"]] as const) {
+	const rendered = renderDashboard(deriveDashboardViewModel(boardData, runtime, undefined, undefined, "leaderboard"), width, 34);
+	assert.equal(rendered.layout, expectedLayout);
+	for (const line of rendered.lines) assert.equal(displayWidth(line.text), width, `leaderboard ${expectedLayout}: ${line.text}`);
+}
+const failedBoard = boardText(deriveDashboardViewModel({ ...data, crossProjectError: "registry unreadable" }, runtime, undefined, undefined, "leaderboard"));
+assert.match(failedBoard, /Cross-project leaderboard unavailable/);
+assert.match(failedBoard, /registry unreadable/);
+assert.match(boardText(deriveDashboardViewModel({ ...data, crossProjectError: "x" }, runtime)), /Cross-project leaderboard unavailable/);
+assert.match(boardText(deriveDashboardViewModel({ ...boardData, crossProject: { ...crossProject, leaderboard: { min_samples: 5, roles: {} } } }, runtime)), /no model samples yet/);
+assert.equal(parseCrossProjectReport(JSON.stringify(crossProject)).projects?.length, 2);
+assert.throws(() => parseCrossProjectReport(JSON.stringify({ scope: "all" })), /no leaderboard/);
+assert.throws(() => parseCrossProjectReport(JSON.stringify({ available: false, error: "boom" })), /boom/);
+
 if (process.env.WORKFLOW_DASHBOARD_MOCKUPS === "1") {
 	for (const [label, view] of [
 		["NORMAL CURRENT", mainOnly],

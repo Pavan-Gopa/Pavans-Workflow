@@ -14,14 +14,15 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 ```text
 Human <-> Main
   -> state transaction (step, work item, profile, target_files)        R8
-  -> fresh Coder (+ Ponytail)          guard blocks out-of-scope edits  R6
+  -> workflow_route.py coder (fast_first -> Fast Coder; fallback -> Coder)
+  -> fresh Coder/Fast Coder (+ Ponytail) guard blocks out-of-scope edits R6
   -> workflow_close.py check           gates + guard + blast radius     R13
        close_quick ........... quick card, everything green -> close
        review ................ fresh Reviewer -> Main verifies
                                -> fresh Tester  -> Main verifies -> close
        reopen_coder .......... gate failed -> verified retry memory -> fresh Coder
+       gate_timeout .......... gate timed out after Ns -> re-run check with larger timeout
        reject_worker_result .. worker's own violation -> Human decides -> fresh Coder
-```
 
 Profiles and gate syntax: `AI_Workflow_Kit/docs/AI/LEAN_PIPELINE.md`.
 
@@ -36,9 +37,9 @@ Redesign: Human authorizes -> Designer (UI target_files) -> Reviewer -> Tester
 ## Failure and recovery
 
 Three materially identical no-progress failures stop (R15). Runtime
-interruption and provider/model failure are not product attempts. Every backup
-worker needs recorded Human authorization; the spawn hook refuses it otherwise
-(R16).
+interruption and provider/model failure are not product attempts. On a primary
+worker model/provider failure, Main dispatches the configured `-backup` agent;
+the Human is asked only when no backup is configured or the backup fails (R16).
 
 ## Observability
 

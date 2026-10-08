@@ -49,7 +49,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 | ID | Rule | Enforced by |
 |---|---|---|
 | R15 | Retry memory keeps only approach → observed result → verified reason. Stop after three materially identical no-progress failures; a new approach, new evidence, or a different failure is progress. Runtime interruption and provider/model failure are not product attempts. | Main |
-| R16 | No automatic model fallback. A `-backup` worker starts only after the Human authorized it and Main recorded `omp.model_failure.status: backup_authorized`, `backup_agent`, and the Human's exact words. | code: `before_subagent_spawn` blocks unauthorized backups · config: `retry.modelFallback: false` |
+| R16 | Automatic backup failover. On a primary worker model/provider failure, Main immediately records `omp.model_failure` (`status: backup_authorized`, `authorized_by: auto`), metrics `model_failure` (`status: auto_failover`), and dispatches the configured `-backup` agent with a fresh context. Main asks the Human only when the backup role is unconfigured or the backup run also fails. | code: `before_subagent_spawn` blocks unauthorized backups · config: `retry.modelFallback: false` |
 | R17 | Independent review: the Reviewer must not share a model with the Coder primary or backup, and backups should be spread across providers. | code: doctor warning (`workflow_model_diversity.py`) |
 
 ## Optional roles and skills
