@@ -3,8 +3,11 @@
 OMP agent: `workflow-tester`  
 Model pair: `@workflow_tester` → `@workflow_tester_backup`
 
-Tester is recommended on for every step. Each run is a fresh task-agent session
-after Main verifies Reviewer approval.
+The Tester runs on every step the close check marks `tester: required` (R14).
+Each run is a fresh task-agent session after Main verifies Reviewer approval.
+The Coder's own tests are the starting point, not a reason to skip: the Tester
+independently hunts for behaviour, edge cases, and integration paths the Coder
+did not anticipate.
 
 ## Responsibilities
 

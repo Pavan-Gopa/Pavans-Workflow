@@ -107,8 +107,8 @@ def route_coder(root: Path, step: str | None = None, metrics_path: Path | None =
         "threshold": 5,
     }
 
-    # Gate facts
-    gate_facts = gates_mod.evaluate(root, step, run=False, timeout=900)
+    # Gate facts: only gates the Coder itself runs count — (close-only) gates are the close check's.
+    gate_facts = gates_mod.evaluate(root, step, run=False, timeout=900, scope="coder")
 
     # Apply rules, first match wins
     if not fast_model or not coder_model or fast_model == coder_model:
@@ -133,7 +133,7 @@ def route_coder(root: Path, step: str | None = None, metrics_path: Path | None =
     elif gate_facts.get("command_gates", 0) == 0:
         agent = "workflow-coder"
         reason_code = "no_command_gate"
-        reason = f"Step {step} has no command gates"
+        reason = f"Step {step} has no command gate the Coder runs itself"
     elif len(last_10) >= 10 and first_pass_count < 5:
         agent = "workflow-coder"
         reason_code = "auto_disabled"

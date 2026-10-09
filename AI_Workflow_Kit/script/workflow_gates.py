@@ -1,18 +1,26 @@
 #!/usr/bin/env python3
 """List or run the Objective Gate commands of the current (or named) step card.
 
-  workflow_gates.py list [--step S1] [--json]
-  workflow_gates.py run  [--step S1] [--json] [--require-commands] [--timeout 900]
+  workflow_gates.py list [--step S1] [--for all|coder] [--json]
+  workflow_gates.py run  [--step S1] [--for all|coder] [--json] [--require-commands] [--timeout 900]
+                         [--log-dir DIR]
 
 A gate runs when its line contains a backticked command:
 
   - [ ] [S1.O1] `$ npm test -- --run` exits 0        explicit marker (always runs)
   - [ ] [S1.O2] `pytest -q tests/unit` exits 0        recognised runner (npm, pytest, …)
   - [ ] [S1.O3] `./script/check.sh` exits 0           executable path
+  - [ ] [S1.O4] (close-only) `$ npm test` exits 0     run by the close check, not the Coder
 
 Backticked names that are not commands (`README.md`, `maxRetries`) stay manual
 evidence. Every command on a line must pass. Fenced code blocks and template
 cards are ignored, exactly like the Alt+W dashboard.
+
+`--for coder` leaves `(close-only)` gates out: the Coder runs the build and the
+step's own checks, and `workflow_close.py check` runs every gate once on the
+final tree. Each command's full output is kept in
+<git-common-dir>/pavans-workflow/gate-logs/<step>/ (or --log-dir); a failed
+command also reports `failure_excerpt`, the failing lines found anywhere in it.
 
 Exit codes: 0 pass (or no command gates without --require-commands),
 1 a command gate failed, 2 usage/parse error, 3 no command gates with
@@ -28,6 +36,7 @@ import os
 import re
 import signal
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -40,6 +49,26 @@ CURRENT_STEP = re.compile(r"^current_step:\s*(.+?)\s*$", re.M)
 RISK = re.compile(r"\*\*Risk:\*\*\s*(low|normal|high)", re.I)
 PROFILE = re.compile(r"\*\*Pipeline(?:\s+profile)?:\*\*\s*(quick|standard|critical)", re.I)
 TEMPLATE_TITLES = {"title", "short title", "step title", "placeholder"}
+# `(close-only)` outside the backticks: the close check runs the gate, the Coder does not.
+CLOSE_ONLY = re.compile(r"\(close-only\)", re.I)
+# `**Tester:** skip — <reason>`: the only reasons a behaviour step may go without the Tester (R14).
+TESTER_LINE = re.compile(r"^\*\*Tester:\*\*[ \t]*(?P<value>[^\n]*)$", re.M | re.I)
+TESTER_SKIP_REASONS = ("human_opt_out", "presentation_only", "docs_only", "mechanical_rename")
+# Lines that name a failure in common runners' output (XCTest, Swift Testing,
+# pytest, Jest/Vitest, cargo, go, tsc, generic `error:`).
+FAILURE_LINE = re.compile(
+    r"error[:\[]|\bfail(?:ed|ure|ures|ing)?\b|\bFAIL\b|✘|✕|✗|Traceback|AssertionError|panicked at|^\s*not ok\b",
+    re.I,
+)
+# The runner's own failure lines, listed first: logs also carry warnings that merely
+# mention "failures" (e.g. objc duplicate-class notices) and tests that print `ERROR:`.
+RUNNER_FAILURE = re.compile(
+    r"\berror:|\berror TS\d+|' failed \(|\bfailed after\b|recorded an issue|✘|✕|✗|Traceback|AssertionError|"
+    r"panicked at|^\s*not ok\b|^\s*(?:FAIL|FAILED|--- FAIL)\b"
+)
+NOT_A_FAILURE = re.compile(r"\b0 (?:failures?|failed|errors?)\b|with 0 failures|\bno failures\b|failures?: 0\b", re.I)
+EXCERPT_LINES = 40
+EXCERPT_LINE_CHARS = 300
 RUNNERS = (
     "npm", "npx", "pnpm", "yarn", "bun", "bunx", "deno", "node", "tsc", "vitest", "jest", "playwright",
     "python", "python3", "pytest", "uv", "uvx", "tox", "nox", "poetry", "ruff", "mypy",
@@ -163,11 +192,27 @@ def extract_gates(body: str, root: Path | None = None) -> list[dict[str, object]
             "commands": commands,
             "command": commands[0] if commands else None,
             "kind": "command" if commands else "manual",
+            "close_only": bool(CLOSE_ONLY.search(BACKTICK.sub("", text))),
         }
         if spans and not commands:
             gate["note"] = "backticked text is not a recognised command; write `$ <command>` to run it"
         gates.append(gate)
     return gates
+
+
+def tester_facts(body: str) -> dict[str, object]:
+    """`**Tester:** skip — <reason>` with a listed reason skips the Tester; anything else requires it."""
+    match = TESTER_LINE.search(body)
+    value = match.group("value").strip() if match else ""
+    if not re.match(r"skip\b", value, re.I):
+        return {"tester_skip_reason": None, "tester_note": None}
+    reason = next((item for item in TESTER_SKIP_REASONS if re.search(rf"\b{item}\b", value, re.I)), None)
+    if reason:
+        return {"tester_skip_reason": reason, "tester_note": None}
+    return {
+        "tester_skip_reason": None,
+        "tester_note": "**Tester:** skip needs one of " + ", ".join(TESTER_SKIP_REASONS) + "; the Tester stays required",
+    }
 
 
 def card_facts(card: dict[str, str]) -> dict[str, object]:
@@ -179,6 +224,7 @@ def card_facts(card: dict[str, str]) -> dict[str, object]:
         "risk": risk.group(1).lower() if risk else "normal",
         "pipeline_profile": profile.group(1).lower() if profile else "standard",
         "card_sha256": hashlib.sha256(body.strip().encode("utf-8")).hexdigest(),
+        **tester_facts(body),
     }
 
 
@@ -188,7 +234,63 @@ def _tail(value: object) -> str:
     return (value or "")[-2000:] if isinstance(value, str) else ""
 
 
-def run_command(command: str, cwd: Path, timeout: int) -> dict[str, object]:
+def common_git_dir(root: Path) -> Path | None:
+    try:
+        output = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    path = Path(output)
+    return path if path.is_absolute() else (root / path).resolve()
+
+
+def safe_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", value) or "_"
+
+
+def prune_gate_logs(current: Path, keep: int = 20) -> None:
+    """Keep the logs of the `keep` most recent steps (a full-suite log can be ~0.5 MB)."""
+    try:
+        others = [path for path in current.parent.iterdir() if path.is_dir() and path != current]
+    except OSError:
+        return
+    others.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    for stale in others[keep - 1 :]:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
+def failure_excerpt(*outputs: str) -> list[str]:
+    """Failing lines from anywhere in the output (the tail alone often holds only the summary).
+
+    The runner's own failure lines come first, then other lines that mention a failure.
+    """
+    runner: list[str] = []
+    other: list[str] = []
+    for output in outputs:
+        for line in (output or "").splitlines():
+            if not FAILURE_LINE.search(line) or NOT_A_FAILURE.search(line):
+                continue
+            text = line.strip()[:EXCERPT_LINE_CHARS]
+            bucket = runner if RUNNER_FAILURE.search(line) else other
+            if text and text not in bucket and len(bucket) < EXCERPT_LINES:
+                bucket.append(text)
+    return (runner + other)[:EXCERPT_LINES]
+
+
+def write_log(path: Path, command: str, exit_code: int, stdout: str, stderr: str) -> str | None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            f"$ {command}\nexit {exit_code}\n--- stdout ---\n{stdout or ''}\n--- stderr ---\n{stderr or ''}\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return None
+    return str(path)
+
+
+def run_command(command: str, cwd: Path, timeout: int, log_path: Path | None = None) -> dict[str, object]:
     process = subprocess.Popen(
         command,
         shell=True,
@@ -198,9 +300,12 @@ def run_command(command: str, cwd: Path, timeout: int) -> dict[str, object]:
         text=True,
         start_new_session=True,
     )
+    timed_out = False
     try:
         stdout, stderr = process.communicate(timeout=timeout)
+        exit_code = process.returncode
     except subprocess.TimeoutExpired:
+        timed_out, exit_code = True, 124
         for sig in (signal.SIGTERM, signal.SIGKILL):
             try:
                 os.killpg(process.pid, sig)
@@ -213,16 +318,29 @@ def run_command(command: str, cwd: Path, timeout: int) -> dict[str, object]:
                 continue
         else:
             stdout, stderr = "", ""
-        return {
-            "exit_code": 124,
-            "timed_out": True,
-            "stdout_tail": _tail(stdout),
-            "stderr_tail": (_tail(stderr) + f"\ntimed out after {timeout}s").strip(),
-        }
-    return {"exit_code": process.returncode, "timed_out": False, "stdout_tail": _tail(stdout), "stderr_tail": _tail(stderr)}
+        stderr = ((stderr or "") + f"\ntimed out after {timeout}s").strip()
+    result: dict[str, object] = {
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "stdout_tail": _tail(stdout),
+        "stderr_tail": _tail(stderr),
+    }
+    if log_path is not None:
+        result["log"] = write_log(log_path, command, exit_code, stdout, stderr)
+    if exit_code != 0:
+        result["failure_excerpt"] = failure_excerpt(stdout, stderr)
+    return result
 
 
-def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str, object]:
+def evaluate(
+    root: Path,
+    step: str | None,
+    run: bool,
+    timeout: int,
+    scope: str = "all",
+    log_dir: Path | str | None = "auto",
+) -> dict[str, object]:
+    """`scope="coder"` leaves `(close-only)` gates out; `log_dir="auto"` keeps full logs in the git common dir."""
     steps_path = root / "AI_Workflow_Kit" / "docs" / "STEPS.md"
     state_path = root / "AI_Workflow_Kit" / "docs" / "AI" / "STATE.yaml"
     if not steps_path.is_file():
@@ -234,13 +352,35 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
     cards = parse_cards(steps_path.read_text(encoding="utf-8"))
     if step not in cards:
         raise ValueError(f"step {step} not found in STEPS.md (template cards and fenced examples are ignored)")
-    gates = extract_gates(cards[step]["body"], root)
+    all_gates = extract_gates(cards[step]["body"], root)
+    gates = [gate for gate in all_gates if not (scope == "coder" and gate["close_only"])]
+    logs: Path | None = None
+    if run and log_dir == "auto":
+        common = common_git_dir(root)
+        logs = common / "pavans-workflow" / "gate-logs" / safe_name(step) if common else None
+        if logs is not None:
+            prune_gate_logs(logs)
+    elif run and log_dir:
+        logs = Path(log_dir)
     failed = 0
-    for gate in gates:
+    for index, gate in enumerate(gates, 1):
         gate["ok"] = None
         if not run or gate["kind"] != "command":
             continue
-        runs = [dict(run_command(command, root, timeout), command=command) for command in gate["commands"]]  # type: ignore[union-attr]
+        label = safe_name(str(gate["id"] or f"gate{index}"))
+        commands: list[str] = gate["commands"]  # type: ignore[assignment]
+        runs = [
+            dict(
+                run_command(
+                    command,
+                    root,
+                    timeout,
+                    logs / (f"{label}.log" if len(commands) == 1 else f"{label}-{number}.log") if logs else None,
+                ),
+                command=command,
+            )
+            for number, command in enumerate(commands, 1)
+        ]
         gate["runs"] = runs
         gate["ok"] = all(item["exit_code"] == 0 for item in runs)
         # Backward-compatible single-command fields.
@@ -249,8 +389,9 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
         if not gate["ok"]:
             failed += 1
     command_gates = sum(1 for gate in gates if gate["kind"] == "command")
+    close_only = sum(1 for gate in all_gates if gate["kind"] == "command" and gate["close_only"])
     if failed:
-        failing_gates = [g for g in gates if g["kind"] == "command" and not g.get("ok")]
+        failing_gates = [g for g in gates if g.get("ok") is False]
         all_timeouts = all(
             all(r.get("timed_out") is True for r in g.get("runs", []) if r.get("exit_code") != 0 or r.get("timed_out"))
             for g in failing_gates
@@ -260,14 +401,22 @@ def evaluate(root: Path, step: str | None, run: bool, timeout: int) -> dict[str,
         status = "pass" if command_gates else "no_commands"
     if not run:
         status = "listed" if command_gates else "no_commands"
+    notes: list[str] = []
+    if scope == "coder" and close_only and not command_gates:
+        notes.append(
+            "every command gate is (close-only): give the Coder a step-scoped command gate (build + the step's own tests)"
+        )
     return {
         "step": step,
         **card_facts(cards[step]),
+        "scope": scope,
         "gate_count": len(gates),
         "command_gates": command_gates,
+        "close_only_gates": close_only,
         "failed_commands": failed,
         "status": status,
         "timeout_seconds": timeout,
+        "notes": notes,
         "gates": gates,
     }
 
@@ -278,13 +427,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step", default=None)
     parser.add_argument("--project", default=None)
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "900")))
+    parser.add_argument(
+        "--for", dest="scope", choices=["all", "coder"], default="all",
+        help="coder: leave out (close-only) gates — the close check runs them on the final tree",
+    )
+    parser.add_argument("--log-dir", default="auto", help="full command logs (default: <git-common-dir>/pavans-workflow/gate-logs/<step>)")
     parser.add_argument("--require-commands", action="store_true", help="exit 3 when the card has no command gate")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     root = Path(args.project).resolve() if args.project else repo_root_from_here()
     try:
-        payload = evaluate(root, args.step, args.action == "run", args.timeout)
+        payload = evaluate(root, args.step, args.action == "run", args.timeout, args.scope, args.log_dir)
     except (ValueError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
@@ -295,14 +449,24 @@ def main(argv: list[str] | None = None) -> int:
             f"step {payload['step']} · {payload['status']} · "
             f"{payload['command_gates']} command / {payload['gate_count']} gates · "
             f"risk {payload['risk']} · profile {payload['pipeline_profile']}"
+            + (f" · for coder ({payload['close_only_gates']} close-only left to the close check)" if args.scope == "coder" else "")
         )
         for gate in payload["gates"]:  # type: ignore[union-attr]
             mark = "OK  " if gate.get("ok") is True else "FAIL" if gate.get("ok") is False else "----"
             label = gate.get("id") or "(no id)"
             detail = " && ".join(gate["commands"]) if gate["commands"] else gate["text"]
-            print(f"{mark} {label} · {detail}")
+            print(f"{mark} {label}{' (close-only)' if gate.get('close_only') else ''} · {detail}")
             if gate.get("note"):
                 print(f"     note: {gate['note']}")
+            for item in gate.get("runs") or []:
+                if item.get("exit_code") == 0:
+                    continue
+                if item.get("log"):
+                    print(f"     log: {item['log']}")
+                for line in (item.get("failure_excerpt") or [])[:10]:
+                    print(f"     | {line}")
+        for note in payload["notes"]:  # type: ignore[union-attr]
+            print(f"note: {note}")
     if payload["failed_commands"]:
         return 1
     if args.require_commands and not payload["command_gates"]:

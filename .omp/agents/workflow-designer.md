@@ -54,7 +54,10 @@ KICK_DESIGNER.md, or TEAM_CONTRACT.md unless a required field is missing.
 2. Preserve functional behavior while improving hierarchy, layout, states,
    responsive behavior, accessibility, and visual coherence.
 3. Reuse existing components/tokens before adding new primitives.
-4. Run assigned build/type/UI gates.
+4. Run the assigned build/type/UI gates
+   (`python3 AI_Workflow_Kit/script/workflow_gates.py run --for coder --step <step>`);
+   never `(close-only)` gates — Main's close check runs them on the final tree.
+   Never run `graphify update`/rebuilds or load `skill://graphify`.
 5. Render and inspect before/after artifacts when supported. Test wide, medium,
    narrow, and at least one meaningful interaction state.
 6. Return `waiting_review` only when scoped code and evidence are ready for Main,

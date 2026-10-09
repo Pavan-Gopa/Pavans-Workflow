@@ -45,6 +45,14 @@ STEPS = """# Steps
 ### Objective gates
 
 - [ ] [S4.O1] manual check only
+
+## S5 — Only the whole suite
+**Risk:** normal
+**Pipeline profile:** standard
+
+### Objective gates
+
+- [ ] [S5.O1] (close-only) `$ true` exits 0
 """
 
 
@@ -133,6 +141,9 @@ def main() -> int:
         res5 = run_route(tmp, "S4")
         assert res5["agent"] == "workflow-coder"
         assert res5["reason_code"] == "no_command_gate"
+        # A close-only gate is the close check's, not one the Fast Coder runs itself.
+        res5_close_only = run_route(tmp, "S5")
+        assert res5_close_only["reason_code"] == "no_command_gate", res5_close_only
 
         # Rule 2: retry (metrics store has worker_started for S1)
         metrics_file = tmp / "events.jsonl"

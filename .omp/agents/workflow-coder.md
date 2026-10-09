@@ -46,9 +46,12 @@ The workflow guard blocks, before they run, edits outside `target_files`, edits 
 ## Navigation
 
 - Use Graphify first for unknown entry points, cross-file behavior, callers,
-  dependencies, public contracts, schemas, trust boundaries, or blast radius.
+  dependencies, public contracts, schemas, trust boundaries, or blast radius:
+  `graphify query "<question>" --graph graphify-out/graph.json --budget 1500`.
 - For a demonstrably local assignment naming the exact file and symbol, focused
   LSP/grep/read may be smaller than a graph query.
+- Never run `graphify update`/rebuilds or load `skill://graphify`, whatever a
+  project rule says: Main owns graph freshness.
 - Always verify the relevant real source before editing or concluding.
 
 ## Process
@@ -57,7 +60,10 @@ The workflow guard blocks, before they run, edits outside `target_files`, edits 
    target files, gates, interrupted work, and verified retry memory.
 2. Understand the affected flow; apply `skill://ponytail` at the requested mode.
 3. Preserve valid interrupted work and implement the minimum compliant diff.
-4. Run exactly the assigned Coder Objective Gates and capture exact evidence.
+4. Run the assigned Coder Objective Gates —
+   `python3 AI_Workflow_Kit/script/workflow_gates.py run --for coder --step <step>` —
+   and capture exact evidence. Never run `(close-only)` gates (usually the
+   whole-project suite): Main's close check runs them once on your final tree.
 5. Return `waiting_review` only when scoped implementation is complete and those
    gates are green; otherwise return `blocked` with the exact obstacle.
 

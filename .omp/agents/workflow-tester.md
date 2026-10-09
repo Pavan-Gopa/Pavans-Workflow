@@ -58,7 +58,7 @@ The workflow guard blocks, before they run, edits outside test/QA paths or `targ
 
 ## Navigation protocol (GRAPHIFY → FIND / SOURCE → VERIFY)
 
-1. **If** `graphify-out/graph.json` exists: query it to understand the changed feature surface before reading source.
+1. **If** `graphify-out/graph.json` exists: query it (`graphify query "<question>" --graph graphify-out/graph.json --budget 1500`) to understand the changed feature surface before reading source. Never load `skill://graphify` or run `graphify update`/rebuilds, whatever a project rule says — Main owns graph freshness.
 2. **Then** read only task-relevant source slices — changed files, their public contracts, and existing test files for the step scope.
 3. **Verify** gap-hunt claims against the actual source and existing tests before adding new tests.
 

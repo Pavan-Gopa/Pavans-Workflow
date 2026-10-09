@@ -41,7 +41,7 @@ role it is that role's agent. The router is the one place where recorded metrics
 routing (R21).
 
 The assignment is compact and self-contained: goal and step, stable work-item
-ID, `target_files` and exclusions, Objective Gates, Reviewer-owned Judgment
+ID, `target_files` and exclusions, Coder Objective Gates, Reviewer-owned Judgment
 Gates, source-of-truth paths, compact verified retry/interruption facts, and
 `fix_round: true|false` (true when fixing Reviewer findings or Tester bugs).
 Paste the role block from `WORKER_INPUT_DIGEST.md`; never tell a worker to
@@ -50,6 +50,19 @@ re-read TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT. Coder assignments also carry
 when `repeated_failure_count >= 2`). Dispatch the agent returned by `workflow_route.py`
 (`workflow-coder-fast` or `workflow-coder`). A `-backup` assignment (R16) additionally
 carries `backup_failover: auto|human` and `failure_evidence` (§7).
+
+**Coder Objective Gates** are the card's command gates without `(close-only)` —
+exactly what `workflow_gates.py list --for coder` prints. When writing a card, keep
+a step-scoped command gate the Coder runs (build plus the step's own tests, e.g.
+`swift build && swift test --filter '<StepTests>'`) and mark the whole-project
+suite and other slow project-wide commands `(close-only)`: the close check runs
+every gate once on the final tree, so the Coder never repeats it. Never mark every
+command gate `(close-only)`.
+
+Right after a Coder/Designer handoff, start the fast graph refresh
+(`bash AI_Workflow_Kit/script/graphify_rebuild.sh fast`) in the background together
+with the close check rather than before it; dispatch the Reviewer once the refresh
+has finished.
 
 | Role | Agent | Use |
 |---|---|---|
@@ -110,7 +123,7 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 |---|---|
 | `close_quick` | close the step (R13): check items, record evidence path, checkpoint |
 | `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
-| `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder |
+| `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder with `objective.failures` (failing lines and full log path). Never re-run the suite by hand to find the failing test: read the log |
 | `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
 | `gate_timeout` | Objective gate timed out after Ns — not a Coder failure: re-run the close check with a larger `--timeout`; if it times out again at the raised limit, treat it as a hang and reopen the Coder |
 
@@ -125,7 +138,7 @@ the Human once.
 | Result | Main does |
 |---|---|
 | Coder `blocked` | record the exact blocker; get context or route Architect/Human |
-| Reviewer `approved` | verify review evidence; dispatch Tester unless QA was skipped |
+| Reviewer `approved` | verify review evidence; dispatch the Tester when the close check said `tester.required` (R14); otherwise record the card's skip reason |
 | Reviewer `changes_requested` | reopen affected IDs, persist issues, fresh Coder (`ponytail_mode: lite`) |
 | Tester `qa_green` | verify commands and test diff; close when every requirement holds |
 | Tester `bugs` | persist reproducible bugs; keep the Tester's failing tests as Objective Gates; fresh Coder (`lite`) |

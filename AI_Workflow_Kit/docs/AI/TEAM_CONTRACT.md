@@ -42,7 +42,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 | R11 | Objective Gates are deterministic commands in the card's `### Objective gates` section (`` `$ cmd` `` or a recognised runner). Main re-runs them itself; a worker's "tests pass" is not evidence. | code: `workflow_gates.py` (inside `workflow_close.py`) |
 | R12 | Reviewer owns Judgment Gates; the Human owns final aesthetic acceptance after a direct redesign. `waiting_review` is not completion. | Main |
 | R13 | The close decision comes from `workflow_close.py check`. `close_quick` requires a `quick` card, risk not high, at least one command gate with all command gates green, every manual Objective gate already checked by Main, a clean Coder/Designer guard verdict with no open violation or unscoped run, and no blast-radius hit (security, secrets, contracts, infra, dependencies, control plane). Anything else continues with Reviewer and Tester. Main never closes a step as `quick` without a `close_quick` decision. | code: decision · Main: follows it |
-| R14 | Reviewer runs unless the Human skips it; Tester is recommended unless the Human opts out; every skip is recorded with its reason. Security is offered once near release, or when the close check reports `offer_scoped_security`. | Main |
+| R14 | Reviewer runs unless the Human skips it. The Tester runs after Reviewer approval on every step the close check marks `tester: required`; it is skipped only on `close_quick` or a card line `**Tester:** skip — human_opt_out \| presentation_only \| docs_only \| mechanical_rename`. "The Coder already wrote tests" is never a skip reason: the Tester independently hunts for what the Coder did not anticipate. Every skip is recorded with its reason. Security is offered once near release, or when the close check reports `offer_scoped_security`. | code: `tester` in the close check · Main |
 
 ## Failure and models
 
@@ -58,7 +58,7 @@ repository state; **config** — OMP settings; **Main** — Main's procedure
 |---|---|---|
 | R18 | Design Advisor and Designer run only after explicit Human visual feedback or request — never automatically. They never change backend behavior, API/schema, persistence, auth/security, business logic, routing, localization meaning, or unrelated screens; new UI frameworks or dependencies need authorization. A direct redesign ends with Human visual acceptance. | Main · guard (`target_files`) |
 | R19 | Ponytail autoloads only for Coder and its backup and never outranks requirements, gates, validation, security, accessibility, compatibility, or data integrity. The Reviewer blocks complexity only with a concrete behavior-preserving replacement. No other role trims its coverage for brevity. | doctor (autoload check) · prompt |
-| R20 | Graphify is navigation evidence, never truth: Graphify for non-trivial discovery and blast radius, focused LSP/grep/read for a known symbol, real source verified in both cases. Main owns graph freshness; workers report staleness. A Graphify failure never blocks work. | prompt |
+| R20 | Graphify is navigation evidence, never truth: Graphify for non-trivial discovery and blast radius, focused LSP/grep/read for a known symbol, real source verified in both cases. Main owns graph freshness; workers never run `graphify update`/rebuilds and never load `skill://graphify` (it documents building graphs) — they query the CLI directly and report staleness. A Graphify failure never blocks work. | prompt · doctor (foreign Graphify rules) |
 
 ## Observability and control
 

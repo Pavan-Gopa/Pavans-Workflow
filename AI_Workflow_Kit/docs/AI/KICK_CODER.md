@@ -10,7 +10,9 @@ Both autoload project-local `ponytail`.
 - Understand the affected real code flow before minimizing.
 - Apply assignment-local `ponytail_mode: off|lite|full`. First attempt `full`;
   review/QA retry `lite`; two identical failures `off`.
-- Run assigned Coder Objective Gates and return exact evidence.
+- Run the assigned Coder Objective Gates (`workflow_gates.py run --for coder`)
+  and return exact evidence. `(close-only)` gates — usually the whole-project
+  suite — run once in Main's close check on the final tree; never run them.
 - Return objective-ready work for independent Judgment review.
 
 ## Navigation
@@ -18,7 +20,8 @@ Both autoload project-local `ponytail`.
 Use Graphify for unknown entry points, cross-file behavior, callers/callees,
 dependencies, public contracts, trust boundaries, or blast radius. For an exact
 known local symbol, focused LSP/grep/read may be smaller. Always verify real
-source before editing.
+source before editing. Never run `graphify update`/rebuilds or load
+`skill://graphify`; Main owns graph freshness (R20).
 
 ## Ponytail boundaries
 
@@ -52,7 +55,7 @@ Do:
 1. {{change}}
 Out of scope:
 - {{item}}
-Objective Gates:
+Coder Objective Gates (run these; `(close-only)` gates are the close check's):
 - {{exact command or artifact check}}
 Judgment Gates (Reviewer owns):
 - {{criterion}}

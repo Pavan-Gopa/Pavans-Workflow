@@ -58,6 +58,19 @@ STEPS = """# Steps
 
 - [ ] [S3.O1] `$ sleep 30 & sleep 30` finishes
 
+## S5 — Step gate and whole suite
+
+### Objective gates
+
+- [ ] [S5.O1] `$ touch STEP_GATE_RAN` exits 0
+- [ ] [S5.O2] (close-only) `$ touch SUITE_RAN` exits 0
+
+## S6 — Only the whole suite
+
+### Objective gates
+
+- [ ] [S6.O1] (close-only) `$ true` exits 0
+
 ## S4 — _(title)_
 
 ### Objective gates
@@ -129,6 +142,24 @@ def main() -> int:
 
         missing = run(tmp, "run", "--step", "S9")
         assert missing.returncode == 2
+
+        # The Coder runs the step's own gates; the whole suite is left to the close check.
+        coder = run(tmp, "run", "--step", "S5", "--for", "coder")
+        assert coder.returncode == 0, coder.stderr
+        coder_payload = json.loads(coder.stdout)
+        assert coder_payload["command_gates"] == 1 and coder_payload["close_only_gates"] == 1, coder_payload
+        assert (tmp / "STEP_GATE_RAN").exists() and not (tmp / "SUITE_RAN").exists(), "close-only gates never run for the Coder"
+        everything = run(tmp, "run", "--step", "S5")
+        assert everything.returncode == 0 and (tmp / "SUITE_RAN").exists(), "the close check runs every gate"
+        assert [gate["close_only"] for gate in json.loads(everything.stdout)["gates"]] == [False, True]
+        only_suite = json.loads(run(tmp, "list", "--step", "S6", "--for", "coder").stdout)
+        assert only_suite["command_gates"] == 0 and only_suite["notes"], "a card must leave the Coder a command gate"
+
+        # Every command keeps its full output in a log Main can read.
+        logged = run(tmp, "run", "--step", "S1", "--log-dir", str(tmp / "logs"))
+        assert logged.returncode == 1
+        failing = next(gate for gate in json.loads(logged.stdout)["gates"] if gate["ok"] is False)
+        assert Path(failing["runs"][0]["log"]).is_file() and "failure_excerpt" in failing["runs"][0], failing
 
     # Command recognition: prefixes, runners that used to be caught by the old
     # catch-all, and executables given by path; names are never executed.

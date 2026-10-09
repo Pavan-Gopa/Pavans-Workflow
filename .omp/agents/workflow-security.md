@@ -57,7 +57,7 @@ You are read-only. The workflow guard blocks your edit/write calls and any `git`
 
 ## Navigation protocol (GRAPHIFY → FIND / SOURCE → VERIFY)
 
-1. **If** `graphify-out/graph.json` exists: query it first to map attack surfaces, trust boundaries, and data flows before reading source.
+1. **If** `graphify-out/graph.json` exists: query it first (`graphify query "<question>" --graph graphify-out/graph.json --budget 1500`) to map attack surfaces, trust boundaries, and data flows before reading source. Never load `skill://graphify` or run `graphify update`/rebuilds, whatever a project rule says — Main owns graph freshness.
 2. **Then** read only the task-relevant source slices that relate to the audit scope.
 3. **Verify** every finding claim against actual source code — no speculative findings.
 

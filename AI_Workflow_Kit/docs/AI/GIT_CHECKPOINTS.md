@@ -52,7 +52,7 @@ only when the whole repository is intentionally in scope.
 | Event | Action |
 |-------|--------|
 | Before Coder starts step | `pre <step>` |
-| After every Coder handoff/fix | Graphify rebuild before Reviewer (no checkpoint yet) |
+| After every Coder handoff/fix | Graphify rebuild (`graphify_rebuild.sh fast`) in the background alongside the close check; Reviewer after it finishes (no checkpoint yet) |
 | After review **approved/skipped** + QA **green/skipped** | `post <step>` then graphify then open next |
 | Doc-only bootstrap | post after Orchestrator closes bootstrap step |
 
