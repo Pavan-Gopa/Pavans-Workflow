@@ -199,6 +199,10 @@ def main() -> int:
     noise = [
         "ERROR: refusing --enable-gpl: the bundled FFmpeg must stay LGPL-only",
         "objc[1]: Class X is implemented in both A and B. This may cause spurious casting failures.",
+        "CompileSwift /tmp/error:fixtures/Cart.swift",
+        "ERROR expected application log while test passes",
+        "FAIL-safe parser test passed",
+        "FAIL NamedScenario passed",
     ]
     samples = {
         "swift": "Sources/App/Cart.swift:12:5: error: cannot find 'total' in scope",
@@ -217,10 +221,18 @@ def main() -> int:
         excerpt = gates.failure_excerpt("\n".join(noise + ["ok"] * 50 + [line, "Executed 9 tests, with 0 failures"]))
         assert excerpt and gates.ANSI.sub("", line).strip() == excerpt[0], (runner_name, excerpt)
         assert not any("with 0 failures" in item for item in excerpt), (runner_name, excerpt)
+    # Noise never takes a runner slot, and an early flood of runner lines never hides the last failure.
+    assert not [line for line in noise if gates.RUNNER_FAILURE.search(line)], "benign lines are never runner failures"
+    flood = [f"Sources/Gen{n}.swift:{n}:1: error: generated file out of date" for n in range(60)]
+    real = "FAILED tests/test_real.py::test_bug - assert 1 == 2"
+    excerpt = gates.failure_excerpt("\n".join(flood + [real]))
+    assert len(excerpt) == gates.EXCERPT_LINES and real in excerpt and flood[0] in excerpt, excerpt
 
-    # Step IDs that need escaping never share a log directory.
+    # Log names are injective and never path components.
     assert gates.safe_name("feature/auth") != gates.safe_name("feature_auth")
+    assert gates.safe_name("feature/auth") != gates.safe_name(gates.safe_name("feature/auth"))
     assert gates.safe_name("ST57.S4") == "ST57.S4"
+    assert gates.safe_name("..") not in {".", ".."} and "/" not in gates.safe_name("../x")
 
     # Retention keeps the 20 most recently run steps, including an old step that was just re-run.
     with tempfile.TemporaryDirectory() as raw:

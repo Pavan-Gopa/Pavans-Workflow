@@ -162,19 +162,11 @@ PYCONTEXT
     warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast once product source exists"
   fi
   # Project rules that force every agent through Graphify or make workers refresh it (R20).
-  # A line counts when it mandates Graphify or tells agents to refresh it, unless it is a
-  # prohibition or reserves the refresh for Main.
-  local graphify_rule_hits="" rule_file
-  for rule_file in AGENTS.md CLAUDE.md .cursorrules .clinerules .github/copilot-instructions.md \
-      .cursor/rules/*.mdc .cursor/rules/*.md .claude/rules/*.md .windsurf/rules/*.md; do
-    [[ -f "$rule_file" ]] || continue
-    if grep -Ei '(mandatory|must|required|always)[^.]*graphify|graphify[^.]*(mandatory|required)|graphify update|graphify_rebuild' "$rule_file" \
-        | grep -Eiqv "\bnever\b|\bmust not\b|\b(do not|don't) (run|use|refresh)\b|\bMain\b"; then
-      graphify_rule_hits="$graphify_rule_hits $rule_file"
-    fi
-  done
-  if [[ -n "$graphify_rule_hits" ]]; then
-    warn "project rules make every agent run or refresh Graphify:$graphify_rule_hits — workers pay for it on every step; R20 leaves graph freshness to Main (remove or narrow those lines)"
+  local graphify_rules graphify_rule
+  graphify_rules="$(python3 AI_Workflow_Kit/script/workflow_graphify_rules.py . 2>/dev/null || true)"
+  if [[ -n "$graphify_rules" ]]; then
+    warn "project rules make every agent run or refresh Graphify — workers pay for it on every step; R20 leaves graph freshness to Main (remove or narrow these lines):"
+    while IFS= read -r graphify_rule; do printf '     %s\n' "$graphify_rule" >&2; done <<<"$graphify_rules"
   fi
 
   # --- metrics, guard store, migrations ------------------------------------------------

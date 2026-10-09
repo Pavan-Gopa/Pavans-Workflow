@@ -31,13 +31,14 @@ opt-out, although in ULPone it found bugs on 6 of the 20 steps it ran.
   returns `objective_not_run` (exit 1) and writes no close-check record, so a
   run that executed nothing can never route to the Reviewer.
 - **Gate logs and failure excerpts.** Every gate command's full output is kept
-  in `<git-common-dir>/pavans-workflow/gate-logs/<step>/` (the 20 most recent
-  steps). A failed command
-  reports `failure_excerpt` — the runner's own failure lines (XCTest, Swift
-  Testing, Swift/clang, pytest, Jest/Vitest, cargo, go, tsc) first, from
-  anywhere in the (ANSI-stripped) output — and the close check lists them with
-  the log path in `objective.failures`. Main hands them to the fresh Coder and
-  never re-runs the suite to find a failure.
+  in `<git-common-dir>/pavans-workflow/gate-logs/<step>/` (the 20 most recently
+  run steps; injective file names; a symlinked log store is refused). A failed
+  command reports `failure_excerpt` — runner-syntax failure lines (XCTest,
+  Swift Testing, Swift/clang, pytest, Jest/Vitest, cargo, go, tsc), the first
+  and last 20 so an early flood never hides the final failure, from anywhere in
+  the ANSI-stripped output, then other lines that mention a failure — and the
+  close check lists them with the log path in `objective.failures`. Main hands
+  them to the fresh Coder and never re-runs the suite to find a failure.
 - **Tester required (R14).** The close check reports `tester.required`; the
   Tester is skipped only on `close_quick` or exactly one card line
   `**Tester:** skip — human_opt_out | presentation_only | docs_only |
@@ -52,10 +53,11 @@ opt-out, although in ULPone it found bugs on 6 of the 20 steps it ran.
   (`graphify query … --budget 1500`), never load `skill://graphify`, and never
   run `graphify update` or rebuilds, whatever a project rule says. Main starts
   the post-handoff refresh in the background alongside the close check. The
-  doctor warns when `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.claude/rules`,
+  doctor (`workflow_graphify_rules.py`) warns, clause by clause, when
+  `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.claude/rules`,
   `.windsurf/rules`, `.clinerules`, or Copilot instructions mandate Graphify
-  for every agent or make agents refresh it (prohibitions and Main-only lines
-  are not flagged).
+  for every agent or make agents refresh it; negated, optional, role-scoped,
+  and Main-owned clauses are not flagged.
 - `STEPS.md` template, `TEAM_CONTRACT.md` (R14, R20), `ORCHESTRATOR.md`,
   `LEAN_PIPELINE.md`, `KICK_CODER.md`, `KICK_TESTER.md`,
   `WORKER_INPUT_DIGEST.md`, `GIT_CHECKPOINTS.md`, and the Coder, Designer,

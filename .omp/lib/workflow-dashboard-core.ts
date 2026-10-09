@@ -696,6 +696,8 @@ function parseChecklistSection(body: string, heading: string): ChecklistItem[] {
 	const items: ChecklistItem[] = [];
 	for (const rawLine of sectionLines(body, heading)) {
 		if (!rawLine.trim()) continue;
+		// `**Tester:**` is card metadata that may sit among the items; it never continues one.
+		if (/^\s*\*\*tester:\*\*/i.test(rawLine)) continue;
 		const item = rawLine.match(/^\s*(?:[-*]|\d+[.)])\s+(?:\[([ xX])\]\s*)?(.*\S)\s*$/);
 		if (item) {
 			const parsed = extractWorkItemId(item[2].trim());
@@ -1199,13 +1201,10 @@ function currentGateLines(state: WorkflowState, step?: StepRoutingMeta): TextLin
 				? "fail"
 				: "pending";
 	const qaRequired = testerRequired(state, step);
-	const qa = !qaRequired || (!step && state.qaStatus === "skipped")
-		? "skip"
-		: state.qaStatus === "qa_green"
-			? "pass"
-			: state.qaStatus === "bugs" || state.qaStatus === "blocked"
-				? "fail"
-				: "pending";
+	// Open bugs or a blocked Tester fail the gate even on a card that would skip it (routing reopens the Coder first).
+	const qaFailed = state.qaStatus === "bugs" || state.qaStatus === "blocked";
+	const qaSkipped = !qaFailed && (!qaRequired || (!step && state.qaStatus === "skipped"));
+	const qa = qaFailed ? "fail" : qaSkipped ? "skip" : state.qaStatus === "qa_green" ? "pass" : "pending";
 	const security = state.securityNextRun === "none" || state.securityNextRun === "not_requested"
 		? "skip"
 		: state.securityNextRun === "security_clean"
@@ -1216,7 +1215,7 @@ function currentGateLines(state: WorkflowState, step?: StepRoutingMeta): TextLin
 	const rows: Array<[string, "pass" | "pending" | "fail" | "skip", string]> = [
 		["Implementation", implementation, state.implementationStatus],
 		["Review", review, !state.reviewEnabled ? "skipped" : state.reviewVerdict !== "-" ? state.reviewVerdict : state.reviewStatus],
-		["QA", qa, !qaRequired ? (step?.testerSkipReason ? `skipped (${step.testerSkipReason})` : "skipped") : step && state.qaStatus === "skipped" ? "required (R14)" : state.qaStatus],
+		["QA", qa, qaSkipped && !qaRequired ? (step?.testerSkipReason ? `skipped (${step.testerSkipReason})` : "skipped") : qaRequired && step && state.qaStatus === "skipped" ? "required (R14)" : state.qaStatus],
 		["Security", security, security === "skip" ? "not requested" : state.securityNextRun],
 	];
 	for (const [label, status, detail] of rows) {

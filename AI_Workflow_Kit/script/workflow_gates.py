@@ -34,6 +34,7 @@ import hashlib
 import json
 import os
 import re
+import urllib.parse
 import signal
 import subprocess
 import shutil
@@ -65,13 +66,20 @@ FAILURE_LINE = re.compile(
     r"error[:\[]|\bfail(?:ed|ure|ures|ing)?\b|\bFAIL\b|✘|✕|✗|Traceback|AssertionError|panicked at|^\s*not ok\b",
     re.I,
 )
-# The runner's own failure lines, listed first: logs also carry warnings that merely
-# mention "failures" (e.g. objc duplicate-class notices) and tests that print `ERROR:`.
-# Swift/clang `error:`, tsc `error TS…`, Go `file.go:L:C:`, XCTest, Swift Testing,
-# pytest `FAILED`/`ERROR <path>` summaries, Jest/Go `FAIL`, cargo `error[E…]`/panics, TAP.
+# The runner's own failure lines, listed first. Each pattern is runner syntax, not a bare
+# word: logs also carry warnings that merely mention "failures" (objc duplicate-class
+# notices), tests that print `ERROR:`, and names such as `FAIL-safe`.
 RUNNER_FAILURE = re.compile(
-    r"\berror:|\berror TS\d+|\berror\[E\d+\]|^\S+\.go:\d+(?::\d+)?: |' failed \(|\bfailed after\b|recorded an issue|"
-    r"✘|✕|✗|Traceback|AssertionError|panicked at|^\s*not ok\b|^\s*(?:FAIL|--- FAIL)\b|^\s*(?:FAILED|ERROR) (?=\S)"
+    r"^.*?\S:\d+:(?:\d+:)? (?:fatal )?error: "  # Swift/clang/gcc diagnostics, XCTest assertions
+    r"|\berror TS\d+: "  # tsc
+    r"|^error(?:\[E\d+\])?: |panicked at "  # cargo/rustc
+    r"|^\S+\.go:\d+:\d+: "  # go build/vet
+    r"|^--- FAIL: |^FAIL\t"  # go test
+    r"|^Test Case '.+' failed \(\d"  # XCTest
+    r"|^\s*✘ "  # Swift Testing
+    r"|^(?:FAILED|ERROR) \S+(?:\.py\b|::)"  # pytest summary
+    r"|^\s*FAIL\s+\S+\.(?:[cm]?[jt]sx?)\b|^\s*[✕✗] "  # Jest/Vitest
+    r"|^\s*not ok \d|^Traceback \(most recent call last\)"  # TAP, Python
 )
 NOT_A_FAILURE = re.compile(r"\b0 (?:failures?|failed|errors?)\b|with 0 failures|\bno failures\b|failures?: 0\b", re.I)
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -258,15 +266,18 @@ def common_git_dir(root: Path) -> Path | None:
 
 
 def safe_name(value: str) -> str:
-    """A file-system name for an ID; IDs that needed escaping get a short hash so they never collide."""
-    name = re.sub(r"[^A-Za-z0-9._-]", "_", value) or "_"
-    return name if name == value else f"{name}-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:8]}"
+    """An injective file-system name for an ID (percent-encoding; `.`/`..` never stay path parts)."""
+    name = urllib.parse.quote(value, safe="-_.")
+    return name.replace(".", "%2E") if name.strip(".") == "" else name
 
 
 def prune_gate_logs(current: Path, keep: int = 20) -> None:
     """Keep the logs of the `keep` most recent steps (a full-suite log can be ~0.5 MB)."""
     try:
-        others = [path for path in current.parent.iterdir() if path.is_dir() and path != current]
+        others = [
+            path for path in current.parent.iterdir()
+            if path != current and path.is_dir() and not path.is_symlink()
+        ]
     except OSError:
         return
     others.sort(key=lambda path: path.stat().st_mtime, reverse=True)
@@ -274,12 +285,34 @@ def prune_gate_logs(current: Path, keep: int = 20) -> None:
         shutil.rmtree(stale, ignore_errors=True)
 
 
+def gate_log_dir(root: Path, step: str) -> Path | None:
+    """`<git-common-dir>/pavans-workflow/gate-logs/<step>`, touched for retention; None when unsafe or unavailable."""
+    common = common_git_dir(root)
+    if common is None:
+        return None
+    store = common / "pavans-workflow" / "gate-logs"
+    logs = store / safe_name(step)
+    try:
+        # A symlinked store would let logs and pruning reach outside the git dir.
+        if any(path.is_symlink() for path in (store.parent, store, logs)):
+            return None
+        logs.mkdir(parents=True, exist_ok=True)
+        os.utime(logs)  # rewriting a log does not touch the directory; recency decides retention
+    except OSError:
+        return None
+    prune_gate_logs(logs)
+    return logs
+
+
 def failure_excerpt(*outputs: str) -> list[str]:
     """Failing lines from anywhere in the output (the tail alone often holds only the summary).
 
-    The runner's own failure lines come first, then other lines that mention a failure.
+    Runner failure lines come first — the first and the last 20, so an early flood
+    never hides the real failure — then other lines that mention a failure.
     """
-    runner: list[str] = []
+    half = EXCERPT_LINES // 2
+    head: list[str] = []
+    tail: list[str] = []
     other: list[str] = []
     for output in outputs:
         for raw in (output or "").splitlines():
@@ -288,10 +321,19 @@ def failure_excerpt(*outputs: str) -> list[str]:
             if not (is_runner or FAILURE_LINE.search(line)) or NOT_A_FAILURE.search(line):
                 continue
             text = line.strip()[:EXCERPT_LINE_CHARS]
-            bucket = runner if is_runner else other
-            if text and text not in bucket and len(bucket) < EXCERPT_LINES:
-                bucket.append(text)
-    return (runner + other)[:EXCERPT_LINES]
+            if not text:
+                continue
+            if is_runner:
+                if text in head or text in tail:
+                    continue
+                if len(head) < half:
+                    head.append(text)
+                else:
+                    tail.append(text)
+                    del tail[:-half]
+            elif text not in other and len(other) < EXCERPT_LINES:
+                other.append(text)
+    return (head + tail + other)[:EXCERPT_LINES]
 
 
 def write_log(path: Path, command: str, exit_code: int, stdout: str, stderr: str) -> str | None:
@@ -372,15 +414,7 @@ def evaluate(
     gates = [gate for gate in all_gates if not (scope == "coder" and gate["close_only"])]
     logs: Path | None = None
     if run and log_dir == "auto":
-        common = common_git_dir(root)
-        logs = common / "pavans-workflow" / "gate-logs" / safe_name(step) if common else None
-        if logs is not None:
-            try:
-                logs.mkdir(parents=True, exist_ok=True)
-                os.utime(logs)  # rewriting a log does not touch the directory; recency decides retention
-            except OSError:
-                pass
-            prune_gate_logs(logs)
+        logs = gate_log_dir(root, step)
     elif run and log_dir:
         logs = Path(log_dir)
     failed = 0

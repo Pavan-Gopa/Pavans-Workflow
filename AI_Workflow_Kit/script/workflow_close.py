@@ -34,7 +34,8 @@ decision:
 gate lists its full log and the failing lines (`objective.failures`).
 
 Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result/objective_not_run · 2 error.
-The decision is also written to <git-common-dir>/pavans-workflow/close-checks/<step>.json.
+Except under `--no-run`, the decision is also written to
+<git-common-dir>/pavans-workflow/close-checks/<step>.json.
 """
 
 from __future__ import annotations
