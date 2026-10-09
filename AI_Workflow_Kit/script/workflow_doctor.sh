@@ -161,6 +161,13 @@ PYCONTEXT
   else
     warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast once product source exists"
   fi
+  # Project rules that force every agent through Graphify or make workers refresh it (R20).
+  local graphify_rules graphify_rule
+  graphify_rules="$(python3 AI_Workflow_Kit/script/workflow_graphify_rules.py . 2>/dev/null || true)"
+  if [[ -n "$graphify_rules" ]]; then
+    warn "project rules make every agent run or refresh Graphify — workers pay for it on every step; R20 leaves graph freshness to Main (remove or narrow these lines):"
+    while IFS= read -r graphify_rule; do printf '     %s\n' "$graphify_rule" >&2; done <<<"$graphify_rules"
+  fi
 
   # --- metrics, guard store, migrations ------------------------------------------------
   if git rev-parse --git-common-dir >/dev/null 2>&1; then

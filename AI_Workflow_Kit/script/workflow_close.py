@@ -18,16 +18,24 @@ decision:
   close_quick          quick card, risk not high, >=1 command gate and all green,
                        every manual Objective gate checked, a clean Coder/Designer
                        guard verdict and no open violation, no blast-radius hit
-  review               continue with Reviewer (and Tester) — includes quick
-                       cards that were refused, with the reasons listed
+  review               continue with Reviewer (and the Tester when tester.required)
+                       — includes quick cards that were refused, with the reasons listed
   reopen_coder         an Objective gate failed
   gate_timeout         an Objective gate timed out after Ns
   reject_worker_result a guard violation for this step is still open (resolve it
                        with `workflow_guard.py resolve --id ... --note ...` after
                        the Human decided)
+  objective_not_run    `--no-run` listing of a card with command gates: nothing
+                       ran, so it never routes (and writes no close-check record)
 
-Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result · 2 error.
-The decision is also written to <git-common-dir>/pavans-workflow/close-checks/<step>.json.
+`tester.required` is true for every `review` decision unless the card says
+`**Tester:** skip — human_opt_out|presentation_only|docs_only|mechanical_rename`
+(R14). Every command gate runs here, `(close-only)` gates included; a failed
+gate lists its full log and the failing lines (`objective.failures`).
+
+Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result/objective_not_run · 2 error.
+Except under `--no-run`, the decision is also written to
+<git-common-dir>/pavans-workflow/close-checks/<step>.json.
 """
 
 from __future__ import annotations
@@ -128,12 +136,31 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
         decision = "gate_timeout"
     elif open_violations:
         decision = "reject_worker_result"
+    elif not run_gates and gates["command_gates"]:
+        # `--no-run` is a listing: no command gate ran, so nothing may route to the Reviewer.
+        decision = "objective_not_run"
     elif profile == "quick" and not quick_blockers and run_gates:
         decision = "close_quick"
     else:
         decision = "review"
 
     effective = "quick" if decision == "close_quick" else ("critical" if profile == "critical" else "standard")
+    failures = [
+        {
+            "id": gate.get("id"),
+            "logs": [item.get("log") for item in gate.get("runs") or [] if item.get("exit_code") != 0 and item.get("log")],
+            "excerpt": next(
+                (item.get("failure_excerpt") for item in gate.get("runs") or [] if item.get("failure_excerpt")), []
+            ),
+        }
+        for gate in gates["gates"]  # type: ignore[union-attr]
+        if gate.get("ok") is False
+    ]
+    if decision == "close_quick":
+        tester = {"required": False, "skip_reason": "close_quick", "note": None}
+    else:
+        reason = gates.get("tester_skip_reason")
+        tester = {"required": not reason, "skip_reason": reason, "note": gates.get("tester_note")}
     return {
         "step": step_id,
         "decision": decision,
@@ -147,9 +174,12 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
         "objective": {
             "status": gates["status"],
             "command_gates": gates["command_gates"],
+            "close_only_gates": gates.get("close_only_gates", 0),
             "failed": [gate.get("id") for gate in gates["gates"] if gate.get("ok") is False],  # type: ignore[union-attr]
+            "failures": failures,
             "timeout_seconds": gates.get("timeout_seconds"),
         },
+        "tester": tester,
         "guard": {
             "verdicts": len(verdicts),
             "latest": {key: latest.get(key) for key in ("verdict", "id", "role", "agent")} if latest else None,
@@ -184,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step", default=None)
     parser.add_argument("--project", default=None)
     parser.add_argument("--base", default="auto")
-    parser.add_argument("--no-run", action="store_true", help="list gates without running them (never close_quick)")
+    parser.add_argument("--no-run", action="store_true", help="list gates without running them (decision objective_not_run; never routes)")
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "900")))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -194,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, RuntimeError, SystemExit) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
-    payload["evidence"] = write_evidence(root, payload)
+    payload["evidence"] = write_evidence(root, payload) if not args.no_run else None
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
@@ -208,12 +238,21 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  open guard violation {item['id']}: {violation['path']}: {violation['reason']}")
         for line in payload["guard"]["info"]:  # type: ignore[index]
             print(f"  guard info: {line}")
-        for gate in payload["objective"]["failed"]:  # type: ignore[index]
-            print(f"  objective gate failed: {gate}")
+        for failure in payload["objective"]["failures"]:  # type: ignore[index]
+            print(f"  objective gate failed: {failure['id']}")
+            for log in failure["logs"]:
+                print(f"    log: {log}")
+            for line in failure["excerpt"][:10]:
+                print(f"    | {line}")
         if payload["decision"] == "gate_timeout":
             ns = payload["objective"].get("timeout_seconds") or args.timeout
             print(f"  objective gate timed out after {ns}s — not a Coder failure: re-run the close check with a larger --timeout; if it times out again at the raised limit, treat it as a hang and reopen the Coder")
-    return 1 if payload["decision"] in {"reopen_coder", "gate_timeout", "reject_worker_result"} else 0
+        if payload["decision"] in {"review", "close_quick"}:
+            tester = payload["tester"]
+            print("  tester: required (R14)" if tester["required"] else f"  tester: skipped ({tester['skip_reason']})")  # type: ignore[index]
+            if tester["note"]:  # type: ignore[index]
+                print(f"  tester note: {tester['note']}")  # type: ignore[index]
+    return 1 if payload["decision"] in {"reopen_coder", "gate_timeout", "reject_worker_result", "objective_not_run"} else 0
 
 
 if __name__ == "__main__":

@@ -92,6 +92,19 @@ const stopGateReady = deriveRoutingExplanation(
 assert.equal(stopGateReady.reasonCode, "stop_gate_ready");
 assert.equal(stopGateReady.actor, "orchestrator");
 
+// 6b. R14: with a card, a project-level QA opt-out never skips the Tester; only the card's reason does.
+const legacyOptOut = { ...baseState, reviewVerdict: "approved", qaEnabled: false, qaStatus: "skipped" };
+assert.equal(deriveRoutingExplanation(legacyOptOut, baseRuntime).reasonCode, "stop_gate_ready", "no card: legacy qa.enabled decides");
+const cardRequires = deriveRoutingExplanation(legacyOptOut, baseRuntime, { pipelineProfile: "standard", risk: "normal" });
+assert.equal(cardRequires.reasonCode, "qa_pending", "a card without a skip reason requires the Tester");
+assert.equal(cardRequires.actor, "tester");
+const cardSkips = deriveRoutingExplanation(
+	{ ...baseState, reviewVerdict: "approved", qaStatus: "pending" },
+	baseRuntime,
+	{ pipelineProfile: "standard", risk: "normal", testerSkipReason: "presentation_only" },
+);
+assert.equal(cardSkips.reasonCode, "stop_gate_ready", "an R14 card reason skips the Tester");
+
 // 7. Model failure waiting authorization
 const modelFailure = deriveRoutingExplanation(
 	{

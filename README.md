@@ -1,6 +1,6 @@
 # Pavan's Workflow
 
-[![Version](https://img.shields.io/badge/version-3.7.0-1f6feb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.7.1-1f6feb)](CHANGELOG.md)
 [![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
 [![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -48,7 +48,8 @@ the worker before they run.
 | Read-only roles change nothing; Coder/Designer stay in `target_files`; Tester in test paths; no worker edits workflow files or changes git state | `workflow-guard` extension: blocks the tool call inside the worker before it runs; `workflow_guard.py` verifies what the worker edited (changes by Main, the Human, or parallel sessions are never the worker's) |
 | Backup workers start on recorded primary model/provider failure | `before_subagent_spawn` hook blocks unauthorized spawns |
 | `quick` closes only with green command gates, manual gates checked, a clean Coder/Designer guard verdict and no open violation, no blast-radius hit, and risk not high | `workflow_close.py check` |
-| Objective Gates are re-run by Main, not trusted from worker reports | `workflow_gates.py` |
+| Objective Gates are re-run by Main, not trusted from worker reports; the whole-project suite (`(close-only)`) runs once in the close check, not again in the Coder, and a failure arrives with its failing lines and full log | `workflow_gates.py` |
+| The Tester runs on every step unless the close check decides `close_quick` or the card names an R14 skip reason (`human_opt_out`, `presentation_only`, `docs_only`, `mechanical_rename`) | `workflow_close.py check` (`tester.required`) · dashboard routing |
 | Reviewer is independent of the Coder model (primary and backup) | doctor warning (`workflow_model_diversity.py`) |
 | One worker at a time, no recursive spawning, no automatic model fallback | `.omp/config.yml` task/retry policy |
 
@@ -94,7 +95,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Inside OMP: `/workflow-update check` (plan) or `/workflow-update`. From a
 shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
-`--ref v3.7.0` to pin a release, `--refresh-graphify` to rebuild the graph.
+`--ref v3.7.1` to pin a release, `--refresh-graphify` to rebuild the graph.
 
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
@@ -175,7 +176,7 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.7.0
+3.7.1
 ```
 
 ## Repository map

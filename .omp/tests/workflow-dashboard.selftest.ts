@@ -915,6 +915,62 @@ assert.match(profiledText, /BUDGET/);
 assert.match(profiledText, /Time · 0m \/ 20m/);
 assert.match(profiledText, /Tokens · 410 tok \/ 100,000 tok/);
 assert.match(profiledText, /Cost · unavailable/);
+
+// R14: the card's `**Tester:**` line decides QA; it sits among the gates without ending the section.
+const testerSteps = parseSteps(`
+## S7 — Behaviour change
+
+**Objective gates:**
+- [ ] [S7.O1] \`$ true\` exits 0
+**Tester:** required
+- [ ] [S7.O2] \`$ true\` exits 0
+
+## S8 — Colour tweak
+
+**Tester:** skip — presentation_only
+
+## S9 — Negated reason
+
+**Tester:** skip — not presentation_only; this changes behaviour
+`);
+assert.deepEqual(testerSteps[0].objectiveGates.map(gate => gate.id), ["S7.O1", "S7.O2"]);
+assert.deepEqual(testerSteps[0].objectiveGates.map(gate => gate.text), ["`$ true` exits 0", "`$ true` exits 0"], "the Tester line never joins an item's text");
+assert.equal(testerSteps[0].testerSkipReason, undefined);
+assert.equal(testerSteps[1].testerSkipReason, "presentation_only");
+assert.equal(testerSteps[2].testerSkipReason, undefined, "only the exact skip grammar counts");
+const legacyOptOutState = parseWorkflowState(`
+schema_version: 2
+current_step: S7
+current_work_item_id: S7.O1
+onboarding:
+  status: complete
+review:
+  status: complete
+  verdict: approved
+qa:
+  enabled: false
+  status: skipped
+`);
+const r14Text = renderDashboard(deriveDashboardViewModel({ ...idData, state: legacyOptOutState, steps: testerSteps }, idRuntime), 160, 44)
+	.lines.map(line => line.text).join("\n");
+assert.match(r14Text, /○ QA · required \(R14\)/, "a project-level opt-out leaves the QA gate pending when the card requires the Tester");
+assert.doesNotMatch(r14Text, /Stop-gate ready/);
+// Open Tester bugs fail the QA row even when the card would skip the Tester.
+const bugsOnSkipCard = parseWorkflowState(`
+schema_version: 2
+current_step: S8
+onboarding:
+  status: complete
+review:
+  status: complete
+  verdict: approved
+qa:
+  enabled: true
+  status: bugs
+`);
+const bugsText = renderDashboard(deriveDashboardViewModel({ ...idData, state: bugsOnSkipCard, steps: testerSteps }, idRuntime), 160, 44)
+	.lines.map(line => line.text).join("\n");
+assert.match(bugsText, /QA · bugs/, "bugs are never shown as skipped");
 // Cross-project leaderboard: summary in the health column, full tables on `l`, graceful failure.
 const crossProject: CrossProjectReport = {
 	scope: "all",

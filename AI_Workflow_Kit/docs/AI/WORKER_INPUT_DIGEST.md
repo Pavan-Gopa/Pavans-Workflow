@@ -2,6 +2,9 @@
 
 Main pastes only the matching role block into the assignment. Workers do not
 reload TEAM_CONTRACT, KICK_*, or PROJECT_CONTEXT when the packet is complete.
+Every role: query Graphify with `graphify query "<question>" --graph graphify-out/graph.json --budget 1500`
+(or `path`/`explain`); never load `skill://graphify` and never run `graphify update`
+or a rebuild — Main owns graph freshness (R20).
 
 ## Backup variant (any `workflow-<role>-backup` agent)
 
@@ -22,6 +25,7 @@ writes: assignment target_files only
 never: workflow files, commit, push, route, spawn
 ponytail_mode: <full|lite|off>
 navigation: Graphify for unknown blast radius; LSP/grep/read for a named local symbol; always verify real source
+gates: run `python3 AI_Workflow_Kit/script/workflow_gates.py run --for coder --step <step>`; never run `(close-only)` gates — the close check runs them on the final tree
 blocked: if a required path is outside target_files
 result: waiting_review | blocked; changed_files; objective_gate_ids; commands+results only, no diff paste
 ```

@@ -77,6 +77,50 @@ STEPS = """# Steps
 ### Objective gates
 
 - [ ] [Q7.O1] `$ test -f src/q7.ts` exits 0
+
+## S2 — Presentation-only polish
+
+**Tester:** skip — presentation_only
+
+### Objective gates
+
+- [ ] [S2.O1] `$ true` exits 0
+
+## S3 — Skip without a listed reason
+
+**Tester:** skip — the Coder already wrote tests
+
+### Objective gates
+
+- [ ] [S3.O1] `$ true` exits 0
+
+## S4 — Tester written as optional
+
+**Tester:** optional, the Coder covers it
+
+### Objective gates
+
+- [ ] [S4.O1] `$ true` exits 0
+
+## S5 — Negated reason
+
+**Tester:** skip — not presentation_only; this changes behaviour
+
+### Objective gates
+
+- [ ] [S5.O1] `$ true` exits 0
+
+## N1 — Whole suite only in the close check
+
+### Objective gates
+
+- [ ] [N1.O1] (close-only) `$ touch SUITE_RAN` exits 0
+
+## F1 — Failure early in a long log
+
+### Objective gates
+
+- [ ] [F1.O1] `$ sh -c 'echo "Test Case Cart.testTotal failed (0.1 seconds)"; i=0; while [ $i -lt 300 ]; do echo "Test Case Cart.testOther passed (0.01 seconds)"; i=$((i+1)); done; echo "Executed 301 tests, with 1 failure"; exit 1'` exits 0
 """
 
 
@@ -140,6 +184,7 @@ def main() -> int:
         assert code == 0 and decision["decision"] == "close_quick", decision
         assert decision["effective_profile"] == "quick" and decision["quick_forbidden"] is False
         assert decision["evidence"] and Path(decision["evidence"]).is_file()
+        assert decision["tester"] == {"required": False, "skip_reason": "close_quick", "note": None}, decision
 
         write(root, "src/login.ts", "export const login = 1\n")
         code, decision = close(root, "Q1")
@@ -208,6 +253,15 @@ def main() -> int:
         code, decision = close(root, "Q4")
         assert code == 1 and decision["decision"] == "reopen_coder" and decision["objective"]["failed"] == ["Q4.O1"]
 
+        # A failing test named early in a long log reaches Main, so nobody re-runs the suite to find it.
+        code, decision = close(root, "F1")
+        assert code == 1 and decision["decision"] == "reopen_coder", decision
+        failure = decision["objective"]["failures"][0]
+        assert failure["id"] == "F1.O1", failure
+        assert any("Cart.testTotal failed" in line for line in failure["excerpt"]), failure
+        assert not any("testOther" in line for line in failure["excerpt"]), "passing lines are not failures"
+        assert "Cart.testTotal" in Path(failure["logs"][0]).read_text(encoding="utf-8"), failure
+
         # A first Fast Coder run with clean gates and scope closes as quickly as the strong Coder.
         guarded_worker(root, "Q7", "coder_fast", lambda: write(root, "src/q7.ts", "export {}\n"), ("src/q7.ts",))
         code, decision = close(root, "Q7")
@@ -220,6 +274,29 @@ def main() -> int:
 
         code, decision = close(root, "S1")
         assert code == 0 and decision["decision"] == "review" and decision["quick_blockers"] == []
+        assert decision["tester"] == {"required": True, "skip_reason": None, "note": None}, decision
+
+        code, decision = close(root, "S2")
+        assert decision["decision"] == "review" and decision["tester"]["required"] is False, decision
+        assert decision["tester"]["skip_reason"] == "presentation_only", decision
+
+        # "The Coder already wrote tests" is not an R14 reason: the Tester stays required.
+        code, decision = close(root, "S3")
+        assert decision["tester"]["required"] is True and decision["tester"]["skip_reason"] is None, decision
+        assert "presentation_only" in (decision["tester"]["note"] or ""), decision
+        # "optional" is not a skip either; Main is told so instead of reading it as one.
+        code, decision = close(root, "S4")
+        assert decision["tester"]["required"] is True and "stays required" in (decision["tester"]["note"] or ""), decision
+        # A listed reason inside other prose is not the skip directive.
+        code, decision = close(root, "S5")
+        assert decision["tester"]["required"] is True and decision["tester"]["skip_reason"] is None, decision
+
+        # `--no-run` lists gates; with a close-only gate nothing else ran it, so it must never route.
+        code, decision = close(root, "N1", "--no-run")
+        assert code == 1 and decision["decision"] == "objective_not_run", decision
+        assert decision["evidence"] is None and not (root / "SUITE_RAN").exists(), decision
+        code, decision = close(root, "N1")
+        assert code == 0 and decision["decision"] == "review" and (root / "SUITE_RAN").exists(), decision
     print("workflow_close.selftest: PASS")
     return 0
 

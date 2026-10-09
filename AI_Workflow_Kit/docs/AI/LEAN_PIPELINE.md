@@ -14,11 +14,17 @@ Written on the `STEPS.md` card and copied into `STATE.yaml` before dispatch:
 
 | Profile | Reviewer | Tester | Security |
 |---|---|---|---|
-| `standard` (default) | on unless the Human skips it | recommended | offered near release |
+| `standard` (default) | on unless the Human skips it | on (R14 lists the only skip reasons) | offered near release |
 | `quick` | skipped only on a `close_quick` decision | skipped with it | no |
-| `critical` | on | on unless the Human skips it | scoped pass offered on a blast-radius hit |
+| `critical` | on | on (R14 lists the only skip reasons) | scoped pass offered on a blast-radius hit |
 
 Writing `quick` on the card is the Human's authorization; Main never invents it.
+A card skips the Tester only with one listed reason, which the close check
+reports as `tester.skip_reason`:
+
+```markdown
+**Tester:** skip — presentation_only   # or human_opt_out | docs_only | mechanical_rename
+```
 
 ## Close decision (code, not memory)
 
@@ -42,7 +48,11 @@ checkpoint tag (`workflow_security_scope.py`). `close_quick` needs all of:
   workflow control plane.
 
 Otherwise the decision is `review` and the output lists `quick_blockers`.
-`reopen_coder` means a gate failed; `gate_timeout` means an objective gate timed out after Ns (not a Coder failure; re-run check with a larger `--timeout`); `reject_worker_result` means a guard
+`reopen_coder` means a gate failed: `objective.failures` lists the failing lines
+and the full log under `<git-common-dir>/pavans-workflow/gate-logs/<step>/`, so
+the fresh Coder starts from the exact failure and nobody re-runs the suite to find
+it. `gate_timeout` means an objective gate timed out after Ns (not a Coder failure;
+re-run check with a larger `--timeout`); `reject_worker_result` means a guard
 violation for the step is still open (R7) — a later clean run never hides it.
 A violation is only ever a change the worker itself made; `guard.info` lists
 blocked attempts, shell suspects, and 3.5.x legacy verdicts (whole-repository
@@ -56,12 +66,21 @@ diffs, not attributable), none of which changes the decision.
 - [ ] [S3.O1] `$ npm test -- --run src/cart` exits 0     explicit: always runs
 - [ ] [S3.O2] `pytest -q tests/cart` exits 0             recognised runner
 - [ ] [S3.O3] `./script/smoke.sh` exits 0                explicit relative path
-- [ ] [S3.O4] `CHANGELOG.md` mentions the cart fix       manual evidence (not run)
+- [ ] [S3.O4] (close-only) `$ npm test` exits 0          whole suite: close check only
+- [ ] [S3.O5] `CHANGELOG.md` mentions the cart fix       manual evidence (not run)
 ```
 
 Every command on a line must pass. Backticked file or symbol names are never
 executed. `python3 AI_Workflow_Kit/script/workflow_gates.py list` shows how a
-card is parsed.
+card is parsed; `--for coder` shows the gates the Coder runs.
+
+`(close-only)` keeps a slow whole-project gate out of the Coder's loop: the Coder
+runs the step's own command gates, and `workflow_close.py check` runs every gate,
+`(close-only)` included, once on the final tree before review. Quality is
+unchanged — the same commands still pass before the Reviewer sees the step — and
+the suite no longer runs twice on an identical tree. Keep at least one command
+gate without the marker (the router counts only those; a card whose every
+command gate is `(close-only)` never goes to the Fast Coder).
 
 ## Routing and retry economy
 

@@ -64,7 +64,7 @@ Supported event types:
 | `failure` | Main verified a product/workflow failure and its taxonomy |
 | `runtime_interruption` | Main completed startup/resume interruption classification |
 | `model_failure` | Main persisted a real model/provider blocker (`status: awaiting_human` or `auto_failover`) |
-| `gate_skipped` | Human explicitly skipped Reviewer, QA, or Security |
+| `gate_skipped` | Human explicitly skipped Reviewer, QA, or Security, or the close check skipped QA for a card's R14 reason (`tester.skip_reason`) |
 | `retry_safeguard_triggered` | The existing no-progress threshold was reached |
 | `human_turn` | A Human message reached Main while a step was current (recorded by the `workflow-main-attribution` extension, not by Main) |
 | `orchestrator_model` | The model Main ran for a step, first seen or changed (same extension) |
@@ -126,7 +126,7 @@ next actor.
 | Verify Reviewer/Tester/Main/Architect product failure | `failure` |
 | Classify a disappeared/killed worker on resume | `runtime_interruption` |
 | Persist `omp.model_failure.status: awaiting_human` | `model_failure` |
-| Persist explicit Human gate opt-out | `gate_skipped` |
+| Persist explicit Human gate opt-out, or a QA skip the close check reported (`tester.required: false`) | `gate_skipped` |
 | Existing retry safeguard reaches its threshold | `retry_safeguard_triggered` |
 | Verify Reviewer + enabled QA Stop-gate and close step | `step_completed` |
 

@@ -12,6 +12,11 @@
 (green command gates, clean worker guard, risk not high, no blast-radius hit).
 Write runnable Objective gates as `` `$ command` `` (or a recognised runner such
 as `npm test`, `pytest`); backticked file or symbol names are never executed.
+Mark the whole-project suite `(close-only)`: the Coder runs the step's own
+command gates, and the close check runs every gate once on the final tree.
+The Tester runs on every step; only a `close_quick` decision or a card line
+`**Tester:** skip — human_opt_out|presentation_only|docs_only|mechanical_rename`
+skips it (R14).
 
 Every checklist item carries a stable ID: `<step>.<D|O|J><n>` — `D` for `Do`
 work items, `O` for Objective gates, `J` for Judgment gates. IDs are unique
@@ -26,6 +31,7 @@ active item by `current_work_item_id`, not by text. Run
 **Depends on:** S0 / none  
 **Risk:** normal  
 **Pipeline profile:** standard  
+**Tester:** required  
 **Target files (sketch):**  
 - path/a  
 - path/b  
@@ -41,8 +47,9 @@ active item by `current_work_item_id`, not by text. Run
 
 ### Objective gates
 
-- [ ] [S1.O1] `$ exact command` exits 0
-- [ ] [S1.O2] required artifact or behavior is deterministically present
+- [ ] [S1.O1] `$ exact build + the step's own tests` exits 0
+- [ ] [S1.O2] (close-only) `$ exact whole-project test command` exits 0
+- [ ] [S1.O3] required artifact or behavior is deterministically present
 
 ### Judgment gates
 
@@ -53,7 +60,7 @@ active item by `current_work_item_id`, not by text. Run
 Objective gates are green.
 
 **Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
-(Tester qa_green | QA explicitly skipped by Human)
+(Tester qa_green | Tester skipped with an R14 reason)
 ```
 
 ---
@@ -71,7 +78,7 @@ Objective gates are green.
 - [ ] [S0.D1] Orchestrator confirms: ready to work with this process.
 - [ ] [S0.D2] Human provides project context.
 - [ ] [S0.D3] Enough context → minimal plan (S1+). Thin context → Architect research + plan.
-- [ ] [S0.D4] Confirm gates: review on by default; Tester recommended.
+- [ ] [S0.D4] Confirm gates: review on by default; Tester on every behaviour step (R14).
 
 **Out of scope:**
 - Large product implementation before plan exists
@@ -86,6 +93,7 @@ Objective gates are green.
 
 - [ ] [S0.J1] next step or Architect path is clear
 
+**Tester:** skip — docs_only  
 **Stop-gate:** Human agrees with the plan path
 
 ---
@@ -118,7 +126,7 @@ Objective gates are green.
 Objective gates are green.
 
 **Stop-gate:** (Reviewer APPROVED | review explicitly skipped by Human) +
-(Tester qa_green | QA explicitly skipped by Human)
+(Tester qa_green | Tester skipped with an R14 reason)
 
 ---
 

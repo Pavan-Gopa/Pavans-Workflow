@@ -15,7 +15,11 @@ export type StepRoutingMeta = {
 	pipelineProfile?: PipelineProfile;
 	risk?: StepRisk;
 	quickForbidden?: boolean;
+	/** R14 skip reason from the card (`**Tester:** skip — <reason>`); undefined keeps the Tester required. */
+	testerSkipReason?: string;
 };
+
+const CLOSE_CHECK = "python3 AI_Workflow_Kit/script/workflow_close.py check --json";
 
 export type RoutingReasonCode =
 	| "worker_running"
@@ -67,8 +71,18 @@ export function ponytailModeForRetry(input: {
 	return "lite";
 }
 
-function qaSatisfied(state: WorkflowState): boolean {
-	return !state.qaEnabled || state.qaStatus === "qa_green" || state.qaStatus === "skipped";
+/**
+ * R14: with a card, the Tester is required unless the card names a skip reason;
+ * a project-level `qa.enabled: false` or `qa.status: skipped` never overrides it.
+ * Without a card (legacy state), `qa.enabled` decides.
+ */
+export function testerRequired(state: WorkflowState, step?: StepRoutingMeta): boolean {
+	return step ? !step.testerSkipReason : state.qaEnabled;
+}
+
+export function qaSatisfied(state: WorkflowState, step?: StepRoutingMeta): boolean {
+	if (!testerRequired(state, step)) return true;
+	return state.qaStatus === "qa_green" || (!step && state.qaStatus === "skipped");
 }
 
 export function deriveRoutingExplanation(
@@ -199,7 +213,7 @@ export function deriveRoutingExplanation(
 			actorLabel: "Reviewer",
 			pipelineProfile: profile,
 			prerequisites: [
-				"python3 AI_Workflow_Kit/script/workflow_gates.py run --json",
+				CLOSE_CHECK,
 				"python3 AI_Workflow_Kit/script/workflow_security_scope.py --json",
 			],
 		};
@@ -213,7 +227,7 @@ export function deriveRoutingExplanation(
 			actor: "orchestrator",
 			actorLabel: "Main",
 			pipelineProfile: profile,
-			prerequisites: ["python3 AI_Workflow_Kit/script/workflow_gates.py run --json"],
+			prerequisites: [CLOSE_CHECK],
 		};
 	}
 
@@ -225,16 +239,18 @@ export function deriveRoutingExplanation(
 			actor: "reviewer",
 			actorLabel: "Reviewer",
 			pipelineProfile: profile,
-			prerequisites: ["python3 AI_Workflow_Kit/script/workflow_gates.py run --json"],
+			prerequisites: [CLOSE_CHECK],
 		};
 	}
 
-	if (state.reviewVerdict === "approved" && state.qaEnabled && state.qaStatus !== "qa_green") {
+	if (state.reviewVerdict === "approved" && !qaSatisfied(state, step)) {
 		return {
 			action: "Main verifies review, then dispatches Tester",
 			reason: profile === "critical"
 				? "Reviewer approved; critical profile keeps QA on the path"
-				: "Reviewer approved the Judgment Gates and QA is enabled",
+				: step
+					? "Reviewer approved; the card names no R14 Tester skip reason, so the Tester runs"
+					: "Reviewer approved the Judgment Gates and QA is enabled",
 			reasonCode: "qa_pending",
 			actor: "tester",
 			actorLabel: "Tester",
@@ -242,7 +258,7 @@ export function deriveRoutingExplanation(
 		};
 	}
 
-	if (state.reviewVerdict === "approved" && qaSatisfied(state) && state.securityNextRun === "offer_scoped") {
+	if (state.reviewVerdict === "approved" && qaSatisfied(state, step) && state.securityNextRun === "offer_scoped") {
 		return {
 			action: "Main asks Human whether to run a scoped Security pass on the blast-radius files",
 			reason: "Verified diff matched auth/credential/trust-boundary paths; this is optional and not a full pre-release campaign",
@@ -254,7 +270,7 @@ export function deriveRoutingExplanation(
 		};
 	}
 
-	if (state.reviewVerdict === "approved" && qaSatisfied(state)) {
+	if (state.reviewVerdict === "approved" && qaSatisfied(state, step)) {
 		return {
 			action: "Main closes the Stop-gate and opens the next step",
 			reason: "Reviewer approved and QA is satisfied; step Stop-gate conditions met",
