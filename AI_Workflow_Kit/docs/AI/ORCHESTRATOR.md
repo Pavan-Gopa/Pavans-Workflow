@@ -61,8 +61,8 @@ command gate `(close-only)`.
 
 Right after a Coder/Designer handoff, start the fast graph refresh
 (`bash AI_Workflow_Kit/script/graphify_rebuild.sh fast`) in the background together
-with the close check rather than before it; dispatch the Reviewer once the refresh
-has finished.
+with the close check rather than before it. The Reviewer still starts only on a
+`review` decision, once the refresh has finished.
 
 | Role | Agent | Use |
 |---|---|---|
@@ -122,10 +122,11 @@ python3 AI_Workflow_Kit/script/workflow_close.py check --json
 | `decision` | Main does |
 |---|---|
 | `close_quick` | close the step (R13): check items, record evidence path, checkpoint |
-| `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, dispatch Reviewer |
+| `review` | persist `waiting_review`, set `pipeline.quick_forbidden` from the output, copy `tester` into `qa` (`enabled: <tester.required>`; when false, `status: skipped` and `note: <tester.skip_reason>` plus metrics `gate_skipped`), dispatch Reviewer |
 | `reopen_coder` | reopen the failed Objective items, persist verified retry memory, fresh Coder with `objective.failures` (failing lines and full log path). Never re-run the suite by hand to find the failing test: read the log |
 | `reject_worker_result` | R7: show the Human the open violation(s), restore or keep the changes as they decide, `resolve` each verdict with their decision, re-run the check |
 | `gate_timeout` | Objective gate timed out after Ns — not a Coder failure: re-run the close check with a larger `--timeout`; if it times out again at the raised limit, treat it as a hang and reopen the Coder |
+| `objective_not_run` | `--no-run` listing only: run the check without `--no-run` before routing anywhere |
 
 `guard.info` lines (blocked attempts, shell suspects, 3.5.x legacy verdicts)
 never change the decision; mention them to the Human when they matter.

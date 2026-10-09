@@ -18,20 +18,22 @@ decision:
   close_quick          quick card, risk not high, >=1 command gate and all green,
                        every manual Objective gate checked, a clean Coder/Designer
                        guard verdict and no open violation, no blast-radius hit
-  review               continue with Reviewer (and Tester) — includes quick
-                       cards that were refused, with the reasons listed
+  review               continue with Reviewer (and the Tester when tester.required)
+                       — includes quick cards that were refused, with the reasons listed
   reopen_coder         an Objective gate failed
   gate_timeout         an Objective gate timed out after Ns
   reject_worker_result a guard violation for this step is still open (resolve it
                        with `workflow_guard.py resolve --id ... --note ...` after
                        the Human decided)
+  objective_not_run    `--no-run` listing of a card with command gates: nothing
+                       ran, so it never routes (and writes no close-check record)
 
 `tester.required` is true for every `review` decision unless the card says
 `**Tester:** skip — human_opt_out|presentation_only|docs_only|mechanical_rename`
 (R14). Every command gate runs here, `(close-only)` gates included; a failed
 gate lists its full log and the failing lines (`objective.failures`).
 
-Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result · 2 error.
+Exit: 0 close_quick/review · 1 reopen_coder/gate_timeout/reject_worker_result/objective_not_run · 2 error.
 The decision is also written to <git-common-dir>/pavans-workflow/close-checks/<step>.json.
 """
 
@@ -133,6 +135,9 @@ def decide(root: Path, step: str | None, base: str, run_gates: bool, timeout: in
         decision = "gate_timeout"
     elif open_violations:
         decision = "reject_worker_result"
+    elif not run_gates and gates["command_gates"]:
+        # `--no-run` is a listing: no command gate ran, so nothing may route to the Reviewer.
+        decision = "objective_not_run"
     elif profile == "quick" and not quick_blockers and run_gates:
         decision = "close_quick"
     else:
@@ -208,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--step", default=None)
     parser.add_argument("--project", default=None)
     parser.add_argument("--base", default="auto")
-    parser.add_argument("--no-run", action="store_true", help="list gates without running them (never close_quick)")
+    parser.add_argument("--no-run", action="store_true", help="list gates without running them (decision objective_not_run; never routes)")
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("WF_GATE_TIMEOUT", "900")))
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -218,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, RuntimeError, SystemExit) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
-    payload["evidence"] = write_evidence(root, payload)
+    payload["evidence"] = write_evidence(root, payload) if not args.no_run else None
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
@@ -246,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             print("  tester: required (R14)" if tester["required"] else f"  tester: skipped ({tester['skip_reason']})")  # type: ignore[index]
             if tester["note"]:  # type: ignore[index]
                 print(f"  tester note: {tester['note']}")  # type: ignore[index]
-    return 1 if payload["decision"] in {"reopen_coder", "gate_timeout", "reject_worker_result"} else 0
+    return 1 if payload["decision"] in {"reopen_coder", "gate_timeout", "reject_worker_result", "objective_not_run"} else 0
 
 
 if __name__ == "__main__":

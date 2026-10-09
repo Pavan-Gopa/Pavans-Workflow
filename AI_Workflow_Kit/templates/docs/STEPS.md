@@ -14,8 +14,9 @@ Write runnable Objective gates as `` `$ command` `` (or a recognised runner such
 as `npm test`, `pytest`); backticked file or symbol names are never executed.
 Mark the whole-project suite `(close-only)`: the Coder runs the step's own
 command gates, and the close check runs every gate once on the final tree.
-The Tester runs on every step; only `**Tester:** skip — human_opt_out`,
-`presentation_only`, `docs_only`, or `mechanical_rename` skips it (R14).
+The Tester runs on every step; only a `close_quick` decision or a card line
+`**Tester:** skip — human_opt_out|presentation_only|docs_only|mechanical_rename`
+skips it (R14).
 
 Every checklist item carries a stable ID: `<step>.<D|O|J><n>` — `D` for `Do`
 work items, `O` for Objective gates, `J` for Judgment gates. IDs are unique

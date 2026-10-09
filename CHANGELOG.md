@@ -27,26 +27,35 @@ opt-out, although in ULPone it found bugs on 6 of the 20 steps it ran.
   for the Coder (build + the step's own tests) and mark the whole-project suite
   `(close-only)`. The router counts only Coder-runnable gates, so a card whose
   every command gate is `(close-only)` never goes to the Fast Coder.
+  `workflow_close.py check --no-run` is a listing only: with command gates it
+  returns `objective_not_run` (exit 1) and writes no close-check record, so a
+  run that executed nothing can never route to the Reviewer.
 - **Gate logs and failure excerpts.** Every gate command's full output is kept
   in `<git-common-dir>/pavans-workflow/gate-logs/<step>/` (the 20 most recent
   steps). A failed command
   reports `failure_excerpt` — the runner's own failure lines (XCTest, Swift
-  Testing, pytest, Jest/Vitest, cargo, go, tsc) first, from anywhere in the
-  output — and the close check lists them with the log path in
-  `objective.failures`. Main hands them to the fresh Coder and never re-runs the
-  suite to find a failure.
+  Testing, Swift/clang, pytest, Jest/Vitest, cargo, go, tsc) first, from
+  anywhere in the (ANSI-stripped) output — and the close check lists them with
+  the log path in `objective.failures`. Main hands them to the fresh Coder and
+  never re-runs the suite to find a failure.
 - **Tester required (R14).** The close check reports `tester.required`; the
-  Tester is skipped only on `close_quick` or a card line
+  Tester is skipped only on `close_quick` or exactly one card line
   `**Tester:** skip — human_opt_out | presentation_only | docs_only |
-  mechanical_rename`. Any other skip text keeps the Tester required and adds a
-  `tester.note`. "The Coder already wrote tests" is never a reason.
+  mechanical_rename`. Anything else (another value, extra prose, a negation,
+  two `**Tester:**` lines) keeps the Tester required and adds a `tester.note`.
+  "The Coder already wrote tests" is never a reason. A `**Tester:**` line is
+  card metadata and never ends the Objective-gates section. Main copies the
+  decision into `STATE.yaml` `qa`; the Alt+W dashboard routes and shows the QA
+  gate from the card, so a project-level `qa.enabled: false`/`qa.status:
+  skipped` no longer lets a step skip the Tester.
 - **Graphify (R20).** Workers query the CLI directly
   (`graphify query … --budget 1500`), never load `skill://graphify`, and never
   run `graphify update` or rebuilds, whatever a project rule says. Main starts
   the post-handoff refresh in the background alongside the close check. The
   doctor warns when `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `.claude/rules`,
   `.windsurf/rules`, `.clinerules`, or Copilot instructions mandate Graphify
-  for every agent or make agents refresh it.
+  for every agent or make agents refresh it (prohibitions and Main-only lines
+  are not flagged).
 - `STEPS.md` template, `TEAM_CONTRACT.md` (R14, R20), `ORCHESTRATOR.md`,
   `LEAN_PIPELINE.md`, `KICK_CODER.md`, `KICK_TESTER.md`,
   `WORKER_INPUT_DIGEST.md`, `GIT_CHECKPOINTS.md`, and the Coder, Designer,
@@ -55,9 +64,9 @@ opt-out, although in ULPone it found bugs on 6 of the 20 steps it ran.
 ### Upgrade note
 
 Existing cards have no `(close-only)` marker, so the Coder keeps running every
-gate until Main writes new cards. A standing Human Tester opt-out recorded in a
-project's `DECISIONS.md`/`STATE.yaml` stays in force until the Human withdraws
-it; per step it is written as `**Tester:** skip — human_opt_out`.
+gate until Main writes new cards. A project-level Tester opt-out recorded in
+`DECISIONS.md`/`STATE.yaml` no longer skips the Tester on its own: write
+`**Tester:** skip — human_opt_out` on each card the Human exempts.
 
 ## 3.7.0 — 2026-10-08
 

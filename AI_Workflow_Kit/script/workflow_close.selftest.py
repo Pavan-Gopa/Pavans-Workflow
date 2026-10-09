@@ -94,6 +94,28 @@ STEPS = """# Steps
 
 - [ ] [S3.O1] `$ true` exits 0
 
+## S4 — Tester written as optional
+
+**Tester:** optional, the Coder covers it
+
+### Objective gates
+
+- [ ] [S4.O1] `$ true` exits 0
+
+## S5 — Negated reason
+
+**Tester:** skip — not presentation_only; this changes behaviour
+
+### Objective gates
+
+- [ ] [S5.O1] `$ true` exits 0
+
+## N1 — Whole suite only in the close check
+
+### Objective gates
+
+- [ ] [N1.O1] (close-only) `$ touch SUITE_RAN` exits 0
+
 ## F1 — Failure early in a long log
 
 ### Objective gates
@@ -262,6 +284,19 @@ def main() -> int:
         code, decision = close(root, "S3")
         assert decision["tester"]["required"] is True and decision["tester"]["skip_reason"] is None, decision
         assert "presentation_only" in (decision["tester"]["note"] or ""), decision
+        # "optional" is not a skip either; Main is told so instead of reading it as one.
+        code, decision = close(root, "S4")
+        assert decision["tester"]["required"] is True and "stays required" in (decision["tester"]["note"] or ""), decision
+        # A listed reason inside other prose is not the skip directive.
+        code, decision = close(root, "S5")
+        assert decision["tester"]["required"] is True and decision["tester"]["skip_reason"] is None, decision
+
+        # `--no-run` lists gates; with a close-only gate nothing else ran it, so it must never route.
+        code, decision = close(root, "N1", "--no-run")
+        assert code == 1 and decision["decision"] == "objective_not_run", decision
+        assert decision["evidence"] is None and not (root / "SUITE_RAN").exists(), decision
+        code, decision = close(root, "N1")
+        assert code == 0 and decision["decision"] == "review" and (root / "SUITE_RAN").exists(), decision
     print("workflow_close.selftest: PASS")
     return 0
 

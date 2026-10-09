@@ -162,11 +162,14 @@ PYCONTEXT
     warn "graphify-out/graph.json missing; run graphify_rebuild.sh fast once product source exists"
   fi
   # Project rules that force every agent through Graphify or make workers refresh it (R20).
+  # A line counts when it mandates Graphify or tells agents to refresh it, unless it is a
+  # prohibition or reserves the refresh for Main.
   local graphify_rule_hits="" rule_file
   for rule_file in AGENTS.md CLAUDE.md .cursorrules .clinerules .github/copilot-instructions.md \
       .cursor/rules/*.mdc .cursor/rules/*.md .claude/rules/*.md .windsurf/rules/*.md; do
     [[ -f "$rule_file" ]] || continue
-    if grep -Eiq 'MANDATORY[^.]*graphify|graphify update|graphify_rebuild' "$rule_file"; then
+    if grep -Ei '(mandatory|must|required|always)[^.]*graphify|graphify[^.]*(mandatory|required)|graphify update|graphify_rebuild' "$rule_file" \
+        | grep -Eiqv "\bnever\b|\bmust not\b|\b(do not|don't) (run|use|refresh)\b|\bMain\b"; then
       graphify_rule_hits="$graphify_rule_hits $rule_file"
     fi
   done

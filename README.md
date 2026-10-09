@@ -49,7 +49,7 @@ the worker before they run.
 | Backup workers start on recorded primary model/provider failure | `before_subagent_spawn` hook blocks unauthorized spawns |
 | `quick` closes only with green command gates, manual gates checked, a clean Coder/Designer guard verdict and no open violation, no blast-radius hit, and risk not high | `workflow_close.py check` |
 | Objective Gates are re-run by Main, not trusted from worker reports; the whole-project suite (`(close-only)`) runs once in the close check, not again in the Coder, and a failure arrives with its failing lines and full log | `workflow_gates.py` |
-| The Tester runs on every step unless the card names an R14 skip reason (`human_opt_out`, `presentation_only`, `docs_only`, `mechanical_rename`) | `workflow_close.py check` (`tester.required`) |
+| The Tester runs on every step unless the close check decides `close_quick` or the card names an R14 skip reason (`human_opt_out`, `presentation_only`, `docs_only`, `mechanical_rename`) | `workflow_close.py check` (`tester.required`) · dashboard routing |
 | Reviewer is independent of the Coder model (primary and backup) | doctor warning (`workflow_model_diversity.py`) |
 | One worker at a time, no recursive spawning, no automatic model fallback | `.omp/config.yml` task/retry policy |
 

@@ -1,5 +1,5 @@
 import type { ConsistencyFinding } from "./workflow-consistency.ts";
-import { deriveRoutingExplanation, type RoutingExplanation } from "./workflow-routing.ts";
+import { deriveRoutingExplanation, qaSatisfied, testerRequired, type RoutingExplanation, type StepRoutingMeta } from "./workflow-routing.ts";
 import type { RuntimeTodoLink, RuntimeTodoSnapshot } from "./workflow-runtime-todo.ts";
 
 export type Tone = "normal" | "accent" | "muted" | "warning";
@@ -32,6 +32,8 @@ export type StepCard = {
 	dependsOn: string;
 	risk: StepRisk;
 	pipelineProfile: PipelineProfile;
+	/** R14 skip reason (`**Tester:** skip — <reason>`); undefined keeps the Tester required. */
+	testerSkipReason?: string;
 	budget?: StepBudget;
 	todos: ChecklistItem[];
 	objectiveGates: ChecklistItem[];
@@ -660,6 +662,15 @@ function parsePipelineProfile(body: string): PipelineProfile {
 	return (match?.[1]?.toLowerCase() as PipelineProfile) || "standard";
 }
 
+// Same grammar as workflow_gates.py: exactly one `**Tester:** skip — <listed reason>` line skips the Tester.
+const TESTER_SKIP = /^skip\s*[—–:-]+\s*(human_opt_out|presentation_only|docs_only|mechanical_rename)\s*(?:\([^()\n]*\))?\s*\.?\s*$/i;
+
+function parseTesterSkipReason(body: string): string | undefined {
+	const values = [...body.matchAll(/^\*\*Tester:\*\*[ \t]*([^\n]*)$/gim)].map(match => match[1].trim());
+	if (values.length !== 1) return undefined;
+	return values[0].match(TESTER_SKIP)?.[1]?.toLowerCase();
+}
+
 function parseStepBudget(body: string): StepBudget | undefined {
 	const match = body.match(/\*\*Budget:\*\*\s*([^\n]+)/i);
 	if (!match) return undefined;
@@ -675,7 +686,8 @@ function parseStepBudget(body: string): StepBudget | undefined {
 }
 function sectionLines(body: string, heading: string): string[] {
 	const marker = `(?:\\*\\*${escapeRegExp(heading)}:\\*\\*|#{3,}\\s+${escapeRegExp(heading)}\\s*)`;
-	const nextMarker = `(?=\\n(?:\\*\\*[A-Za-z][^\\n]*:\\*\\*|#{2,}\\s+[^\\n]+)|$)`;
+	// A `**Tester:**` line is card metadata, never a section end (it may sit among the gates).
+	const nextMarker = `(?=\\n(?:\\*\\*(?!tester:)[A-Za-z][^\\n]*:\\*\\*|#{2,}\\s+[^\\n]+)|$)`;
 	const match = body.match(new RegExp(`${marker}[^\\n]*\\n([\\s\\S]*?)${nextMarker}`, "i"));
 	return match ? match[1].split("\n") : [];
 }
@@ -730,6 +742,7 @@ export function parseSteps(source: string): StepCard[] {
 			dependsOn: fieldValue(body, "Depends on"),
 			risk: parseRisk(body),
 			pipelineProfile: parsePipelineProfile(body),
+			testerSkipReason: parseTesterSkipReason(body),
 			budget: parseStepBudget(body),
 			todos: parseChecklistSection(body, "Do"),
 			objectiveGates: objective.length > 0 ? objective : legacyDone,
@@ -775,7 +788,7 @@ function isBackupAgent(value: string | undefined): boolean {
 	return Boolean(value && /[-_]backup$/.test(value));
 }
 
-function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status: string; waitingForHuman: boolean } {
+function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot, step?: StepRoutingMeta): { status: string; waitingForHuman: boolean } {
 	if (state.blocker !== "-") return { status: "Blocked", waitingForHuman: state.nextActor === "human" };
 	if (state.onboardingStatus !== "complete") return { status: "Onboarding", waitingForHuman: true };
 	if (state.modelFailureStatus === "awaiting_human") return { status: "Waiting for Human", waitingForHuman: true };
@@ -784,7 +797,7 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 		return { status: `${roleLabel(runtime.worker.agent)} running`, waitingForHuman: false };
 	}
 	if (state.securityNextRun === "offer_scoped") {
-		if (state.reviewVerdict === "approved" && (!state.qaEnabled || state.qaStatus === "qa_green" || state.qaStatus === "skipped")) {
+		if (state.reviewVerdict === "approved" && qaSatisfied(state, step)) {
 			return { status: "Security offer", waitingForHuman: true };
 		}
 	}
@@ -793,20 +806,21 @@ function currentStatus(state: WorkflowState, runtime: RuntimeSnapshot): { status
 		return { status: "Changes requested", waitingForHuman: false };
 	}
 	if (state.qaStatus === "bugs") return { status: "QA found bugs", waitingForHuman: false };
-	if (state.reviewVerdict === "approved" && (state.qaStatus === "qa_green" || !state.qaEnabled)) {
+	if (state.reviewVerdict === "approved" && qaSatisfied(state, step)) {
 		return { status: "Stop-gate ready", waitingForHuman: false };
 	}
 	if (state.implementationStatus === "running") return { status: "Implementation running", waitingForHuman: false };
 	return { status: "Main coordinating", waitingForHuman: false };
 }
 
-function currentStepMeta(data: DashboardData): { pipelineProfile: PipelineProfile; risk: StepRisk; quickForbidden: boolean } | undefined {
+function currentStepMeta(data: DashboardData): StepRoutingMeta | undefined {
 	const step = data.steps.find(item => item.id === data.state.currentStep);
 	if (!step) return undefined;
 	return {
 		pipelineProfile: step.pipelineProfile,
 		risk: step.risk,
 		quickForbidden: data.state.pipelineQuickForbidden,
+		testerSkipReason: step.testerSkipReason,
 	};
 }
 
@@ -832,8 +846,9 @@ export function deriveDashboardViewModel(
 	}
 	const workerRole = normalizeRole(runtime.worker?.agent);
 	const currentRole = workerRole && SPECIALIZED_ROLES.has(workerRole) ? workerRole : undefined;
-	const status = currentStatus(state, runtime);
-	const routing = deriveRoutingExplanation(state, runtime, currentStepMeta(data));
+	const stepMeta = currentStepMeta(data);
+	const status = currentStatus(state, runtime, stepMeta);
+	const routing = deriveRoutingExplanation(state, runtime, stepMeta);
 	return {
 		data,
 		runtime,
@@ -1169,7 +1184,7 @@ function gateMarker(status: "pass" | "pending" | "fail" | "skip"): string {
 	return status === "pass" ? "✓" : status === "fail" ? "[WARN]" : status === "skip" ? "-" : "○";
 }
 
-function currentGateLines(state: WorkflowState): TextLine[] {
+function currentGateLines(state: WorkflowState, step?: StepRoutingMeta): TextLine[] {
 	const lines: TextLine[] = [{ text: "GATES", tone: "accent" }];
 	const implementation = state.implementationStatus === "waiting_review" || state.implementationStatus === "complete"
 		? "pass"
@@ -1183,7 +1198,8 @@ function currentGateLines(state: WorkflowState): TextLine[] {
 			: state.reviewVerdict === "changes_requested" || state.reviewStatus === "blocked"
 				? "fail"
 				: "pending";
-	const qa = !state.qaEnabled || state.qaStatus === "skipped"
+	const qaRequired = testerRequired(state, step);
+	const qa = !qaRequired || (!step && state.qaStatus === "skipped")
 		? "skip"
 		: state.qaStatus === "qa_green"
 			? "pass"
@@ -1200,7 +1216,7 @@ function currentGateLines(state: WorkflowState): TextLine[] {
 	const rows: Array<[string, "pass" | "pending" | "fail" | "skip", string]> = [
 		["Implementation", implementation, state.implementationStatus],
 		["Review", review, !state.reviewEnabled ? "skipped" : state.reviewVerdict !== "-" ? state.reviewVerdict : state.reviewStatus],
-		["QA", qa, !state.qaEnabled ? "skipped" : state.qaStatus],
+		["QA", qa, !qaRequired ? (step?.testerSkipReason ? `skipped (${step.testerSkipReason})` : "skipped") : step && state.qaStatus === "skipped" ? "required (R14)" : state.qaStatus],
 		["Security", security, security === "skip" ? "not requested" : state.securityNextRun],
 	];
 	for (const [label, status, detail] of rows) {
@@ -1340,7 +1356,7 @@ function buildCenterContent(
 		if (isCurrent) scrollable.push(...runtimeTodoLinkLines(view.data.runtimeTodoLink));
 	}
 	if (isCurrent) {
-		scrollable.push({ text: "" }, ...currentGateLines(state));
+		scrollable.push({ text: "" }, ...currentGateLines(state, step));
 		if (!view.waitingForHuman) {
 			scrollable.push({ text: "" });
 			addWrapped(scrollable, view.nextAction, width, "NEXT · ", "accent");

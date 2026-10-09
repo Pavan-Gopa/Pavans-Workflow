@@ -41,7 +41,8 @@ import sys
 from pathlib import Path
 
 STEP_HEADING = re.compile(r"^##[ \t]+([A-Za-z0-9][A-Za-z0-9._/-]*)[ \t]+(?:—|-)[ \t]+(.+?)\s*$", re.M)
-SECTION_HEADING = re.compile(r"^(?:#{3,}[ \t]+(?P<hash>[^\n]+?)|\*\*(?P<bold>[A-Za-z][^:\n]{0,40}):\*\*[^\n]*)[ \t]*$", re.M)
+# A `**Tester:**` line is card metadata, never a section end (it may sit among the gates).
+SECTION_HEADING = re.compile(r"^(?:#{3,}[ \t]+(?P<hash>[^\n]+?)|\*\*(?!(?i:tester):)(?P<bold>[A-Za-z][^:\n]{0,40}):\*\*[^\n]*)[ \t]*$", re.M)
 OBJECTIVE_NAMES = ("objective gates", "done when")
 GATE_LINE = re.compile(r"^\s*(?:[-*]|\d+[.)])\s*\[(?P<done>[ xX])\]\s*(?:\[(?P<id>[^\]]+)\]\s*)?(?P<body>.+?)\s*$")
 BACKTICK = re.compile(r"`([^`\n]+)`")
@@ -54,6 +55,10 @@ CLOSE_ONLY = re.compile(r"\(close-only\)", re.I)
 # `**Tester:** skip — <reason>`: the only reasons a behaviour step may go without the Tester (R14).
 TESTER_LINE = re.compile(r"^\*\*Tester:\*\*[ \t]*(?P<value>[^\n]*)$", re.M | re.I)
 TESTER_SKIP_REASONS = ("human_opt_out", "presentation_only", "docs_only", "mechanical_rename")
+# The whole value: `skip`, a dash or colon, one reason, optionally a parenthesised note.
+TESTER_SKIP = re.compile(
+    r"^skip\s*[—–:-]+\s*(?P<reason>" + "|".join(TESTER_SKIP_REASONS) + r")\s*(?:\([^()\n]*\))?\s*\.?\s*$", re.I
+)
 # Lines that name a failure in common runners' output (XCTest, Swift Testing,
 # pytest, Jest/Vitest, cargo, go, tsc, generic `error:`).
 FAILURE_LINE = re.compile(
@@ -62,11 +67,14 @@ FAILURE_LINE = re.compile(
 )
 # The runner's own failure lines, listed first: logs also carry warnings that merely
 # mention "failures" (e.g. objc duplicate-class notices) and tests that print `ERROR:`.
+# Swift/clang `error:`, tsc `error TS…`, Go `file.go:L:C:`, XCTest, Swift Testing,
+# pytest `FAILED`/`ERROR <path>` summaries, Jest/Go `FAIL`, cargo `error[E…]`/panics, TAP.
 RUNNER_FAILURE = re.compile(
-    r"\berror:|\berror TS\d+|' failed \(|\bfailed after\b|recorded an issue|✘|✕|✗|Traceback|AssertionError|"
-    r"panicked at|^\s*not ok\b|^\s*(?:FAIL|FAILED|--- FAIL)\b"
+    r"\berror:|\berror TS\d+|\berror\[E\d+\]|^\S+\.go:\d+(?::\d+)?: |' failed \(|\bfailed after\b|recorded an issue|"
+    r"✘|✕|✗|Traceback|AssertionError|panicked at|^\s*not ok\b|^\s*(?:FAIL|--- FAIL)\b|^\s*(?:FAILED|ERROR) (?=\S)"
 )
 NOT_A_FAILURE = re.compile(r"\b0 (?:failures?|failed|errors?)\b|with 0 failures|\bno failures\b|failures?: 0\b", re.I)
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 EXCERPT_LINES = 40
 EXCERPT_LINE_CHARS = 300
 RUNNERS = (
@@ -201,17 +209,21 @@ def extract_gates(body: str, root: Path | None = None) -> list[dict[str, object]
 
 
 def tester_facts(body: str) -> dict[str, object]:
-    """`**Tester:** skip — <reason>` with a listed reason skips the Tester; anything else requires it."""
-    match = TESTER_LINE.search(body)
-    value = match.group("value").strip() if match else ""
-    if not re.match(r"skip\b", value, re.I):
+    """Exactly `**Tester:** skip — <reason>` skips the Tester; anything else keeps it required (R14)."""
+    values = [match.group("value").strip() for match in TESTER_LINE.finditer(body)]
+    if len(values) > 1:
+        return {"tester_skip_reason": None, "tester_note": "more than one **Tester:** line; the Tester stays required (R14)"}
+    value = values[0] if values else ""
+    skip = TESTER_SKIP.match(value)
+    if skip:
+        return {"tester_skip_reason": skip.group("reason").lower(), "tester_note": None}
+    if not value or re.fullmatch(r"(?:required|on)\.?", value, re.I):
         return {"tester_skip_reason": None, "tester_note": None}
-    reason = next((item for item in TESTER_SKIP_REASONS if re.search(rf"\b{item}\b", value, re.I)), None)
-    if reason:
-        return {"tester_skip_reason": reason, "tester_note": None}
     return {
         "tester_skip_reason": None,
-        "tester_note": "**Tester:** skip needs one of " + ", ".join(TESTER_SKIP_REASONS) + "; the Tester stays required",
+        "tester_note": f"**Tester:** {value!r} is not `skip — "
+        + "|".join(TESTER_SKIP_REASONS)
+        + "`; the Tester stays required (R14)",
     }
 
 
@@ -246,7 +258,9 @@ def common_git_dir(root: Path) -> Path | None:
 
 
 def safe_name(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]", "_", value) or "_"
+    """A file-system name for an ID; IDs that needed escaping get a short hash so they never collide."""
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", value) or "_"
+    return name if name == value else f"{name}-{hashlib.sha256(value.encode('utf-8')).hexdigest()[:8]}"
 
 
 def prune_gate_logs(current: Path, keep: int = 20) -> None:
@@ -268,11 +282,13 @@ def failure_excerpt(*outputs: str) -> list[str]:
     runner: list[str] = []
     other: list[str] = []
     for output in outputs:
-        for line in (output or "").splitlines():
-            if not FAILURE_LINE.search(line) or NOT_A_FAILURE.search(line):
+        for raw in (output or "").splitlines():
+            line = ANSI.sub("", raw)
+            is_runner = bool(RUNNER_FAILURE.search(line))
+            if not (is_runner or FAILURE_LINE.search(line)) or NOT_A_FAILURE.search(line):
                 continue
             text = line.strip()[:EXCERPT_LINE_CHARS]
-            bucket = runner if RUNNER_FAILURE.search(line) else other
+            bucket = runner if is_runner else other
             if text and text not in bucket and len(bucket) < EXCERPT_LINES:
                 bucket.append(text)
     return (runner + other)[:EXCERPT_LINES]
@@ -359,6 +375,11 @@ def evaluate(
         common = common_git_dir(root)
         logs = common / "pavans-workflow" / "gate-logs" / safe_name(step) if common else None
         if logs is not None:
+            try:
+                logs.mkdir(parents=True, exist_ok=True)
+                os.utime(logs)  # rewriting a log does not touch the directory; recency decides retention
+            except OSError:
+                pass
             prune_gate_logs(logs)
     elif run and log_dir:
         logs = Path(log_dir)

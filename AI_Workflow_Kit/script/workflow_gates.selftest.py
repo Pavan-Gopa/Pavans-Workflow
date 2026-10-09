@@ -71,6 +71,14 @@ STEPS = """# Steps
 
 - [ ] [S6.O1] (close-only) `$ true` exits 0
 
+## S7 — Tester line among the gates
+
+### Objective gates
+
+- [ ] [S7.O1] `$ true` exits 0
+**Tester:** required
+- [ ] [S7.O2] `$ true` exits 0
+
 ## S4 — _(title)_
 
 ### Objective gates
@@ -161,6 +169,10 @@ def main() -> int:
         failing = next(gate for gate in json.loads(logged.stdout)["gates"] if gate["ok"] is False)
         assert Path(failing["runs"][0]["log"]).is_file() and "failure_excerpt" in failing["runs"][0], failing
 
+        # A **Tester:** line placed among the gates never hides the gates after it.
+        tester_among = json.loads(run(tmp, "list", "--step", "S7").stdout)
+        assert [gate["id"] for gate in tester_among["gates"]] == ["S7.O1", "S7.O2"], tester_among
+
     # Command recognition: prefixes, runners that used to be caught by the old
     # catch-all, and executables given by path; names are never executed.
     import importlib.util
@@ -182,6 +194,49 @@ def main() -> int:
         assert gates.command_from_span("vendor/bin/phpunit", root) is None, "not executable yet"
         os.chmod(tool, 0o755)
         assert gates.command_from_span("vendor/bin/phpunit --testsuite unit", root) == "vendor/bin/phpunit --testsuite unit"
+
+    # Each runner's own failure line reaches the excerpt, ahead of noise that merely mentions failures.
+    noise = [
+        "ERROR: refusing --enable-gpl: the bundled FFmpeg must stay LGPL-only",
+        "objc[1]: Class X is implemented in both A and B. This may cause spurious casting failures.",
+    ]
+    samples = {
+        "swift": "Sources/App/Cart.swift:12:5: error: cannot find 'total' in scope",
+        "xctest": "Test Case '-[CartTests testTotal]' failed (0.104 seconds).",
+        "swift-testing": "✘ Test total() recorded an issue at CartTests.swift:9:5: Expectation failed",
+        "tsc": "src/app.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        "go-build": "./main.go:12:2: undefined: total",
+        "go-test": "--- FAIL: TestTotal (0.00s)",
+        "pytest-failed": "FAILED tests/test_cart.py::test_total - assert 3 == 4",
+        "pytest-error": "ERROR tests/test_app.py - ImportError: cannot import name 'total'",
+        "jest": "\x1b[31mFAIL\x1b[39m src/cart.test.ts",
+        "cargo": "error[E0308]: mismatched types",
+        "cargo-panic": "thread 'main' panicked at src/main.rs:2:5:",
+    }
+    for runner_name, line in samples.items():
+        excerpt = gates.failure_excerpt("\n".join(noise + ["ok"] * 50 + [line, "Executed 9 tests, with 0 failures"]))
+        assert excerpt and gates.ANSI.sub("", line).strip() == excerpt[0], (runner_name, excerpt)
+        assert not any("with 0 failures" in item for item in excerpt), (runner_name, excerpt)
+
+    # Step IDs that need escaping never share a log directory.
+    assert gates.safe_name("feature/auth") != gates.safe_name("feature_auth")
+    assert gates.safe_name("ST57.S4") == "ST57.S4"
+
+    # Retention keeps the 20 most recently run steps, including an old step that was just re-run.
+    with tempfile.TemporaryDirectory() as raw:
+        tmp = Path(raw)
+        write_project(tmp)
+        subprocess.run(["git", "-C", str(tmp), "init", "-q"], check=True)
+        assert run(tmp, "run", "--step", "S5").returncode == 0
+        logs = tmp / ".git" / "pavans-workflow" / "gate-logs"
+        os.utime(logs / "S5", (1_000, 1_000))
+        for number in range(25):
+            (logs / f"OLD{number}").mkdir()
+            os.utime(logs / f"OLD{number}", (2_000 + number, 2_000 + number))
+        assert run(tmp, "run", "--step", "S5").returncode == 0
+        kept = sorted(path.name for path in logs.iterdir())
+        assert len(kept) == 20 and "S5" in kept and "OLD24" in kept and "OLD0" not in kept, kept
+        assert (logs / "S5" / "S5.O2.log").is_file()
 
     print("workflow_gates.selftest: PASS")
     return 0

@@ -70,9 +70,9 @@ qa:
   suite: null
   bugs_open: 0
   note: null
-  # recommended on; Human may opt out
+  # R14: the close check's tester.required decides; Main copies it here
+  # (enabled: <tester.required>; status: skipped + note: <tester.skip_reason> when false)
   enabled: true
-  # use status: skipped only after an explicit Human opt-out; record why in note
 security:
   # none | pending | offer_scoped | declined (see SECURITY.md)
   next_run: none

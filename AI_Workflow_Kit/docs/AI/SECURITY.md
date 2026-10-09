@@ -15,7 +15,7 @@ It is **not** part of normal coding steps. Feature QA stays with **Tester**.
 
 | Role | Frequency | Owns |
 |------|-----------|------|
-| **Tester** | Every step (if enabled) | Feature coverage, tests, functional bugs |
+| **Tester** | Every step, unless the close check reports an R14 skip | Feature coverage, tests, functional bugs |
 | **Security Engineer** | **Once near release** (or Human asks earlier) | Deep vuln hunt, `SECURITY_REPORT.md`, optional sec guards |
 | **Orchestrator** | Always | **Offers** Security at end; never forces; routes SEC-* to Coder |
 | **Coder** | On fix | Only role that patches product for SEC-* |
