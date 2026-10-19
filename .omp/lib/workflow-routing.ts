@@ -94,7 +94,7 @@ export function deriveRoutingExplanation(
 
 	if (state.modelFailureStatus === "backup_authorized" && state.modelFailureAuthorizedBy === "auto") {
 		const role = roleLabel(state.modelFailureRole);
-		const agent = state.modelFailureBackupAgent !== "-" ? state.modelFailureBackupAgent : `workflow-${state.modelFailureRole}-backup`;
+		const agent = state.modelFailureBackupAgent !== "-" ? state.modelFailureBackupAgent : `workflow-${state.modelFailureRole.replace(/_/g, "-")}-backup`;
 		return {
 			action: `Main dispatches ${agent} after automatic failover`,
 			reason: `Primary model or provider failure recorded on role ${role}; automatic backup failover in progress`,

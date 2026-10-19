@@ -18,6 +18,9 @@ Guarantees:
   * Files a previous release installed and that disappeared upstream are
     removed on update when unmodified; project-added files are never touched.
   * Every update is backed up and rolled back automatically on failure.
+  * Per-role skill additions (.omp/workflow-skills.json, project-owned) are merged
+    into the agent files after every update and never count as local modifications
+    (workflow_skills.py; agent files are hashed with the additions removed).
 
 Standard library only; Python 3.9+ (macOS system python3).
 """
@@ -105,10 +108,11 @@ class Plan:
     seed: list[str] = field(default_factory=list)
     config_changes: list[str] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
 
     def changed(self) -> bool:
         return bool(
-            self.add or self.update or self.remove or self.render_state or self.seed or self.config_changes
+            self.add or self.update or self.remove or self.render_state or self.seed or self.config_changes or self.skills
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -125,6 +129,30 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_SKILLS = []  # the loaded workflow_skills module (one per process)
+
+
+def skills_module():
+    """workflow_skills.py next to this file (the release being installed or the project's own)."""
+    if not _SKILLS:
+        spec = importlib.util.spec_from_file_location("workflow_skills", Path(__file__).with_name("workflow_skills.py"))
+        if spec is None or spec.loader is None:
+            raise FrameworkError("workflow_skills.py cannot be loaded", 2)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _SKILLS.append(module)
+    return _SKILLS[0]
+
+
+def tracked_sha256(target: Path, rel: str) -> str:
+    """Digest of a project file as the release ships it: per-role skill additions are
+    removed from agent files, so adding skills is not a local modification."""
+    path = target / rel
+    if not rel.startswith(".omp/agents/"):
+        return sha256(path)
+    return hashlib.sha256(skills_module().upstream_bytes(target, rel, path.read_bytes())).hexdigest()
 
 
 def read_version(path: Path) -> str | None:
@@ -256,7 +284,7 @@ def write_record(target: Path, version: str, rels: list[str]) -> None:
     for rel in sorted(rels):
         path = target / rel
         if path.is_file():
-            lines.append(f"{sha256(path)}  {rel}")
+            lines.append(f"{tracked_sha256(target, rel)}  {rel}")
     atomic_write_text(target / RECORD_REL, "\n".join(lines) + "\n")
 
 
@@ -477,7 +505,7 @@ def plan_update(source: Path, target: Path, entries: list[Entry], files: dict[st
             plan.add.append(rel)
             continue
         if destination.is_file():
-            current = sha256(destination)
+            current = tracked_sha256(target, rel)
             if current == sha256(src):
                 continue
             if rel in recorded and recorded[rel] != current:
@@ -491,7 +519,7 @@ def plan_update(source: Path, target: Path, entries: list[Entry], files: dict[st
             destination = target / rel
             if not destination.exists():
                 continue
-            if destination.is_file() and sha256(destination) == digest:
+            if destination.is_file() and tracked_sha256(target, rel) == digest:
                 plan.remove.append(rel)
             else:
                 plan.keep_modified_obsolete.append(rel)
@@ -511,6 +539,15 @@ def plan_update(source: Path, target: Path, entries: list[Entry], files: dict[st
     ]
     if missing_graphify:
         plan.config_changes.append(".graphifyignore: add " + ", ".join(missing_graphify))
+
+    # Overlay additions an agent file lost (hashing hides them): re-applied by the update, listed here.
+    # Files this update copies are skipped: they are re-merged after the copy.
+    skills = skills_module()
+    try:
+        repair, _ = skills.plan_apply(target)
+        plan.skills = [rel for rel in repair if rel.startswith(".omp/agents/") and rel not in plan.add + plan.update]
+    except skills.SkillsError as error:
+        plan.notices.append(f"per-role skills: {error} (fix or delete {skills.OVERLAY_REL})")
 
     legacy_root = [rel for rel in LEGACY_ROOT_FILES if (target / rel).is_file()]
     if legacy_root and not (source.resolve() == target.resolve()):
@@ -646,6 +683,17 @@ def cmd_update(source: Path, target: Path, check: bool, legacy_updater_ran: bool
         ensure_lines(target / ".graphifyignore", GRAPHIFYIGNORE_REQUIRED)
         if (target / ".gitignore").exists() or common_git_dir(target):
             ensure_lines(target / ".gitignore", GITIGNORE_REQUIRED)
+        # Per-role skill additions: re-merged into the agent files just copied from upstream.
+        skills = skills_module()
+        fresh = {rel for rel in plan.add + plan.update if rel.startswith(".omp/agents/")}
+        try:
+            skill_writes, skill_notes = skills.plan_apply(target, fresh)
+        except skills.SkillsError as error:
+            raise FrameworkError(f"per-role skills: {error} (fix or delete {skills.OVERLAY_REL}, then update again)", 2) from None
+        for rel in skill_writes:
+            transaction.touch(rel)
+        skills.commit(target, skill_writes)
+        result["skills"] = {"changed": sorted(skill_writes), "notes": skill_notes}
         write_record(target, upstream_version, list(files))
     except BaseException:
         transaction.rollback()
@@ -685,7 +733,7 @@ def cmd_verify(target: Path) -> tuple[int, list[tuple[str, str]]]:
         if recorded_version != version:
             lines.append(("FAIL", f"installed.manifest records v{recorded_version} but {VERSION_REL} is v{version}"))
         missing = [rel for rel in hashes if not (target / rel).is_file()]
-        modified = [rel for rel in hashes if (target / rel).is_file() and sha256(target / rel) != hashes[rel]]
+        modified = [rel for rel in hashes if (target / rel).is_file() and tracked_sha256(target, rel) != hashes[rel]]
         for rel in missing:
             lines.append(("FAIL", f"framework file missing: {rel}"))
         for rel in modified:
@@ -694,6 +742,9 @@ def cmd_verify(target: Path) -> tuple[int, list[tuple[str, str]]]:
             lines.append(("WARN", f"framework file modified locally (next update overwrites it, with backup): {rel}"))
         if not missing:
             lines.append(("OK", f"framework files present: {len(hashes)} (v{recorded_version})"))
+    for level, message in skills_module().check(target):
+        if level == "FAIL":  # additions the overlay records but an agent file no longer has
+            lines.append((level, message))
     for rel in LEGACY_OBSOLETE:
         if (target / rel).exists():
             lines.append(("WARN", f"obsolete pre-3.5 path still present: {rel} (run workflow_update.sh apply)"))
@@ -802,6 +853,7 @@ def print_result(result: dict[str, object], as_json: bool) -> None:
             ("render_state", "[STATE]   "),
             ("seed", "[SEED]    "),
             ("config_changes", "[CONFIG]  "),
+            ("skills", "[REPAIR]  "),
         )
         for key, label in labels:
             for item in plan[key]:
@@ -812,6 +864,12 @@ def print_result(result: dict[str, object], as_json: bool) -> None:
             print(f"[KEEP]    {rel} is obsolete but modified locally; left in place")
         for notice in plan["notices"]:
             print(f"NOTE      {notice}")
+        skills = result.get("skills")
+        if isinstance(skills, dict):
+            for rel in skills["changed"]:
+                print(f"[SKILLS]  {rel} (project skill additions applied)")
+            for note in skills["notes"]:
+                print(f"NOTE      {note}")
         if not result["changed"]:
             print("Already up to date.")
         if result.get("backup"):

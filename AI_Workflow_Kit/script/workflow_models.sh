@@ -6,7 +6,7 @@
 #   workflow_models.sh status
 #   workflow_models.sh validate
 #   workflow_models.sh validate-level <main|execution|quality|full|design>
-#   workflow_models.sh validate-role <role|agent> [backup]   # also workflow-coder-backup (= coder backup), coder_fast (no backup)
+#   workflow_models.sh validate-role <role|agent> [backup]   # also workflow-coder-backup (= coder backup), workflow-coder-fast-backup
 
 set -euo pipefail
 
@@ -52,8 +52,8 @@ ROLE_MAP = {
     "security": ("Security", "workflow_security", "workflow_security_backup", False),
     "design_advisor": ("Design Advisor", "workflow_design_advisor", "workflow_design_advisor_backup", True),
     "designer": ("Designer", "workflow_designer", "workflow_designer_backup", True),
-    # Fast Coder has no backup by design: a failure escalates to the strong Coder (not part of status/validate/levels).
-    "coder_fast": ("Fast Coder", "workflow_coder_fast", None, True),
+    # Fast Coder backup is optional: if it is missing, shares the primary's model, or fails too, escalate to the strong Coder (not part of status/validate/levels).
+    "coder_fast": ("Fast Coder", "workflow_coder_fast", "workflow_coder_fast_backup", True),
 }
 
 CORE_ROLES = ["orchestrator", "coder", "reviewer", "tester", "architect", "security"]
@@ -224,13 +224,11 @@ if ACTION == "validate-role":
         choices = ", ".join([*ORDERED_ROLES, "coder_fast"])
         print(f"ERROR: unknown role '{ARG2}'. Choose from: {choices}", file=sys.stderr)
         sys.exit(2)
-    if target_backup and ROLE_MAP[raw_role][2] is None:
-        print(f"ERROR: {ROLE_MAP[raw_role][0]} has no backup role by design; escalate to the strong Coder instead", file=sys.stderr)
-        sys.exit(2)
     info = evaluate_role(raw_role)
     if target_backup:
         if not info["backup_ok"]:
-            print(f"ERROR: {info['label']} backup role '{info['backup_alias']}' ({info['backup'] or 'missing'}) is not available", file=sys.stderr)
+            escalate = "; escalate to the strong Coder" if raw_role == "coder_fast" else ""
+            print(f"ERROR: {info['label']} backup role '{info['backup_alias']}' ({info['backup'] or 'missing'}) is not available{escalate}", file=sys.stderr)
             sys.exit(1)
         print(f"OK: {info['label']} backup model verified ({info['backup']})")
     else:

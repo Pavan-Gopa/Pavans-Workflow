@@ -74,8 +74,8 @@ with the close check rather than before it. The Reviewer still starts only on a
 | Design Advisor | `workflow-design-advisor` | read-only UI/UX brief (R18) |
 | Designer | `workflow-designer` | bounded presentation-layer redesign (R18) |
 
-Every role except the Fast Coder has a `-backup` agent that only starts under R16; the Fast Coder
-has none (a Fast Coder failure goes to `workflow-coder`).
+Every role has a `-backup` agent that only starts under R16. The Fast Coder's backup
+(`workflow-coder-fast-backup`) is optional; without a distinct one, a Fast Coder failure goes to `workflow-coder`.
 
 ## 3. The guard runs by itself
 
@@ -166,10 +166,10 @@ ask one short question instead of choosing the expensive path. Templates:
 
 On a primary worker model/provider failure (provider error, quota/429/402, DNS/network, provider timeout, empty/aborted result caused by the provider — NOT `blocked`, gate failures, or review findings), provider failures are not product attempts (R15). Then:
 
-- **Fast Coder:** it has no backup. Record metrics `model_failure` (`status: auto_failover`) and dispatch `workflow-coder` with a fresh context, without pausing the Human. If `workflow-coder` also fails for a model/provider reason, apply the backup rule below to it.
+- **Fast Coder:** run `workflow_models.sh validate-role workflow-coder-fast-backup`. If it passes and the backup resolves to a model distinct from the failed primary, record `omp.model_failure` as for every other role (`backup_agent: workflow-coder-fast-backup`) and dispatch it. Otherwise — or if the fast backup run also fails for a model/provider reason — record metrics `model_failure` (`status: auto_failover`) and dispatch `workflow-coder` with a fresh context, without pausing the Human. If `workflow-coder` also fails for a model/provider reason, apply the backup rule below to it.
 - **Every other role:** Main immediately records `omp.model_failure` with `status: backup_authorized`, `authorized_by: auto`, `role`, `primary_agent`, `failed_model`, `backup_agent`, `evidence`, `authorized_at`, records metrics `model_failure` with `status: auto_failover`, and dispatches the `-backup` agent with a fresh context. The backup must resolve to a model distinct from the failed primary.
 - **Backup assignment:** build it like any assignment (§2) and add `backup_failover: auto` plus `failure_evidence` (the recorded primary failure: failed model, provider error excerpt, `authorized_at`). A backup the Human directed by hand (after `awaiting_human`) is dispatched with `backup_failover: human` and `failure_evidence` carrying the Human's exact words (`omp.model_failure.human_instruction`) next to the recorded failure. A backup agent returns `blocked` without either field.
-- **Ask the Human only when** (a) the role's backup is missing or resolves to the same model as the primary, or (b) the backup run also fails for a model/provider reason → `status: awaiting_human`.
+- **Ask the Human only when** (a) the role's backup is missing or resolves to the same model as the primary, or (b) the backup run also fails for a model/provider reason → `status: awaiting_human`. The Fast Coder never reaches this point: it escalates to `workflow-coder` instead.
 
 After the backup (or the escalated `workflow-coder`) run finishes (success or product result), Main clears `omp.model_failure`.
 

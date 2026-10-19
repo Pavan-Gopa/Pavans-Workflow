@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,12 @@ assert spec and spec.loader
 fw = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = fw  # dataclasses resolve annotations through sys.modules
 spec.loader.exec_module(fw)
+
+# the skills selftest holds the agent-spelling variants and the canonical "as shipped" agent files
+st_spec = importlib.util.spec_from_file_location("workflow_skills_selftest", Path(__file__).with_name("workflow_skills.selftest.py"))
+assert st_spec and st_spec.loader
+st = importlib.util.module_from_spec(st_spec)
+st_spec.loader.exec_module(st)
 
 
 def git(root: Path, *args: str) -> None:
@@ -38,6 +45,8 @@ def copy_release(destination: Path, version: str | None = None) -> Path:
         target = destination / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
+        if rel.startswith(".omp/agents/"):  # an installed project may carry per-role skill additions; a release never does
+            target.write_bytes(st.shipped_agent(rel))
     for entry in entries:
         if entry.kind in ("seed", "config"):
             (destination / entry.path).parent.mkdir(parents=True, exist_ok=True)
@@ -177,6 +186,134 @@ def main() -> int:
         probe.unlink()
         code, lines = fw.cmd_verify(project)
         assert code == 1 and any("workflow-guard.ts" in text for level, text in lines if level == "FAIL"), lines
+
+        # --- per-role skill additions survive updates ------------------------------------
+        ws = fw.skills_module()
+        sp = new_repo(tmp / "skills-project")
+        fw.cmd_install(release, sp)
+        coder_rel, backup_rel = ".omp/agents/workflow-coder.md", ".omp/agents/workflow-coder-backup.md"
+        shipped = (sp / coder_rel).read_bytes()
+        ws.commit(sp, ws.plan_set(sp, ["workflow-coder", "workflow-coder-backup"], ["graphify"]))
+        assert (sp / coder_rel).read_bytes() != shipped
+        code, lines = fw.cmd_verify(sp)
+        assert code == 0 and not any(level == "WARN" for level, _ in lines), ("set is not a local modification", lines)
+        plan = fw.cmd_update(copy_release(tmp / "same", version="9.9.0"), sp, check=True)["plan"]
+        assert coder_rel not in plan["update"] and coder_rel not in plan["overwrite_local"], "unchanged upstream: nothing to update"
+        (sp / ".omp/agents/workflow-designer.md").write_text("hand edit\n", encoding="utf-8")
+        code, lines = fw.cmd_verify(sp)
+        assert any(level == "WARN" and "workflow-designer.md" in text for level, text in lines), "real local edits are still reported"
+        assert not any(level == "WARN" and "workflow-coder" in text for level, text in lines)
+        fw.copy_file(release / ".omp/agents/workflow-designer.md", sp / ".omp/agents/workflow-designer.md")
+
+        # upstream changes the Coder's defaults and body: both arrive, the addition stays
+        def line(names):
+            return "autoloadSkills: " + json.dumps(names) + "\n"
+
+        base = ws.read_skills(upstream_text := shipped.decode("utf-8"))
+        base_backup = ws.read_skills((release / backup_rel).read_text(encoding="utf-8"))
+        assert base and base_backup and "graphify" not in base + base_backup, (base, base_backup)
+        skills_release = copy_release(tmp / "skills-release", version="9.9.0")
+        (skills_release / coder_rel).write_text(
+            ws.add_skills((skills_release / coder_rel).read_text(encoding="utf-8"), ["zz-new-default"]) + "\nUpstream change marker.\n",
+            encoding="utf-8",
+        )
+        before_files = {rel: (sp / rel).read_bytes() for rel in (coder_rel, backup_rel, ws.OVERLAY_REL)}
+        check = fw.cmd_update(skills_release, sp, check=True)["plan"]
+        assert coder_rel in check["update"] and coder_rel not in check["overwrite_local"] and backup_rel not in check["update"], check
+        # a failing update restores the agent files and the overlay
+        original_record = fw.write_record
+
+        def failing_record(*args, **kwargs):
+            raise RuntimeError("injected failure after skills were applied")
+
+        fw.write_record = failing_record
+        try:
+            fw.cmd_update(skills_release, sp, check=False)
+            raise AssertionError("update should have failed")
+        except RuntimeError as error:
+            assert "injected failure" in str(error)
+        finally:
+            fw.write_record = original_record
+        assert {rel: (sp / rel).read_bytes() for rel in before_files} == before_files, "rollback restores additions and upstream defaults"
+        applied = fw.cmd_update(skills_release, sp, check=False)
+        text = (sp / coder_rel).read_text(encoding="utf-8")
+        assert line([*base, "zz-new-default", "graphify"]) in text, "new upstream default first, then the addition"
+        assert text.endswith("Upstream change marker.\n"), "upstream change arrived"
+        assert line([*base_backup, "graphify"]) in (sp / backup_rel).read_text(encoding="utf-8")
+        assert applied["skills"]["changed"] == [coder_rel], applied["skills"]
+        code, lines = fw.cmd_verify(sp)
+        assert code == 0 and not any(level == "WARN" for level, _ in lines), lines
+        assert fw.cmd_update(skills_release, sp, check=True)["changed"] is False, "nothing left to update"
+        assert subprocess.run([sys.executable, str(sp / "AI_Workflow_Kit/script/workflow_skills.py"), "check", "--target", str(sp)], capture_output=True).returncode == 0
+
+        # upstream ships what the project had added: it becomes a Workflow default, not a stale addition
+        default_release = copy_release(tmp / "default-release", version="9.9.1")
+        (default_release / coder_rel).write_text(
+            ws.add_skills((default_release / coder_rel).read_text(encoding="utf-8"), ["graphify"]), encoding="utf-8"
+        )
+        applied = fw.cmd_update(default_release, sp, check=False)
+        assert line([*base, "graphify"]) in (sp / coder_rel).read_text(encoding="utf-8")
+        assert json.loads((sp / ws.OVERLAY_REL).read_text())["added"] == {"workflow-coder-backup": ["graphify"]}, "coder's overlay entry dropped"
+        assert any("now a Workflow default" in note for note in applied["skills"]["notes"]), applied["skills"]
+        code, lines = fw.cmd_verify(sp)
+        assert code == 0 and not any(level == "WARN" for level, _ in lines), lines
+        ws.commit(sp, ws.plan_set(sp, ["workflow-coder-backup"], []))
+        assert not (sp / ws.OVERLAY_REL).exists()
+        assert fw.cmd_verify(sp)[0] == 0
+
+        # --- every key/list spelling and newline style: install, set, verify, update --check ------
+        # (the variant list and OMP-parity checks live in workflow_skills.selftest.py)
+        coder_text = st.shipped_agent(coder_rel).decode("utf-8")
+        shipped_line = next(text for text in coder_text.split("\n") if ws._KEY.match(text))
+        variant_release = tmp / "variant-release"
+        shutil.copytree(release, variant_release)
+        vp = new_repo(tmp / "variant-project")
+        coder = vp / coder_rel
+        for name, variant_line in st.VARIANTS:
+            # CRLF changes how the line is rewritten, not how it is recognised: three spellings cover it here
+            # (workflow_skills.selftest.py runs every spelling in both newline styles)
+            for newline in ("\n", "\r\n") if name in ("canonical", "single-quoted items", "missing line") else ("\n",):
+                label = f"{name} {'CRLF' if newline == chr(13) + chr(10) else 'LF'}"
+                original = coder_text.replace(shipped_line + "\n", "" if variant_line is None else variant_line + "\n").replace("\n", newline).encode("utf-8")
+                (variant_release / coder_rel).write_bytes(original)
+                if not (vp / fw.RECORD_REL).exists():
+                    fw.cmd_install(variant_release, vp)
+                else:  # the next spelling arrives as an upstream change to the Coder's file
+                    fw.cmd_update(variant_release, vp, check=False)
+                assert coder.read_bytes() == original, label
+                ws.commit(vp, ws.plan_set(vp, ["workflow-coder"], ["graphify"]))
+                with_addition = coder.read_bytes()
+                assert with_addition != original and ws.read_skills(with_addition.decode("utf-8"))[-1] == "graphify", label
+                code, lines = fw.cmd_verify(vp)
+                assert code == 0 and not any(level != "OK" for level, _ in lines), (label, lines)
+                quiet = fw.cmd_update(variant_release, vp, check=True)
+                assert quiet["changed"] is False and not quiet["plan"]["skills"] and not quiet["plan"]["overwrite_local"], (label, quiet["plan"])
+
+                # a real hand edit of an agent that carries an addition is still reported
+                coder.write_bytes(with_addition + b"hand edit\n")
+                code, lines = fw.cmd_verify(vp)
+                assert any(level == "WARN" and "workflow-coder.md" in text for level, text in lines), (label, lines)
+                edited = fw.cmd_update(variant_release, vp, check=True)["plan"]
+                assert coder_rel in edited["update"] and coder_rel in edited["overwrite_local"], (label, edited)
+                coder.write_bytes(with_addition)
+
+                # the addition disappears from the file while the overlay still records it:
+                # verify reports it, the update plan repairs it and the update re-applies it
+                coder.write_bytes(original)
+                code, lines = fw.cmd_verify(vp)
+                assert code == 1 and any(level == "FAIL" and "graphify" in text and "workflow-coder.md" in text for level, text in lines), (label, lines)
+                repair = fw.cmd_update(variant_release, vp, check=True)
+                assert repair["changed"] is True and repair["plan"]["skills"] == [coder_rel] and coder_rel not in repair["plan"]["update"], (label, repair["plan"])
+                done = fw.cmd_update(variant_release, vp, check=False)
+                assert coder.read_bytes() == with_addition and done["skills"]["changed"] == [coder_rel], (label, done["skills"])
+                code, lines = fw.cmd_verify(vp)
+                assert code == 0 and not any(level != "OK" for level, _ in lines), (label, lines)
+                assert fw.cmd_update(variant_release, vp, check=True)["changed"] is False, label
+
+                ws.commit(vp, ws.plan_set(vp, ["workflow-coder"], []))
+                assert coder.read_bytes() == original and not (vp / ws.OVERLAY_REL).exists(), (label, "removal restores the shipped bytes")
+                code, lines = fw.cmd_verify(vp)
+                assert code == 0 and not any(level != "OK" for level, _ in lines), (label, lines)
 
         # --- legacy (pre-3.5) project: obsolete paths removed, clobbered README restored --
         legacy = new_repo(tmp / "legacy")

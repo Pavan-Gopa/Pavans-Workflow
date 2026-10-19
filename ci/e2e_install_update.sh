@@ -153,6 +153,49 @@ grep -q 'Workflow doctor: ready' "$WORK/update.log" || die "doctor did not pass 
 ls "$PRODUCT/.git/pavans-workflow/update-backups/"* > /dev/null 2>&1 || die "update backup missing"
 pass "update from newest tag: removes deleted files, keeps custom files and state, backs up"
 
+# --- 2b. per-role skill additions survive an update that changes the agent files ------------
+SKILLS="$PRODUCT/AI_Workflow_Kit/script/workflow_skills.py"
+CODER="$PRODUCT/.omp/agents/workflow-coder.md"
+python3 "$SKILLS" set --target "$PRODUCT" --agent workflow-coder --agent workflow-coder-backup --skills=graphify --json > "$WORK/skills-set.log" 2>&1 \
+  || { cat "$WORK/skills-set.log"; die "adding a role skill failed"; }
+grep -q '^autoloadSkills: \["ponytail", "graphify"\]$' "$CODER" || die "added skill missing from the Coder agent"
+python3 "$SKILLS" set --target "$PRODUCT" --agent workflow-designer --skills=ponytail > /dev/null 2>&1 && die "forbidden skill was accepted for the Designer"
+python3 "$PRODUCT/AI_Workflow_Kit/script/workflow_framework.py" verify --target "$PRODUCT" > "$WORK/verify.log" 2>&1 || { cat "$WORK/verify.log"; die "verify failed after adding a skill"; }
+grep -q 'modified locally' "$WORK/verify.log" && { cat "$WORK/verify.log"; die "an added skill was reported as a local modification"; }
+bash "$PRODUCT/AI_Workflow_Kit/script/workflow_doctor.sh" > "$WORK/doctor.log" 2>&1 || { cat "$WORK/doctor.log"; die "doctor failed with an added skill"; }
+NEXT2="$WORK/release-next2"
+make_release "$NEXT2" "3.5.2"
+python3 - "$NEXT2/.omp/agents/workflow-coder.md" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+assert 'autoloadSkills: ["ponytail"]\n' in text
+open(path, "w", encoding="utf-8").write(text.replace('autoloadSkills: ["ponytail"]\n', 'autoloadSkills: ["ponytail", "grilling"]\n') + "\nUpstream e2e marker.\n")
+PY
+git -C "$NEXT2" add -A && git -C "$NEXT2" commit -qm "3.5.2 agent change" && git -C "$NEXT2" tag -f v3.5.2 >/dev/null
+WF_UPSTREAM_URL="file://$NEXT2" bash "$PRODUCT/AI_Workflow_Kit/script/workflow_update.sh" apply "$PRODUCT" > "$WORK/update2.log" 2>&1 \
+  || { cat "$WORK/update2.log"; die "update with an agent change failed"; }
+grep -q '^autoloadSkills: \["ponytail", "grilling", "graphify"\]$' "$CODER" || { cat "$WORK/update2.log"; die "update lost the addition or the new upstream default"; }
+grep -q '^Upstream e2e marker\.$' "$CODER" || die "upstream agent change did not arrive"
+grep -q '^autoloadSkills: \["ponytail", "graphify"\]$' "$PRODUCT/.omp/agents/workflow-coder-backup.md" || die "the Coder backup lost its addition"
+expect_file_text "$PRODUCT/AI_Workflow_Kit/VERSION" "3.5.2"
+grep -q 'Workflow doctor: ready' "$WORK/update2.log" || { cat "$WORK/update2.log"; die "doctor did not pass after the agent update"; }
+grep -q 'role skill additions present' "$WORK/update2.log" || die "doctor did not check the skill additions"
+grep -q 'modified locally' "$WORK/update2.log" && die "update left the agent files reported as modified"
+python3 "$SKILLS" set --target "$PRODUCT" --agent workflow-coder --agent workflow-coder-backup --skills= > /dev/null || die "removing the role skill failed"
+grep -q '^autoloadSkills: \["ponytail", "grilling"\]$' "$CODER" || die "removing the addition changed the upstream defaults"
+[[ ! -e "$PRODUCT/.omp/workflow-skills.json" ]] || die "an empty overlay should be removed"
+# the doctor counts parsed list members only: a comment naming the skill is not membership,
+# while any YAML spelling of a real member is
+cp "$CODER" "$WORK/coder.good"
+sed 's/^autoloadSkills:.*/autoloadSkills: ["grilling"] # ponytail/' "$WORK/coder.good" > "$CODER"
+bash "$PRODUCT/AI_Workflow_Kit/script/workflow_doctor.sh" > "$WORK/doctor-comment.log" 2>&1 && { cat "$WORK/doctor-comment.log"; die "doctor accepted a comment as Ponytail membership"; }
+grep -q 'Ponytail must autoload in .omp/agents/workflow-coder.md' "$WORK/doctor-comment.log" || { cat "$WORK/doctor-comment.log"; die "doctor did not name the Coder missing Ponytail"; }
+sed "s/^autoloadSkills:.*/\"autoloadSkills\" : [ 'grilling' , 'ponytail' ]/" "$WORK/coder.good" > "$CODER"
+bash "$PRODUCT/AI_Workflow_Kit/script/workflow_doctor.sh" > "$WORK/doctor-spelling.log" 2>&1 || { cat "$WORK/doctor-spelling.log"; die "doctor rejected a quoted, spaced autoloadSkills list"; }
+cp "$WORK/coder.good" "$CODER"
+pass "role skills: additions survive an update that changes the agent files; doctor passes"
+
 # --- 3. migration from legacy (pre-3.5) installs ------------------------------------------
 legacy_source() {
   local ref="$1" dest="$2"

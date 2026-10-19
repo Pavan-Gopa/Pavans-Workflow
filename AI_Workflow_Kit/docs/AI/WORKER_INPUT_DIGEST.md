@@ -15,7 +15,7 @@ backup_failover: auto | human      # auto = Main's automatic failover; human = t
 failure_evidence: <failed model, provider error excerpt, authorized_at; for human also the Human's exact words>
 ```
 
-A backup agent returns `blocked` without both fields. The Fast Coder has no backup variant.
+A backup agent returns `blocked` without both fields. The Fast Coder's backup variant is `workflow-coder-fast-backup`.
 
 ## Coder
 

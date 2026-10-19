@@ -1,6 +1,6 @@
 # Pavan's Workflow
 
-[![Version](https://img.shields.io/badge/version-3.7.1-1f6feb)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.8.0-1f6feb)](CHANGELOG.md)
 [![OMP](https://img.shields.io/badge/host-Oh%20My%20Pi-8a2be2)](https://github.com/can1357/oh-my-pi)
 [![CI](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Pavan-Gopa/Pavans-Workflow/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -95,7 +95,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Pavan-Gopa/Pavans-Workflow/m
 
 Inside OMP: `/workflow-update check` (plan) or `/workflow-update`. From a
 shell: `bash AI_Workflow_Kit/script/workflow_update.sh check|apply`. Add
-`--ref v3.7.1` to pin a release, `--refresh-graphify` to rebuild the graph.
+`--ref v3.8.0` to pin a release, `--refresh-graphify` to rebuild the graph.
 
 Updates install the newest `vX.Y.Z` release from
 `AI_Workflow_Kit/framework.manifest`, remove framework files the release
@@ -131,7 +131,7 @@ bash AI_Workflow_Kit/script/omp_workflow.sh
 ## Role model pairs
 
 Configure through **Alt+M → Roles**. On a primary worker model/provider failure Main
-fails over to the role's backup automatically (the Fast Coder has none and escalates to the Coder);
+fails over to the role's backup automatically (the Fast Coder's backup is optional; without a distinct one it escalates to the Coder);
 the Human is asked only when no distinct backup is configured or the backup fails.
 Main's own backup is a manual live switch (`@workflow_orchestrator_backup`, Alt+Q).
 
@@ -148,6 +148,41 @@ Main's own backup is a manual live switch (`@workflow_orchestrator_backup`, Alt+
 
 Keep the Reviewer on a different model than both Coder entries, and spread
 backups across providers; the doctor warns otherwise.
+
+## Role skills
+
+Each worker role loads the skills named on the `autoloadSkills` line of its agent files
+(`.omp/agents/workflow-<role>[-backup].md`): `ponytail` for the Coders, `ui-designer` for the
+Designer and Design Advisor, `grilling` for the Architect. Those are the Workflow's own and stay.
+A project can add more skills to a role; the additions survive updates:
+
+```bash
+python3 AI_Workflow_Kit/script/workflow_skills.py show --target . --json
+python3 AI_Workflow_Kit/script/workflow_skills.py set --target . \
+  --agent workflow-coder --agent workflow-coder-backup --skills=graphify,my-skill
+python3 AI_Workflow_Kit/script/workflow_skills.py set --target . --agent workflow-coder --skills=   # remove all additions
+```
+
+- `set` makes the list the agent's complete additions; name both the primary and the backup so a
+  failover loads the same skills. It rejects unknown agents, malformed names, skills the Workflow
+  already loads for that agent, and `ponytail` for the Designer and Design Advisor (the doctor requires
+  them to stay free of it). Either every file changes or none does.
+- Additions live in `.omp/workflow-skills.json` (`{"version": 1, "added": {"workflow-coder": ["graphify"]}}`).
+  It belongs to the project: commit it, updates never replace it, and workers cannot edit it (`.omp/`
+  is guard-protected).
+- Update copies the new agent files, then writes the additions back after the Workflow's defaults, so
+  new defaults arrive and your skills stay. `workflow_skills.py apply` does the same by hand. A skill
+  you added that a later release makes a default drops out of the overlay.
+- The installed-files record and `workflow_framework.py verify` ignore the additions: only an edit
+  of the agent file itself is reported as a local modification. Additions are appended to the existing
+  line and removed as its exact inverse, whatever its YAML spelling (`autoloadSkills : [ 'x' ]`,
+  `"autoloadSkills": [...]`, CRLF newlines, an empty `[]`, or no line at all), so removing every
+  addition restores the shipped file byte for byte.
+- If an agent file loses an addition the overlay records, `verify` and the doctor fail it, and
+  `workflow_framework.py update --check` lists it as `[REPAIR]`; the next update writes it back.
+- The doctor requires `ponytail` on both Coders and `ui-designer` (without `ponytail`) on both design
+  roles, as parsed members of the list (not comments), and that every addition in the overlay is on
+  its agent's line.
 
 ## Useful controls
 
@@ -176,7 +211,7 @@ bash AI_Workflow_Kit/script/workflow_doctor.sh
 Expected version:
 
 ```text
-3.7.1
+3.8.0
 ```
 
 ## Repository map

@@ -1,5 +1,74 @@
 # Changelog
 
+## 3.8.0 — 2026-10-19
+
+Projects can give a role extra skills, and the additions survive updates. The
+Fast Coder gets an optional backup.
+
+### Why
+
+`autoloadSkills` in `.omp/agents/workflow-*.md` is the only thing OMP reads to
+decide which skills a subagent loads, and those files are replaced on every
+update. A skill added by hand was lost on the next update, and the doctor
+failed any Coder or Designer line that was not exactly `["ponytail"]` or
+`["ui-designer"]`.
+
+### Added
+
+- **`workflow_skills.py`.** `show --target T --json` lists each agent's
+  Workflow defaults, additions, effective skills and forbidden skills.
+  `set --target T --agent A [--agent B] --skills=x,y` makes the list the
+  complete additions of those agents (`--skills=` removes them); it rejects
+  unknown agents, malformed names, skills the Workflow already loads for the
+  agent, and `ponytail` for the Designer and Design Advisor, and it changes
+  every file or none. `apply` writes the additions back; `check` is the
+  doctor's overlay check.
+- **`.omp/workflow-skills.json`.** `{"version": 1, "added": {agent: [skills]}}`.
+  Project-owned and not in `framework.manifest`, so updates never replace it;
+  workers cannot edit it (`.omp/` is guard-protected). Removing the last
+  addition deletes the file.
+- **`workflow-coder-fast-backup`.** The Fast Coder's backup agent. On a Fast
+  Coder model failure Main dispatches it when `workflow_coder_fast_backup`
+  resolves to a different model, else escalates to the Coder (R16).
+
+### Changed
+
+- **Update.** After copying files, `workflow_framework.py update` merges the
+  additions into the agent files (Workflow defaults first, in upstream order,
+  then the additions) inside the same transaction, so new upstream defaults
+  arrive and the additions stay. A skill you added that a release makes a
+  default leaves the overlay, with a note.
+- **Local-modification check.** `installed.manifest` records, and `update` and
+  `verify` compare, agent files with the project's additions removed, so
+  `set` and `apply` never show as "modified locally"; editing anything else in
+  an agent file still does. Records written by earlier releases stay valid.
+- **Reversible line edits.** `set` and `apply` append to the agent's existing
+  `autoloadSkills` line and removal is the exact inverse, so the line's
+  quoting, spacing, CRLF newlines, an upstream `[]` and the absence of a line
+  all come back byte for byte. Every key spelling OMP's frontmatter parser
+  accepts is recognised (`autoloadSkills : [...]`, `"autoloadSkills":`,
+  `'autoloadSkills':`, `autoload-skills:`), the existing key is replaced and
+  never duplicated, and two spellings in one file are refused. The overlay may
+  carry an `inserted` list naming agents whose line the helper had to create.
+- **Lost additions are repaired.** `verify` fails an agent file that no longer
+  holds an addition the overlay records, and `update --check` lists it under
+  `[REPAIR]`; `update` writes it back.
+- **Doctor.** The Coders must load `ponytail`, and the Designer and Design
+  Advisor `ui-designer` without `ponytail`, as parsed members of the list
+  (`workflow_skills.py has`; a comment or a longer name never counts). Every
+  addition in the overlay must be on its agent's line.
+- **Runtime guard.** `ci/omp_runtime_guard.ts` adds a skill with
+  `workflow_skills.py set`, spawns `workflow-coder` in a real OMP session and
+  asserts the skill's autoload message reaches the worker; the key spellings
+  are checked against OMP's own `parseFrontmatter`.
+- README documents role skills and the Fast Coder backup.
+
+### Upgrade note
+
+Nothing changes until a project runs `set`. A skill you edited into an agent
+file by hand is still replaced by the next update (it shows as a local
+modification, with a backup); re-add it with `workflow_skills.py set`.
+
 ## 3.7.1 — 2026-10-09
 
 The whole-project suite runs once per round instead of twice, failures arrive
