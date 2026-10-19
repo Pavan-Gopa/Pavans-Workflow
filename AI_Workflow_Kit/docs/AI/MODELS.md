@@ -73,8 +73,9 @@ Advisor/Designer pair. `validate` checks every configured primary/backup pair.
 - Reuse a core role through aliases until a dedicated visual model is worth the
   cost.
 - On a primary model/provider failure Main fails over to the role's backup automatically, but only to a
-  backup that resolves to a different model than the failed primary; the Fast Coder has no backup and escalates
-  to the Coder. The Human is asked only when no distinct backup is configured or the backup run also fails (R16).
+  backup that resolves to a different model than the failed primary. The Fast Coder's backup
+  (`workflow_coder_fast_backup`) is optional; without a distinct one, or if it fails too, the work escalates to the
+  Coder. For other roles the Human is asked only when no distinct backup is configured or the backup run also fails (R16).
 
 ## Changing a role
 

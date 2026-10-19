@@ -84,7 +84,7 @@ command gate is `(close-only)` never goes to the Fast Coder).
 
 ## Routing and retry economy
 
-First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json` to decide whether to dispatch `workflow-coder-fast` or `workflow-coder`, then validates the returned agent with `workflow_models.sh validate-role <agent>`. The router's Fast Coder health window is the only place recorded metrics steer routing (R21); a Fast Coder model/provider failure escalates to `workflow-coder` (R16), never to a backup.
+First attempt on a step uses `python3 AI_Workflow_Kit/script/workflow_route.py coder --step <step> --json` to decide whether to dispatch `workflow-coder-fast` or `workflow-coder`, then validates the returned agent with `workflow_models.sh validate-role <agent>`. The router's Fast Coder health window is the only place recorded metrics steer routing (R21); a Fast Coder model/provider failure goes to `workflow-coder-fast-backup` when a distinct one is configured, otherwise (or when that fails too) to `workflow-coder` (R16).
 
 | Situation | `ponytail_mode` |
 |---|---|
