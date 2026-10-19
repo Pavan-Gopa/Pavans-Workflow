@@ -15,6 +15,7 @@ import { createAgentSession, discoverAuthStorage } from "@oh-my-pi/pi-coding-age
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { initializeExtensions } from "@oh-my-pi/pi-coding-agent/modes/runtime-init";
 
+const SKILL_MARKER = "WF-TEST-SKILL-BODY-MARKER";
 const repo = join(dirname(fileURLToPath(import.meta.url)), "..");
 const work = mkdtempSync(join(tmpdir(), "wf-omp-runtime-"));
 const project = join(work, "project");
@@ -44,11 +45,16 @@ git("init", "-q");
 git("config", "user.email", "ci@example.com");
 git("config", "user.name", "ci");
 copyFileSync(join(repo, "AI_Workflow_Kit/script/workflow_guard.py"), join(project, "AI_Workflow_Kit/script/workflow_guard.py"));
+copyFileSync(join(repo, "AI_Workflow_Kit/script/workflow_skills.py"), join(project, "AI_Workflow_Kit/script/workflow_skills.py"));
 mkdirSync(join(project, ".omp", "extensions"), { recursive: true });
 copyFileSync(join(repo, ".omp/extensions/workflow-guard.ts"), join(project, ".omp/extensions/workflow-guard.ts"));
 cpSync(join(repo, ".omp/lib"), join(project, ".omp/lib"), { recursive: true });
 write(".omp/config.yml", "modelRoles:\n  default: mockp/m\n  task: mockp/m\n");
 write(".omp/agents/workflow-coder.md", '---\nname: workflow-coder\ndescription: runtime test coder\ntools: ["read", "bash", "edit", "write"]\n---\nWORKER-MARKER\n');
+// a discoverable skill, added to the coder through the helper exactly as a project would
+write(".omp/skills/wf-test-skill/SKILL.md", `---\nname: wf-test-skill\ndescription: runtime test skill\n---\n${SKILL_MARKER}\n`);
+execFileSync("python3", [join(project, "AI_Workflow_Kit/script/workflow_skills.py"), "set", "--target", project, "--agent", "workflow-coder", "--skills=wf-test-skill"], { stdio: "pipe" });
+check(readFileSync(join(project, ".omp/agents/workflow-coder.md"), "utf8").includes('autoloadSkills: ["wf-test-skill"]'), "workflow_skills.py set did not add the skill to the coder");
 write("AI_Workflow_Kit/docs/AI/STATE.yaml", "current_step: S1\ntarget_files:\n  - src/feature/\n");
 write("AI_Workflow_Kit/installed.manifest", "runtime test\n");
 write("src/feature/a.ts", "export const a = 1\n");
@@ -58,13 +64,18 @@ git("commit", "-qm", "base");
 const baseHead = git("rev-parse", "HEAD").trim();
 
 const workerResults: string[] = [];
+const workerSkillMessages: string[] = [];
+let mainSawSkill = false;
 registerMockApi();
 const mock = createMockModel({
 	handler: (context: any) => {
 		const isWorker = text(context.systemPrompt).includes("WORKER-MARKER");
 		const results = (context.messages ?? []).filter((message: any) => message.role === "toolResult");
+		const skillMessages = (context.messages ?? []).map((message: { content?: unknown }) => text(message.content)).filter((body: string) => body.includes(SKILL_MARKER));
+		if (!isWorker && skillMessages.length) mainSawSkill = true;
 		if (isWorker) {
 			if (results.length) workerResults.push(text(results[results.length - 1].content));
+			if (workerSkillMessages.length === 0) workerSkillMessages.push(...skillMessages);
 			const steps = [
 				{ name: "write", arguments: { path: "src/other.ts", content: "export const other = 'coder'\n" } },
 				{ name: "bash", arguments: { command: "git add -A && git commit -qm worker-commit" } },
@@ -131,6 +142,16 @@ try {
 	check(text(verdict.shell_suspects) === text(["src/feature/gen.txt"]), `shell_suspects: ${text(verdict.shell_suspects)}`);
 	const note = (session.state.messages as any[]).find(message => message.customType === "workflow-guard");
 	check(note && text(note.content).includes("Not a violation"), "Main did not receive the guard note");
+	// workflow_skills.py set -> the added skill is autoloaded into the spawned worker (skill-prompt, autoload form)
+	const skillMessage = workerSkillMessages[0] ?? "";
+	check(workerSkillMessages.length === 1, `expected one autoload skill message in the worker, got ${workerSkillMessages.length}`);
+	check(skillMessage.includes(SKILL_MARKER) && /Skill: .*[/\\]\.omp[/\\]skills[/\\]wf-test-skill[/\\]SKILL\.md/.test(skillMessage), `autoload message: ${skillMessage}`);
+	check(!mainSawSkill, "Main received the worker's autoload skill");
+	// the helper's spellings of autoloadSkills match what this OMP's own frontmatter parser reads
+	execFileSync("python3", [join(repo, "AI_Workflow_Kit/script/workflow_skills.selftest.py")], {
+		env: { ...process.env, WF_REQUIRE_OMP: "1", WF_OMP_BUN: process.execPath },
+		stdio: "inherit",
+	});
 	console.log("OK   omp runtime: guard blocks inside a real workflow-coder session and reports a clean verdict to Main");
 } finally {
 	rmSync(work, { recursive: true, force: true });

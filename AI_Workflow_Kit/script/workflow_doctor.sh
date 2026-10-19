@@ -105,17 +105,31 @@ PYCONTEXT
       [[ -f "$file" ]] || { fail "agent missing: $file"; continue; }
     done
   done
+  # Skills are checked as parsed members of the autoloadSkills list (workflow_skills.py has), not by text:
+  # a comment or a longer name never counts. Projects may add skills per role (.omp/workflow-skills.json);
+  # the Workflow's own defaults must stay.
+  has_skill() { python3 AI_Workflow_Kit/script/workflow_skills.py has --target "$project_root" --agent "$(basename "$1" .md)" --skill "$2" >/dev/null 2>&1; }
   for file in .omp/agents/workflow-coder.md .omp/agents/workflow-coder-backup.md; do
-    if grep -Eq '^autoloadSkills:[[:space:]]*\["ponytail"\]' "$file" 2>/dev/null; then ok "Ponytail autoload: $file"; else fail "Ponytail must autoload in $file"; fi
+    if has_skill "$file" ponytail; then ok "Ponytail autoload: $file"; else fail "Ponytail must autoload in $file"; fi
   done
   for file in .omp/agents/workflow-design-advisor.md .omp/agents/workflow-design-advisor-backup.md \
               .omp/agents/workflow-designer.md .omp/agents/workflow-designer-backup.md; do
-    if grep -Eq '^autoloadSkills:[[:space:]]*\["ui-designer"\]' "$file" 2>/dev/null && ! grep -Eq 'autoloadSkills:.*ponytail' "$file"; then
+    if has_skill "$file" ui-designer && ! has_skill "$file" ponytail; then
       ok "UI Designer autoload (no Ponytail): $file"
     else
       fail "$file must autoload ui-designer and not ponytail"
     fi
   done
+  local skills_lines skills_status=0
+  skills_lines="$(python3 AI_Workflow_Kit/script/workflow_skills.py check --target "$project_root" 2>&1)" || skills_status=$?
+  while IFS= read -r line; do
+    level="${line%% *}"; message="${line#* }"; message="${message#"${message%%[![:space:]]*}"}"
+    case "$level" in
+      OK) ok "$message" ;;
+      FAIL) fail "$message" ;;
+    esac
+  done <<<"$skills_lines"
+  if (( skills_status != 0 )) && [[ "$skills_lines" != *FAIL* ]]; then fail "role skills check did not run (python3 AI_Workflow_Kit/script/workflow_skills.py check)"; fi
   for file in .omp/agents/workflow-reviewer.md .omp/agents/workflow-architect.md \
               .omp/agents/workflow-security.md .omp/agents/workflow-design-advisor.md; do
     if grep -Eq '^tools:.*"(edit|write)"' "$file" 2>/dev/null; then
